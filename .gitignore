@@ -1,0 +1,14 @@
+# Local tool/session config — the app itself has no dependencies
+.claude/
+
+# Pipeline working files — rendered videos and downloaded assets stay local
+pipeline/output/
+pipeline/backgrounds/*
+!pipeline/backgrounds/README.md
+pipeline/music/*
+!pipeline/music/README.md
+pipeline/*.json
+pipeline/*.jpg
+pipeline/testclips/
+pipeline/ai-visuals/
+pipeline/watcher.log
