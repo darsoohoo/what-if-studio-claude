@@ -11,4 +11,5 @@ pipeline/*.json
 pipeline/*.jpg
 pipeline/testclips/
 pipeline/ai-visuals/
+pipeline/__pycache__/
 pipeline/watcher.log
