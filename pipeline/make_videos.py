@@ -65,6 +65,19 @@ VOICE_MAP = {
 }
 DEFAULT_VOICE = {"voice": "en-US-ChristopherNeural", "rate": "+0%", "pitch": "+0Hz"}
 
+# Scenario category -> music mood folder under music/
+MOOD_BY_CATEGORY = {
+    "Scary/Weird": "eerie",
+    "Internet Mystery": "tense",
+    "Unsettling Everyday": "tense",
+    "Alternate Reality": "wonder",
+    "Science": "wonder",
+    "Speculative": "wonder",
+    "History": "wonder",
+    "Pop Culture": "upbeat",
+}
+MUSIC_VOLUME = 0.12
+
 # Free AI image generation (Pollinations - no account, no key).
 # Each style is a prompt suffix appended to the scenario's shot description.
 AI_STYLES = {
@@ -142,6 +155,26 @@ def pick_file(directory, exts):
         return None
     files = sorted(f for f in folder.iterdir() if f.suffix.lower() in exts)
     return random.choice(files) if files else None
+
+
+def pick_music(pkg, music_dir):
+    """Pick a track matching the scenario's mood; fall back to loose files."""
+    root = Path(music_dir) if music_dir else None
+    if not root or not root.is_dir():
+        return None
+    mood = MOOD_BY_CATEGORY.get(pkg.get("category", ""), "wonder")
+    return pick_file(root / mood, AUDIO_EXTS) or pick_file(root, AUDIO_EXTS)
+
+
+def music_credit_for(music, music_dir):
+    """Look up the license credit line for a track (written by get_music.py)."""
+    if not music:
+        return None
+    try:
+        credits = json.loads((Path(music_dir) / "credits.json").read_text(encoding="utf-8"))
+        return credits.get(music.name)
+    except Exception:
+        return None
 
 
 def list_visuals(directory):
@@ -405,7 +438,9 @@ def final_render(ffmpeg, base, pkg, total, has_music, out_path, tmp):
     music_files = list(Path(tmp).glob("music.*"))
     if has_music and music_files:
         inputs += ["-i", music_files[0].name]
-        filters.append("[1:a]apad[va];[2:a]volume=0.12[m];[va][m]amix=inputs=2:duration=first:normalize=0[a]")
+        fade_start = max(0.0, total - 1.5)
+        filters.append(f"[1:a]apad[va];[2:a]volume={MUSIC_VOLUME},afade=t=out:st={fade_start:.2f}:d=1.5[m];"
+                       "[va][m]amix=inputs=2:duration=first:normalize=0[a]")
     else:
         filters.append("[1:a]apad[a]")
 
@@ -419,7 +454,7 @@ def final_render(ffmpeg, base, pkg, total, has_music, out_path, tmp):
 # ---------------------------------------------------------------- post kit
 
 
-def post_kit_text(pkg, item, hook_index):
+def post_kit_text(pkg, item, hook_index, music_credit=None):
     lines = [
         f"POST KIT - {pkg.get('title', 'untitled')}",
         f"Platform: {pkg.get('platform', '?')} | Runtime setting: {pkg.get('runtimeLabel', '?')} | Voice: {pkg.get('voice', '?')}",
@@ -432,6 +467,12 @@ def post_kit_text(pkg, item, hook_index):
     lines.append("TITLE / THUMBNAIL TEXT IDEAS:")
     lines += [f'- "{t}"' for t in pkg.get("thumbnails", [])]
     lines.append("")
+    if music_credit:
+        lines += [
+            "MUSIC CREDIT (required - paste into the video description):",
+            music_credit,
+            "",
+        ]
     if item.get("notes"):
         lines += [f"YOUR QUEUE NOTES: {item['notes']}", ""]
     lines += [
@@ -554,14 +595,15 @@ def main():
                 else:
                     print("  visuals: generated gradient")
 
-                music = pick_file(args.music, AUDIO_EXTS)
+                music = pick_music(pkg, args.music)
                 if music:
                     shutil.copy(music, tmp / ("music" + music.suffix))
-                    print(f"  music: {music.name}")
+                    print(f"  music: {music.parent.name}/{music.name}")
 
                 final_render(ffmpeg, base, pkg, total, bool(music), out_path.resolve(), tmp)
 
-            (out_dir / f"{slug}-post.txt").write_text(post_kit_text(pkg, item, hook_index), encoding="utf-8")
+            credit = music_credit_for(music, args.music)
+            (out_dir / f"{slug}-post.txt").write_text(post_kit_text(pkg, item, hook_index, credit), encoding="utf-8")
             print(f"  done: {out_path.name} + {slug}-post.txt\n")
         except Exception as exc:
             failures += 1

@@ -28,7 +28,7 @@ The app never requires this tool — it stays a plain static page. This is the "
    python -m pip install --user -r requirements.txt
    ```
 4. *(Optional but recommended)* Drop a few copyright-free vertical background videos into `backgrounds/` (see the README in that folder). Without them, the pipeline generates an animated gradient in each scenario's brand colors — clean, but real footage retains viewers better.
-5. *(Optional)* Drop royalty-free music into `music/` — it gets mixed in quietly at 12% volume.
+5. *(Recommended)* Run `python get_music.py` once — it downloads a curated, properly-licensed music set into mood folders. Each video then gets a background bed matched to its scenario's mood (eerie / tense / wonder / upbeat), faded out at the end, with the required credit line added to the post kit automatically. See `music/README.md`.
 
 ## Daily workflow (zero-click)
 
