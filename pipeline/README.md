@@ -30,16 +30,20 @@ The app never requires this tool — it stays a plain static page. This is the "
 4. *(Optional but recommended)* Drop a few copyright-free vertical background videos into `backgrounds/` (see the README in that folder). Without them, the pipeline generates an animated gradient in each scenario's brand colors — clean, but real footage retains viewers better.
 5. *(Optional)* Drop royalty-free music into `music/` — it gets mixed in quietly at 12% volume.
 
-## Daily workflow
+## Daily workflow (zero-click)
 
-1. In the app: build your queue (generate packages, save to slots), then click **Export queue (.json) for video pipeline**.
-2. Move the downloaded `whatifstudio-queue.json` into this folder (or point the script at your Downloads folder).
-3. Run:
-   ```
-   python make_videos.py whatifstudio-queue.json
-   ```
-4. Finished videos land in `output/` as `01-<title>.mp4`, each with a matching `01-<title>-post.txt` containing caption options, hashtags, title ideas, and your queue notes.
-5. Watch each video, pick a caption from the post kit, and upload.
+1. Double-click **`start-watcher.bat`** once when you sit down to create (it quietly watches your Downloads folder until you log off; nothing is installed).
+2. In the app: build your queue, then click **Export queue (.json) for video pipeline**.
+3. That's it. The watcher picks the export up from Downloads, renders every package with free AI visuals, and pops the `output/` folder open when done. Progress is logged to `watcher.log`.
+4. Watch each video, copy a caption from its `-post.txt` post kit, and upload.
+
+Manual alternatives: double-click **`run-queue.bat`** after each export, or run it yourself:
+
+```
+python make_videos.py whatifstudio-queue.json --ai-visuals
+```
+
+Finished videos land in `output/` as `01-<title>.mp4`, each with a matching `01-<title>-post.txt` containing caption options, hashtags, title ideas, and your queue notes.
 
 ## Options
 
