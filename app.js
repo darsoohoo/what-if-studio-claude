@@ -1866,7 +1866,8 @@ function bindWorkspaceActions() {
 
   $("exportJsonBtn").addEventListener("click", () => {
     if (!state.pkg) return;
-    downloadFile(slugify(state.pkg.title) + ".json", JSON.stringify(state.pkg, null, 2));
+    // "whatifstudio-" prefix lets the pipeline watcher recognize the file.
+    downloadFile("whatifstudio-package-" + slugify(state.pkg.title) + ".json", JSON.stringify(state.pkg, null, 2));
     announce("Package exported as .json.");
   });
 

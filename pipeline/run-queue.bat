@@ -5,7 +5,7 @@ rem then renders every queued package with free AI visuals.
 cd /d "%~dp0"
 
 rem Grab the newest export from Downloads (handles "whatifstudio-queue (1).json" etc.)
-for /f "delims=" %%f in ('dir /b /o-d "%USERPROFILE%\Downloads\whatifstudio-queue*.json" 2^>nul') do (
+for /f "delims=" %%f in ('dir /b /o-d "%USERPROFILE%\Downloads\whatifstudio-*.json" 2^>nul') do (
     copy /y "%USERPROFILE%\Downloads\%%f" "whatifstudio-queue.json" >nul
     echo Using queue export from Downloads: %%f
     goto :run
