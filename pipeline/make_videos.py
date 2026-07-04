@@ -36,6 +36,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
 try:
@@ -61,6 +64,16 @@ VOICE_MAP = {
     "Deadpan Documentarian":    {"voice": "en-US-EricNeural",        "rate": "-8%",  "pitch": "-4Hz"},
 }
 DEFAULT_VOICE = {"voice": "en-US-ChristopherNeural", "rate": "+0%", "pitch": "+0Hz"}
+
+# Free AI image generation (Pollinations - no account, no key).
+# Each style is a prompt suffix appended to the scenario's shot description.
+AI_STYLES = {
+    "cinematic":   "vertical cinematic digital art, dramatic lighting, rich colors, high detail, no text, no words, no letters",
+    "3d":          "soft 3d pixar style render, cinematic lighting, expressive characters, high detail, no text, no words, no letters",
+    "infographic": "flat design vector illustration, corporate infographic style, soft pastel beige background, simple geometric shapes and characters, clean minimal composition, no text, no words, no letters",
+    "dark":        "moody dark atmospheric illustration, deep shadows, single strong light source, eerie but tasteful, high detail, no text, no words, no letters",
+}
+AI_IMAGE_HOST = "https://image.pollinations.ai/prompt/"
 
 # Modern caption look (ASS): white words, spoken word pops to yellow.
 CAP_WHITE = r"&H00FFFFFF&"
@@ -217,6 +230,61 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     return header + "\n".join(lines) + "\n"
 
 
+# ---------------------------------------------------------------- AI visuals
+
+
+def ai_prompt_for_segment(pkg, seg_index, seg_count, style_suffix):
+    """Build an image prompt for one narration segment from the shot list."""
+    shots = pkg.get("shotList") or [pkg.get("premise", pkg.get("title", "abstract scene"))]
+    pick = min(round(seg_index * (len(shots) - 1) / max(1, seg_count - 1)), len(shots) - 1)
+    src = shots[pick]
+    src = re.sub(r"^[A-Za-z /-]{2,20}:", "", src)                      # "Hook:" style prefixes
+    src = re.sub(r"[\"“”‘’']", "", src)
+    # Drop instructions about on-screen text - generated text comes out garbled.
+    src = re.sub(r"\b(labeled|labelled|stamped|caption|chyron|lower.third|overlay|typed|on.screen text)\b[^,.;]*",
+                 "", src, flags=re.I)
+    src = re.sub(r"\s+", " ", src).strip(" ,.;-")
+    return f"{src}, {style_suffix}"
+
+
+def fetch_ai_image(prompt, dest, seed):
+    url = (AI_IMAGE_HOST + urllib.parse.quote(prompt)
+           + f"?width={WIDTH}&height={HEIGHT}&nologo=true&seed={seed}")
+    req = urllib.request.Request(url, headers={"User-Agent": "WhatIfStudio-pipeline/1.0"})
+    with urllib.request.urlopen(req, timeout=180) as resp, open(dest, "wb") as out:
+        shutil.copyfileobj(resp, out)
+    if dest.stat().st_size < 5000:
+        dest.unlink(missing_ok=True)
+        raise RuntimeError("image response too small")
+
+
+def generate_ai_visuals(pkg, seg_count, style_key, cache_root):
+    """One generated image per narration segment, cached per scenario+style."""
+    suffix = AI_STYLES[style_key]
+    folder = Path(cache_root) / f"{pkg.get('scenarioId', 'pkg')}-{style_key}"
+    folder.mkdir(parents=True, exist_ok=True)
+    files = []
+    for i in range(seg_count):
+        dest = folder / f"{i + 1:02d}.jpg"
+        if not dest.exists():
+            prompt = ai_prompt_for_segment(pkg, i, seg_count, suffix)
+            for attempt in range(3):
+                try:
+                    fetch_ai_image(prompt, dest, seed=(i + 1) * 13 + attempt * 101)
+                    print(f"    image {i + 1}/{seg_count} generated")
+                    break
+                except Exception as exc:
+                    if attempt == 2:
+                        print(f"    image {i + 1}/{seg_count} FAILED ({exc}) - neighbors will fill in")
+                    else:
+                        time.sleep(3)
+        if dest.exists():
+            files.append(dest)
+    if not files:
+        raise RuntimeError("AI visual generation produced no images (network down?)")
+    return files
+
+
 # ---------------------------------------------------------------- visuals
 
 
@@ -343,6 +411,12 @@ def main():
     parser.add_argument("--backgrounds", default="backgrounds",
                         help="Folder of visuals; several files = one clip per beat, in order")
     parser.add_argument("--music", default="music", help="Folder of background music (optional)")
+    parser.add_argument("--ai-visuals", action="store_true",
+                        help="Generate one free AI image per beat (Pollinations, no account) instead of using backgrounds/")
+    parser.add_argument("--ai-style", default="cinematic", choices=sorted(AI_STYLES),
+                        help="Look of generated AI visuals (default: cinematic)")
+    parser.add_argument("--ai-cache", default="ai-visuals",
+                        help="Cache folder for generated images (default: ai-visuals)")
     parser.add_argument("--hook", type=int, default=1, choices=[1, 2, 3],
                         help="Which of the 3 hooks opens the video (default: 1)")
     parser.add_argument("--voice", help="Override edge-tts voice for all items")
@@ -370,8 +444,11 @@ def main():
     visuals = list_visuals(args.backgrounds)
 
     print(f"Rendering {len(items)} video(s) -> {out_dir.resolve()}")
-    print(f"Visuals: {len(visuals)} file(s) in '{args.backgrounds}'"
-          + (" (one clip per beat)" if len(visuals) > 1 else " (single background)" if visuals else " (animated gradient)"))
+    if args.ai_visuals:
+        print(f"Visuals: free AI images per beat (style: {args.ai_style}, cache: {args.ai_cache})")
+    else:
+        print(f"Visuals: {len(visuals)} file(s) in '{args.backgrounds}'"
+              + (" (one clip per beat)" if len(visuals) > 1 else " (single background)" if visuals else " (animated gradient)"))
     print()
     failures = 0
 
@@ -407,16 +484,21 @@ def main():
                 total = probe_duration(ffprobe, tmp / "voice.mp3")
                 print(f"  voice: {vconf['voice']} ({vconf['rate']}, {vconf['pitch']}) - {total:.1f}s")
 
+                item_visuals = visuals
+                if args.ai_visuals:
+                    print(f"  generating AI visuals ({args.ai_style})...")
+                    item_visuals = generate_ai_visuals(pkg, len(segments), args.ai_style, args.ai_cache)
+
                 base = None
-                if len(visuals) > 1:
+                if len(item_visuals) > 1:
                     spans = segment_spans(segments, words, total)
-                    base = build_clip_base(ffmpeg, visuals, spans, tmp)
-                    print(f"  visuals: {len(spans)} beat clips from {len(visuals)} source file(s)")
-                elif len(visuals) == 1:
+                    base = build_clip_base(ffmpeg, item_visuals, spans, tmp)
+                    print(f"  visuals: {len(spans)} beat clips from {len(item_visuals)} source file(s)")
+                elif len(item_visuals) == 1:
                     seg = tmp / "base.mp4"
-                    render_segment_clip(ffmpeg, visuals[0], total + 0.4, seg)
+                    render_segment_clip(ffmpeg, item_visuals[0], total + 0.4, seg)
                     base = seg
-                    print(f"  visuals: single background ({visuals[0].name})")
+                    print(f"  visuals: single background ({item_visuals[0].name})")
                 else:
                     print("  visuals: generated gradient")
 

@@ -6,6 +6,17 @@ Turns queue exports from the app into **finished vertical videos**: AI voiceover
 
 **Visuals**: put clips/images in `backgrounds/`. With **several files, each script beat gets its own clip in order** — perfect for "one example per beat" videos. With one file it's used throughout; with none, an animated gradient in the scenario's colors is generated.
 
+**Free AI visuals** (`--ai-visuals`): generates one custom image per beat from the scenario's own shot list, using Pollinations (free, no account, no key — internet required). Images are cached in `ai-visuals/` per scenario+style, so re-renders are instant. Pick a look with `--ai-style`:
+
+```
+python make_videos.py queue.json --ai-visuals                        # cinematic (default)
+python make_videos.py queue.json --ai-visuals --ai-style dark        # eerie/horror topics
+python make_videos.py queue.json --ai-visuals --ai-style 3d          # pixar-ish characters
+python make_videos.py queue.json --ai-visuals --ai-style infographic # flat corporate vector look
+```
+
+To regenerate a scenario's images (new random look), delete its folder in `ai-visuals/`. AI images make the whole video AI-generated content — the disclosure reminder in each post kit covers this.
+
 The app never requires this tool — it stays a plain static page. This is the "hands-off production" add-on.
 
 ## One-time setup (Windows)

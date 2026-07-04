@@ -10,3 +10,4 @@ pipeline/music/*
 pipeline/*.json
 pipeline/*.jpg
 pipeline/testclips/
+pipeline/ai-visuals/
