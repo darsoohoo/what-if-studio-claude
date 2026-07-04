@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>What If Studio — Short-Form Scenario Engine</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<a class="skip-link" href="#library">Skip to scenario library</a>
+
+<header class="app-header">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">?</span>
+    <div class="brand-text">
+      <h1>What If Studio</h1>
+      <p class="tagline">Turn one question into a ready-to-record short.</p>
+    </div>
+  </div>
+  <div class="header-actions">
+    <span id="storageBadge" class="storage-badge" role="status" aria-live="polite"></span>
+    <button type="button" id="resetAllBtn" class="btn btn-ghost btn-danger-text">Reset all local data</button>
+  </div>
+</header>
+
+<section class="seed-bar" aria-labelledby="seedHeading">
+  <div class="seed-copy">
+    <h2 id="seedHeading" class="visually-hidden">Scenario seed generator</h2>
+    <p class="seed-label">Need a fresh angle?</p>
+    <p id="seedText" class="seed-text" aria-live="polite">Press the button to spin up a new scenario seed.</p>
+  </div>
+  <div class="seed-actions">
+    <button type="button" id="newSeedBtn" class="btn btn-primary">New Scenario Seed</button>
+    <button type="button" id="copySeedBtn" class="btn btn-ghost" disabled>Copy seed</button>
+  </div>
+</section>
+
+<main class="layout">
+
+  <!-- ============ LIBRARY ============ -->
+  <section id="library" class="panel library-panel" aria-labelledby="libraryHeading">
+    <div class="panel-head">
+      <h2 id="libraryHeading">Scenario Library</h2>
+      <span id="libraryCount" class="panel-meta" aria-live="polite"></span>
+    </div>
+
+    <div class="library-controls">
+      <label class="field-label" for="searchInput">Search scenarios</label>
+      <input type="search" id="searchInput" placeholder="Search titles, premises, tags…" autocomplete="off">
+
+      <fieldset class="chip-group">
+        <legend class="field-label">Filter by category</legend>
+        <div id="categoryChips" class="chips" role="radiogroup" aria-label="Category filter"></div>
+      </fieldset>
+    </div>
+
+    <div id="scenarioGrid" class="scenario-grid" role="list"></div>
+    <p id="libraryEmpty" class="empty-note" hidden>No scenarios match. Try clearing the search or picking “All”.</p>
+  </section>
+
+  <!-- ============ WORKSPACE ============ -->
+  <section class="panel workspace-panel" aria-labelledby="workspaceHeading">
+    <div class="panel-head">
+      <h2 id="workspaceHeading">Workspace</h2>
+    </div>
+
+    <div id="workspaceEmpty" class="empty-state">
+      <p class="empty-glyph" aria-hidden="true">✦</p>
+      <p>Select a scenario from the library to start building a package.</p>
+    </div>
+
+    <div id="workspaceBody" hidden>
+      <div id="scenarioBanner" class="scenario-banner">
+        <span id="bannerGlyph" class="banner-glyph" aria-hidden="true"></span>
+        <div>
+          <span id="bannerCategory" class="category-badge"></span>
+          <h3 id="bannerTitle" class="banner-title"></h3>
+        </div>
+      </div>
+      <p id="bannerPremise" class="banner-premise"></p>
+      <p id="bannerSafety" class="safety-note"></p>
+      <div id="bannerTags" class="tag-row" aria-label="Scenario tags"></div>
+
+      <h4 class="control-heading">Package settings</h4>
+
+      <fieldset class="control-block">
+        <legend class="field-label">Platform</legend>
+        <div id="platformGroup" class="segmented" role="radiogroup" aria-label="Target platform"></div>
+      </fieldset>
+
+      <fieldset class="control-block">
+        <legend class="field-label">Runtime</legend>
+        <div id="runtimeGroup" class="segmented" role="radiogroup" aria-label="Video runtime"></div>
+      </fieldset>
+
+      <div class="control-block">
+        <label class="field-label" for="voiceSelect">Voice / delivery style</label>
+        <select id="voiceSelect"></select>
+      </div>
+
+      <button type="button" id="generateBtn" class="btn btn-primary btn-wide">Generate Package</button>
+    </div>
+
+    <!-- ============ PACKAGE OUTPUT ============ -->
+    <div id="packageSection" hidden>
+      <div class="panel-head package-head">
+        <h3 id="packageTitle">Package</h3>
+        <span id="packageMeta" class="panel-meta"></span>
+      </div>
+
+      <div class="tabs" role="tablist" aria-label="Package sections" id="packageTabs"></div>
+      <div id="tabPanel" class="tab-panel" role="tabpanel" tabindex="0"></div>
+
+      <div class="package-toolbar">
+        <button type="button" id="copySectionBtn" class="btn btn-ghost">Copy this section</button>
+        <button type="button" id="copyAllBtn" class="btn btn-ghost">Copy full package</button>
+        <button type="button" id="exportTxtBtn" class="btn btn-ghost">Export .txt</button>
+        <button type="button" id="exportSrtBtn" class="btn btn-ghost">Export .srt</button>
+      </div>
+
+      <div class="save-row">
+        <label class="field-label" for="slotSelect">Save to queue slot</label>
+        <div class="save-controls">
+          <select id="slotSelect"></select>
+          <button type="button" id="saveSlotBtn" class="btn btn-primary">Save to slot</button>
+        </div>
+      </div>
+
+      <p id="actionStatus" class="action-status" role="status" aria-live="polite"></p>
+    </div>
+  </section>
+
+  <!-- ============ QUEUE ============ -->
+  <section class="panel queue-panel" aria-labelledby="queueHeading">
+    <div class="panel-head">
+      <h2 id="queueHeading">Content Queue</h2>
+      <span class="panel-meta">7 slots — plan a week</span>
+    </div>
+    <p class="queue-hint">Saved packages live in your browser’s local storage on this device. Export anything you can’t afford to lose.</p>
+    <div id="queueList" class="queue-list"></div>
+  </section>
+
+</main>
+
+<footer class="app-footer">
+  <p><strong>What If Studio</strong> runs 100% locally — no server, no account, no tracking, no remote content. Open <code>index.html</code> and it works.</p>
+  <p>All scenarios are speculative fiction and thought experiments for entertainment. Publishing, performance, and monetization are up to you and your platforms — no growth is promised or automated here.</p>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
