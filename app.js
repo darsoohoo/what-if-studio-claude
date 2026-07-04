@@ -23,6 +23,18 @@ const CATEGORIES = [
   "Scary/Weird"
 ];
 
+/* Default card colors for custom scenarios, per category. */
+const CATEGORY_COLORS = {
+  "Speculative": ["#2dbf8b", "#3a6ea5"],
+  "Science": ["#3b4368", "#6a5ae0"],
+  "History": ["#b8a13a", "#b8563a"],
+  "Pop Culture": ["#b83a6e", "#6a5ae0"],
+  "Internet Mystery": ["#2d8a6e", "#151a30"],
+  "Alternate Reality": ["#6a5ae0", "#2d8a6e"],
+  "Unsettling Everyday": ["#3b4368", "#2dbf8b"],
+  "Scary/Weird": ["#151a30", "#b83a6e"]
+};
+
 const PLATFORMS = [
   { id: "tiktok", label: "TikTok", aspect: "9:16 vertical", hashtags: "#whatif #storytime #interesting #fyp", cta: "Follow for tomorrow's what-if." },
   { id: "shorts", label: "YT Shorts", aspect: "9:16 vertical", hashtags: "#whatif #shorts #storytime", cta: "Subscribe — a new what-if drops next." },
@@ -1220,13 +1232,15 @@ const state = {
   activeTab: 0,
   seed: null,
   seedRotation: { catIndex: 0, perCat: {} },
+  customScenarios: [],
   queue: Array.from({ length: QUEUE_SIZE }, () => ({ pkg: null, status: SLOT_STATUSES[0], notes: "" }))
 };
 
 function persist() {
   storage.write({
     queue: state.queue,
-    seedRotation: state.seedRotation
+    seedRotation: state.seedRotation,
+    customScenarios: state.customScenarios
   });
 }
 
@@ -1246,6 +1260,14 @@ function restore() {
       perCat: saved.seedRotation.perCat || {}
     };
   }
+  if (Array.isArray(saved.customScenarios)) {
+    state.customScenarios = saved.customScenarios.filter(s =>
+      s && typeof s.id === "string" && typeof s.title === "string" && Array.isArray(s.beats));
+  }
+}
+
+function allScenarios() {
+  return scenarioBank.concat(state.customScenarios);
 }
 
 /* ============================================================
@@ -1300,7 +1322,7 @@ function bindArrowNav(container, itemSelector, onMove) {
 
 function filteredScenarios() {
   const query = state.search.trim().toLowerCase();
-  return scenarioBank.filter(s => {
+  return allScenarios().filter(s => {
     if (state.category !== "All" && s.category !== state.category) return false;
     if (!query) return true;
     const haystack = [s.title, s.premise, s.category, ...s.tags].join(" ").toLowerCase();
@@ -1331,7 +1353,7 @@ function renderLibrary() {
   const grid = $("scenarioGrid");
   grid.innerHTML = "";
   const matches = filteredScenarios();
-  $("libraryCount").textContent = `${matches.length} of ${scenarioBank.length} scenarios`;
+  $("libraryCount").textContent = `${matches.length} of ${allScenarios().length} scenarios`;
   $("libraryEmpty").hidden = matches.length > 0;
 
   matches.forEach(s => {
@@ -1347,6 +1369,7 @@ function renderLibrary() {
       glyph,
       el("span", { class: "category-badge", text: s.category })
     ]);
+    if (s.custom) top.appendChild(el("span", { class: "custom-flag", text: "Custom" }));
     const title = el("p", { class: "card-title", text: s.title });
     const tags = el("div", { class: "tag-row" }, s.tags.slice(0, 3).map(t => el("span", { class: "tag", text: t })));
     card.append(top, title, tags);
@@ -1370,7 +1393,7 @@ function selectScenario(id) {
 }
 
 function getScenario(id) {
-  return scenarioBank.find(s => s.id === id) || null;
+  return allScenarios().find(s => s.id === id) || null;
 }
 
 function renderWorkspace() {
@@ -1382,8 +1405,9 @@ function renderWorkspace() {
   const glyph = $("bannerGlyph");
   glyph.textContent = scenario.image.glyph;
   glyph.style.background = `linear-gradient(135deg, ${scenario.image.from}, ${scenario.image.to})`;
-  $("bannerCategory").textContent = scenario.category;
+  $("bannerCategory").textContent = scenario.category + (scenario.custom ? " · Custom" : "");
   $("bannerTitle").textContent = scenario.title;
+  $("deleteScenarioBtn").hidden = !scenario.custom;
   $("bannerPremise").textContent = scenario.premise;
   $("bannerSafety").textContent = "Framing note: " + scenario.safety;
 
@@ -1805,11 +1829,12 @@ function renderStorageBadge() {
 }
 
 function resetAll() {
-  const ok = window.confirm("Reset ALL local data? This clears every queue slot, all tracker notes, and seed rotation. Exported files are not affected.");
+  const ok = window.confirm("Reset ALL local data? This clears every queue slot, all tracker notes, seed rotation, and your custom scenarios. Exported files are not affected.");
   if (!ok) return;
   storage.clear();
   state.queue = Array.from({ length: QUEUE_SIZE }, () => ({ pkg: null, status: SLOT_STATUSES[0], notes: "" }));
   state.seedRotation = { catIndex: 0, perCat: {} };
+  state.customScenarios = [];
   state.seed = null;
   state.pkg = null;
   state.selectedId = null;
@@ -1820,6 +1845,123 @@ function resetAll() {
   renderWorkspace();
   renderQueue();
   announce("All local data reset.");
+}
+
+/* ============================================================
+   14b. CUSTOM SCENARIO BUILDER
+   ============================================================ */
+
+function firstSentence(text) {
+  const match = String(text).match(/^[^.!?]*[.!?]?/);
+  return (match ? match[0] : text).trim();
+}
+
+/* Turn the user's title/premise/beats into a complete scenario object.
+   Hooks, captions, thumbnails, shot list, and safety framing are
+   scaffolded from templates so everything downstream (queue, exports,
+   pipeline AI visuals, music mood) works unchanged. */
+function scaffoldScenario(input) {
+  const rawTitle = input.title.trim().replace(/\s+/g, " ");
+  const title = /\?$/.test(rawTitle) ? rawTitle : rawTitle + "?";
+  const colors = CATEGORY_COLORS[input.category] || ["#6a5ae0", "#2dbf8b"];
+  const stripped = title.replace(/^what if\s*/i, "").replace(/\?$/, "").trim();
+  const keywords = stripped.split(/\s+/).slice(0, 5).join(" ").toUpperCase();
+  const premise = input.premise.trim();
+  const tags = input.tags.length ? input.tags.slice(0, 5) : [input.category.toLowerCase(), "thought experiment", "original"];
+
+  return {
+    id: "custom-" + slugify(title).slice(0, 40) + "-" + Date.now().toString(36),
+    custom: true,
+    category: input.category,
+    title,
+    image: { glyph: input.glyph || "✳️", from: colors[0], to: colors[1] },
+    premise,
+    tags,
+    safety: "Original speculative scenario written by this channel — a fictional thought experiment, clearly framed as hypothetical, not a claim of fact.",
+    hooks: [
+      `${title} Here's what would actually happen.`,
+      `Nobody asks this question — and the answer changes how you see the ordinary version.`,
+      `${title} Stay with me, because the ending is not what you think.`
+    ],
+    beats: input.beats,
+    shotList: [
+      "Hook shot: " + firstSentence(premise),
+      ...input.beats.map(b => "Visual: " + firstSentence(b))
+    ],
+    captions: [
+      title,
+      "The answer is weirder than you expect.",
+      "Watch to the end for the twist."
+    ],
+    thumbnails: [
+      keywords || "WHAT IF",
+      "NOBODY ASKS THIS",
+      "WAIT FOR THE END"
+    ]
+  };
+}
+
+function bindBuilder() {
+  const dialog = $("builderDialog");
+  const form = $("builderForm");
+  const error = $("builderError");
+
+  const categorySelect = $("bCategory");
+  CATEGORIES.forEach(c => categorySelect.appendChild(el("option", { value: c, text: c })));
+
+  $("newScenarioBtn").addEventListener("click", () => {
+    form.reset();
+    error.textContent = "";
+    dialog.showModal();
+    $("bTitle").focus();
+  });
+
+  $("builderCancel").addEventListener("click", () => dialog.close());
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const beats = ["bBeat1", "bBeat2", "bBeat3", "bBeat4", "bBeat5"]
+      .map(id => $(id).value.trim())
+      .filter(Boolean);
+    const input = {
+      title: $("bTitle").value,
+      category: categorySelect.value,
+      glyph: $("bGlyph").value.trim(),
+      premise: $("bPremise").value,
+      tags: $("bTags").value.split(",").map(t => t.trim()).filter(Boolean),
+      beats
+    };
+    if (!input.title.trim()) { error.textContent = "Give it a title — the question is the video."; $("bTitle").focus(); return; }
+    if (!input.premise.trim()) { error.textContent = "Add a premise — one to three sentences setting up the idea."; $("bPremise").focus(); return; }
+    if (beats.length < 3) { error.textContent = "Write at least 3 beats — they become the narration."; $("bBeat1").focus(); return; }
+
+    const scenario = scaffoldScenario(input);
+    state.customScenarios.push(scenario);
+    persist();
+    dialog.close();
+
+    state.category = "All";
+    state.search = "";
+    $("searchInput").value = "";
+    renderCategoryChips();
+    renderLibrary();
+    selectScenario(scenario.id);
+    announce(`“${scenario.title}” added to your library.`);
+  });
+
+  $("deleteScenarioBtn").addEventListener("click", () => {
+    const scenario = getScenario(state.selectedId);
+    if (!scenario || !scenario.custom) return;
+    if (!window.confirm(`Delete your custom scenario “${scenario.title}”? Packages already saved to queue slots are kept.`)) return;
+    state.customScenarios = state.customScenarios.filter(s => s.id !== scenario.id);
+    state.selectedId = null;
+    state.pkg = null;
+    persist();
+    $("packageSection").hidden = true;
+    renderLibrary();
+    renderWorkspace();
+    announce("Custom scenario deleted.");
+  });
 }
 
 /* ============================================================
@@ -1934,6 +2076,7 @@ function init() {
   renderQueue();
   bindWorkspaceActions();
   bindGlobalActions();
+  bindBuilder();
 }
 
 document.addEventListener("DOMContentLoaded", init);

@@ -45,6 +45,8 @@
       <span id="libraryCount" class="panel-meta" aria-live="polite"></span>
     </div>
 
+    <button type="button" id="newScenarioBtn" class="btn btn-primary btn-wide builder-open">+ Create your own scenario</button>
+
     <div class="library-controls">
       <label class="field-label" for="searchInput">Search scenarios</label>
       <input type="search" id="searchInput" placeholder="Search titles, premises, tags…" autocomplete="off">
@@ -77,6 +79,7 @@
           <span id="bannerCategory" class="category-badge"></span>
           <h3 id="bannerTitle" class="banner-title"></h3>
         </div>
+        <button type="button" id="deleteScenarioBtn" class="btn btn-ghost btn-small btn-danger-text banner-delete" hidden>Delete</button>
       </div>
       <p id="bannerPremise" class="banner-premise"></p>
       <p id="bannerSafety" class="safety-note"></p>
@@ -149,6 +152,48 @@
   <p><strong>What If Studio</strong> runs 100% locally — no server, no account, no tracking, no remote content. Open <code>index.html</code> and it works.</p>
   <p>All scenarios are speculative fiction and thought experiments for entertainment. Publishing, performance, and monetization are up to you and your platforms — no growth is promised or automated here.</p>
 </footer>
+
+<dialog id="builderDialog" class="builder-dialog" aria-labelledby="builderHeading">
+  <form id="builderForm" novalidate>
+    <div class="panel-head">
+      <h2 id="builderHeading">Create your own scenario</h2>
+    </div>
+
+    <label class="field-label" for="bTitle">Title — the question</label>
+    <input type="text" id="bTitle" placeholder="What if …?" autocomplete="off">
+
+    <div class="builder-row">
+      <div>
+        <label class="field-label" for="bCategory">Category</label>
+        <select id="bCategory"></select>
+      </div>
+      <div>
+        <label class="field-label" for="bGlyph">Emoji (optional)</label>
+        <input type="text" id="bGlyph" maxlength="4" placeholder="✳️" autocomplete="off">
+      </div>
+    </div>
+
+    <label class="field-label" for="bPremise">Premise — 1–3 sentences setting up the idea</label>
+    <textarea id="bPremise" rows="3" placeholder="What's the situation, and why is it interesting?"></textarea>
+
+    <p class="field-label">Script beats — fill in at least 3. Each beat is ~10 seconds of narration and gets its own visual.</p>
+    <textarea id="bBeat1" rows="2" aria-label="Beat 1" placeholder="Beat 1 — the setup: what changes, concretely?"></textarea>
+    <textarea id="bBeat2" rows="2" aria-label="Beat 2" placeholder="Beat 2 — day one: the first thing everyone notices."></textarea>
+    <textarea id="bBeat3" rows="2" aria-label="Beat 3" placeholder="Beat 3 — the ripple: the effect nobody predicts."></textarea>
+    <textarea id="bBeat4" rows="2" aria-label="Beat 4 (optional)" placeholder="Beat 4 (optional) — the twist: the opposite of what you'd expect."></textarea>
+    <textarea id="bBeat5" rows="2" aria-label="Beat 5 (optional)" placeholder="Beat 5 (optional) — the payoff: what this reveals."></textarea>
+
+    <label class="field-label" for="bTags">Tags (optional, comma-separated)</label>
+    <input type="text" id="bTags" placeholder="e.g. space, future, everyday" autocomplete="off">
+
+    <p id="builderError" class="builder-error" role="alert"></p>
+
+    <div class="builder-actions">
+      <button type="button" id="builderCancel" class="btn btn-ghost">Cancel</button>
+      <button type="submit" class="btn btn-primary">Add to library</button>
+    </div>
+  </form>
+</dialog>
 
 <script src="app.js"></script>
 </body>
