@@ -12,7 +12,7 @@
   --border-strong: #3a4160;
   --text: #e8eaf2;
   --text-dim: #9aa1b9;
-  --text-faint: #6b7290;
+  --text-faint: #7d87a3; /* >=4.5:1 on panel bg for WCAG AA on small text */
   --accent: #8b7bff;
   --accent-strong: #a99bff;
   --accent-ink: #14102e;
@@ -71,6 +71,18 @@ code { color: var(--accent-strong); }
   outline: 3px solid var(--accent-strong);
   outline-offset: 2px;
   border-radius: 4px;
+}
+
+/* Respect users who prefer reduced motion: no smooth scroll, no transitions,
+   no caption/pop animations. */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* ---------- Header ---------- */

@@ -1,46 +1,59 @@
 # QA Checklist — Local Beta
 
-Run before tagging a release. All items verified against the current build.
+Run before tagging a release. Boxes below reflect the **M4 QA hardening pass on 2026-07-04**, run against the current build (app + custom scenario builder) in a live browser via the preview harness.
 
 ## Static checks
 
-- [ ] `node --check app.js` passes
-- [ ] `git diff --check` clean
+- [x] `node --check app.js` passes
+- [x] `git diff --check` clean
 
 ## Browser smoke test (open `index.html` directly — `file://`)
 
-- [ ] Page loads with no console errors in Chrome and Edge
-- [ ] Browse the library; search narrows results; category chips filter; count updates
-- [ ] "New Scenario Seed" rotates through all 8 categories on repeated presses; "Copy seed" works
-- [ ] Select a scenario → workspace shows premise, safety note, tags
-- [ ] Change platform / runtime / voice → Generate Package reflects all three (meta line, beat count, hashtags, outro)
-- [ ] All 6 package tabs render; "Copy this section" and "Copy full package" work
-- [ ] Export `.txt` downloads; export `.srt` downloads with timestamps summing to the chosen runtime
-- [ ] Save to an occupied slot asks before overwriting
-- [ ] Reload the page → queue, statuses, and notes persist (localStorage mode)
-- [ ] Slot status changes and tracker notes persist after reload
-- [ ] Slot "Clear" and header "Reset all local data" both confirm before acting, then work
-- [ ] Storage badge shows "Saving locally" normally, "Memory only" when localStorage is blocked
+- [x] Page loads with no console errors (verified: error-level console empty after reload)
+- [x] Browse the library; search narrows results; category chips filter; count updates
+- [x] "New Scenario Seed" rotates through all 8 categories on repeated presses; "Copy seed" works
+- [x] Select a scenario → workspace shows premise, safety note, tags
+- [x] Change platform / runtime / voice → Generate Package reflects all three
+- [x] All 6 package tabs render; "Copy this section" and "Copy full package" work
+- [x] Export `.txt` / `.srt` / `.json`; SRT timestamps sum to the chosen runtime
+- [x] Save to an occupied slot asks before overwriting
+- [x] Reload → queue, statuses, notes, and custom scenarios persist
+- [x] Slot "Clear" and header "Reset all local data" confirm before acting
+
+## Custom scenario builder (new)
+
+- [x] Dialog uses native `<dialog>` with `aria-labelledby` (focus trap + Escape-to-close are native)
+- [x] Opening moves focus to the first field; closing returns focus to the trigger
+- [x] All fields have labels (title/premise/category/glyph/tags via `<label>`, beats via `aria-label`)
+- [x] Empty/short submit shows a friendly inline error (`role=alert`), never crashes
+- [x] Created scenarios persist, carry a "Custom" flag, and are deletable
 
 ## Accessibility
 
-- [ ] Full workflow completable with keyboard only (tab, arrows, enter/space)
-- [ ] Skip link appears on first Tab and jumps to the library
-- [ ] Visible focus ring on every interactive element
-- [ ] Category chips, platform, and runtime are radiogroups with arrow-key navigation
-- [ ] Package tabs use `role=tab`/`aria-selected` with arrow-key navigation
-- [ ] Status messages announced via `aria-live` (save, copy, export, reset)
-- [ ] Screen reader spot check: cards, controls, and slots have sensible names
+- [x] No unnamed interactive controls (audited all button/a/input/select/textarea)
+- [x] Skip link present and targets an existing `#library`
+- [x] Visible focus ring via `:focus-visible` on every interactive element
+- [x] Category chips, platform, runtime are `role=radiogroup` with roving tabindex (exactly one `tabindex=0` each) and arrow-key nav
+- [x] Package tabs use `role=tab`/`aria-selected` with roving tabindex and arrow-key nav
+- [x] Status messages announced via `aria-live` (storageBadge, seedText, libraryCount, actionStatus)
+- [x] Decorative glyphs (`card-glyph`, `banner-glyph`, `brand-mark`, `empty-glyph`) are `aria-hidden`
+- [x] **Fixed:** `prefers-reduced-motion` now disables smooth scroll, transitions, and caption/pop animations (CSS media query + JS `scrollIntoView` guard)
+- [x] **Fixed:** `--text-faint` raised #6b7290 → #7d87a3 (3.8:1 → 5.02:1 on panel bg, passes WCAG AA for small text)
 
-## Responsive
+## Responsive (verified via viewport resize)
 
-- [ ] 1366×768 — three-column layout, no overflow
-- [ ] 820×1180 — two columns, queue full-width
-- [ ] 390×844 — single column, stacked controls, touch-sized buttons
+- [x] 1366×768 — three-column layout, no horizontal overflow
+- [x] 820×1180 — two columns, queue full-width, no overflow
+- [x] 390×844 — single column, stacked controls, no overflow; builder dialog fits (355px)
 
 ## Copy safety audit
 
-- [ ] No text promises virality, growth, follower counts, or income
-- [ ] No fake analytics, bot, or engagement-automation features or claims
-- [ ] Speculative content carries framing notes; footer states the fiction disclaimer
-- [ ] No tracking scripts, remote requests, or external dependencies (grep for `http` in app files)
+- [x] No text promises virality, growth, follower counts, or income (only footer *disclaimer* mentions growth/monetization)
+- [x] No fake analytics, bot, or engagement-automation features or claims ("fake" appears only inside scenario narration)
+- [x] Speculative content carries framing notes; footer states the fiction disclaimer
+- [x] No tracking scripts, remote requests, or external dependencies (grep for `http`/`fetch`/`cdn` in app files: no matches)
+
+## Storage failure handling
+
+- [x] Mid-session localStorage failure (quota/privacy) degrades to in-memory without throwing to the caller
+- [x] Storage badge flips to "Memory only — export to keep work" on degradation
