@@ -26,6 +26,12 @@ Pick a scenario, generate a complete production package (hooks, script beats, sh
 5. Export the `.srt` for captions, copy a caption option for the post.
 6. Save the package to a queue slot and update its status as you go.
 
+## Video pipeline (optional companion tool)
+
+The app stays a pure static page — but if you want finished, ready-to-post videos, the optional [pipeline](pipeline/README.md) turns queue exports into complete vertical `.mp4`s: AI voiceover (free Microsoft neural voices), background visuals (your stock footage, or auto-generated gradients in each scenario's colors), and word-synced captions burned in. Each video ships with a "post kit" text file holding captions, hashtags, and title ideas.
+
+Workflow: build your queue in the app → **Export queue (.json)** → `python make_videos.py whatifstudio-queue.json` → review → post. Nothing is uploaded automatically, and every post kit reminds you to enable the platform's AI-content disclosure. Setup instructions are in [pipeline/README.md](pipeline/README.md).
+
 ## Storage & recovery
 
 - Your queue, statuses, notes, and seed rotation are saved in **your browser's local storage on this device**. Nothing is sent anywhere.

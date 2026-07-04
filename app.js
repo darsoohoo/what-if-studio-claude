@@ -1323,6 +1323,7 @@ function buildPackage(scenario, options) {
     scenarioId: scenario.id,
     title: scenario.title,
     category: scenario.category,
+    colors: { from: scenario.image.from, to: scenario.image.to },
     platform: platform.label,
     aspect: platform.aspect,
     runtime: runtime.id,
@@ -1744,6 +1745,12 @@ function bindWorkspaceActions() {
     announce("Subtitles exported as .srt.");
   });
 
+  $("exportJsonBtn").addEventListener("click", () => {
+    if (!state.pkg) return;
+    downloadFile(slugify(state.pkg.title) + ".json", JSON.stringify(state.pkg, null, 2));
+    announce("Package exported as .json.");
+  });
+
   $("saveSlotBtn").addEventListener("click", () => {
     if (!state.pkg) return;
     const index = Number($("slotSelect").value);
@@ -1774,6 +1781,19 @@ function bindGlobalActions() {
   });
 
   $("resetAllBtn").addEventListener("click", resetAll);
+
+  $("exportQueueBtn").addEventListener("click", () => {
+    const items = state.queue
+      .map((slot, i) => slot.pkg ? { slot: i + 1, status: slot.status, notes: slot.notes, package: slot.pkg } : null)
+      .filter(Boolean);
+    if (!items.length) {
+      announce("Queue is empty — save a package to a slot first.");
+      return;
+    }
+    const payload = { app: "what-if-studio", format: 1, exportedAt: new Date().toISOString(), items };
+    downloadFile("whatifstudio-queue.json", JSON.stringify(payload, null, 2));
+    announce(`Queue exported — ${items.length} package${items.length === 1 ? "" : "s"}.`);
+  });
 
   bindArrowNav($("categoryChips"), ".chip", (item) => item.click());
   bindArrowNav($("platformGroup"), ".segment", (item) => item.click());
