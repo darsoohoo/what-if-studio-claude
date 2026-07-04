@@ -368,9 +368,71 @@ def segment_spans(segments, words, total):
     return spans
 
 
-def render_segment_clip(ffmpeg, visual, duration, out_path, index=0):
+CHART_ANIM = 1.4  # seconds to count up
+
+
+def detect_chart(beat_text):
+    """Return an animated-chart spec for the headline number in a beat, or None.
+    Kept conservative: one graphic per beat, only for clear, punchy numbers."""
+    t = beat_text
+    m = re.search(r"(\d+(?:\.\d+)?)\s*(?:%|percent\b)", t, re.I)
+    if m:
+        pct = float(m.group(1))
+        if 1 <= pct <= 100:
+            return {"kind": "bar", "target": int(round(pct)), "prefix": "", "suffix": "PERCENT", "pct": pct}
+    m = re.search(r"(\$)?\s*(\d[\d,]*(?:\.\d+)?)\s*(trillion|billion|million|thousand)\b", t, re.I)
+    if m:
+        coeff = float(m.group(2).replace(",", ""))
+        if coeff >= 1:
+            return {"kind": "counter", "target": int(round(coeff)),
+                    "prefix": "$" if m.group(1) else "", "suffix": m.group(3).upper()}
+    m = re.search(r"\$\s*(\d[\d,]*)\b", t)
+    if m:
+        return {"kind": "counter", "target": int(m.group(1).replace(",", "")), "prefix": "$", "suffix": ""}
+    m = re.search(r"\b(\d[\d,]*)\s*(days?|years?|hours?|minutes?|seconds?|kilometres?|kilometers?|km|miles?|metres?|meters?|degrees?)\b", t, re.I)
+    if m:
+        val = int(m.group(1).replace(",", ""))
+        if 2 <= val <= 100000:
+            return {"kind": "counter", "target": val, "prefix": "", "suffix": m.group(2).upper()}
+    for m in re.finditer(r"\b(\d[\d,]{3,})\b", t):
+        digits = m.group(1).replace(",", "")
+        val = int(digits)
+        if len(digits) == 4 and 1000 <= val <= 2099:
+            continue  # looks like a year - a counter ticking up a year reads badly
+        return {"kind": "counter", "target": val, "prefix": "", "suffix": ""}
+    return None
+
+
+def chart_overlay_vf(spec, duration, font_ff):
+    """ffmpeg filter fragment: a counter that ticks up (+ a bar for percentages)."""
+    anim = min(CHART_ANIM, max(0.6, duration * 0.7))
+    tgt = spec["target"]
+    count = f"%{{eif\\:min({tgt}\\,{tgt}*t/{anim})\\:d}}"
+    number = spec["prefix"] + count
+    parts = [
+        f"drawtext=fontfile={font_ff}:text='{number}':fontsize=210:fontcolor=white:"
+        f"borderw=10:bordercolor=black:x=(w-tw)/2:y=420"
+    ]
+    if spec["suffix"]:
+        parts.append(
+            f"drawtext=fontfile={font_ff}:text='{spec['suffix']}':fontsize=78:fontcolor=0xF5C400:"
+            f"borderw=6:bordercolor=black:x=(w-tw)/2:y=690"
+        )
+    if spec["kind"] == "bar":
+        trackw, barh, bary = 760, 44, 830
+        trackx = (WIDTH - trackw) // 2
+        frac = spec["pct"] / 100.0
+        parts.append(f"drawbox=x={trackx}:y={bary}:w={trackw}:h={barh}:color=0x333333@0.85:t=fill")
+        parts.append(f"drawbox=x={trackx}:y={bary}:w='{trackw}*{frac:.4f}*min(1\\,t/{anim})':h={barh}:color=0xF5C400:t=fill")
+    return ",".join(parts)
+
+
+def render_segment_clip(ffmpeg, visual, duration, out_path, index=0, chart=None, font_ff=None, cwd=None):
     """Scale/crop one visual to a full-frame vertical clip of the given length.
-    Still images get an alternating camera move (in / pan / out / pan back)."""
+    Still images get an alternating camera move (in / pan / out / pan back).
+    If a chart spec is given, an animated counter/bar is overlaid.
+    `cwd` lets the chart drawtext reference the font by bare filename, avoiding
+    the Windows drive-letter colon that breaks ffmpeg's filtergraph parser."""
     base = (f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
             f"crop={WIDTH}:{HEIGHT},setsar=1,fps={FPS}")
     if visual.suffix.lower() in IMAGE_EXTS:
@@ -387,20 +449,25 @@ def render_segment_clip(ffmpeg, visual, duration, out_path, index=0):
     else:
         loop = ["-stream_loop", "-1"]
         vf = base
-    run([ffmpeg, "-y", *loop, "-i", str(visual), "-t", f"{duration:.2f}", "-vf", vf, "-an",
-         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", str(out_path)])
+    if chart and font_ff:
+        vf += "," + chart_overlay_vf(chart, duration, font_ff)
+    run([ffmpeg, "-y", *loop, "-i", str(Path(visual).resolve()), "-t", f"{duration:.2f}", "-vf", vf, "-an",
+         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", str(out_path)], cwd=cwd)
 
 
-def build_clip_base(ffmpeg, visuals, spans, tmp):
+def build_clip_base(ffmpeg, visuals, spans, tmp, charts=None, font_ff=None):
     """One clip per beat with alternating motion, joined by crossfades.
     Segments before the last are rendered XFADE_DUR longer so the fades
-    consume the extra tail and the visual timeline stays in sync with audio."""
+    consume the extra tail and the visual timeline stays in sync with audio.
+    `charts` (aligned to spans) overlays an animated number on chart beats."""
     durs = [round(max(0.4, end - start), 2) for start, end in spans]
     seg_files = []
     for i, dur in enumerate(durs):
         seg = tmp / f"seg_{i:02d}.mp4"
         extra = XFADE_DUR if i < len(durs) - 1 else 0.5
-        render_segment_clip(ffmpeg, visuals[i % len(visuals)], dur + extra, seg, index=i)
+        chart = charts[i] if charts and i < len(charts) else None
+        render_segment_clip(ffmpeg, visuals[i % len(visuals)], dur + extra, seg, index=i,
+                            chart=chart, font_ff=font_ff, cwd=tmp)
         seg_files.append(seg)
 
     if len(seg_files) == 1:
@@ -510,6 +577,8 @@ def main():
                         help="Look of generated AI visuals (default: cinematic)")
     parser.add_argument("--ai-cache", default="ai-visuals",
                         help="Cache folder for generated images (default: ai-visuals)")
+    parser.add_argument("--charts", action="store_true",
+                        help="Overlay an animated counter/bar on beats with a headline number (needs per-beat visuals)")
     parser.add_argument("--hook", type=int, default=1, choices=[1, 2, 3],
                         help="Which of the 3 hooks opens the video (default: 1)")
     parser.add_argument("--voice", help="Override edge-tts voice for all items")
@@ -582,10 +651,27 @@ def main():
                     print(f"  generating AI visuals ({args.ai_style})...")
                     item_visuals = generate_ai_visuals(pkg, len(segments), args.ai_style, args.ai_cache)
 
+                charts = None
+                if args.charts:
+                    # Charts only on body beats (skip hook/segment 0 and the outro,
+                    # which the title card and CTA card own).
+                    charts = [None] * len(segments)
+                    hits = 0
+                    for i in range(1, len(segments) - 1):
+                        spec = detect_chart(segments[i])
+                        charts[i] = spec
+                        if spec:
+                            hits += 1
+                    print(f"  charts: {hits} beat(s) with an animated number")
+                # Bare filename works because segment clips render with cwd=tmp,
+                # where the font was copied; an absolute Windows path's drive
+                # colon breaks the ffmpeg filtergraph parser.
+                font_ff = CAPTION_FONT_FILE.name if CAPTION_FONT_FILE.exists() else None
+
                 base = None
                 if len(item_visuals) > 1:
                     spans = segment_spans(segments, words, total)
-                    base = build_clip_base(ffmpeg, item_visuals, spans, tmp)
+                    base = build_clip_base(ffmpeg, item_visuals, spans, tmp, charts=charts, font_ff=font_ff)
                     print(f"  visuals: {len(spans)} beat clips from {len(item_visuals)} source file(s)")
                 elif len(item_visuals) == 1:
                     seg = tmp / "base.mp4"

@@ -17,6 +17,12 @@ python make_videos.py queue.json --ai-visuals --ai-style infographic # flat corp
 
 To regenerate a scenario's images (new random look), delete its folder in `ai-visuals/`. AI images make the whole video AI-generated content — the disclosure reminder in each post kit covers this.
 
+**Animated charts** (`--charts`): beats whose narration contains a headline number get an animated graphic overlaid — a counter that ticks up ("8 → BILLION", "$50 MILLION", "30 DAYS") or, for percentages, a number plus a filling bar ("80 PERCENT"). Detection is conservative: one graphic per beat, only clear numbers, and it skips the hook and outro (owned by the title/CTA cards) and bare years. Needs per-beat visuals, so pair it with `--ai-visuals` or a multi-file `backgrounds/` folder:
+
+```
+python make_videos.py queue.json --ai-visuals --charts
+```
+
 The app never requires this tool — it stays a plain static page. This is the "hands-off production" add-on.
 
 ## One-time setup (Windows)
