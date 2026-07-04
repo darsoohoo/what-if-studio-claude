@@ -82,6 +82,10 @@ CAP_FONTSIZE = 92
 CAP_MAX_WORDS = 3           # words visible per phrase
 CAP_Y = 1200                # caption anchor (of 1920) - lower third
 
+TITLE_SECONDS = 2.2         # title card hold at the top of the video
+CTA_SECONDS = 2.6           # closing follow-card during the outro
+XFADE_DUR = 0.25            # crossfade length between beat clips
+
 # ---------------------------------------------------------------- helpers
 
 
@@ -192,8 +196,15 @@ def group_phrases(words, max_words=CAP_MAX_WORDS, max_gap=0.55):
     return phrases
 
 
-def words_to_ass(words):
-    """Modern captions: short phrases; the spoken word pops yellow + scales."""
+def sanitize_card_text(text):
+    """Card text: plain uppercase, no emoji, safe for ASS dialogue."""
+    text = re.sub(r"[\U0001F000-\U0001FAFF←-⇿☀-➿️]", "", str(text))
+    return re.sub(r"\s+", " ", text).strip().upper()
+
+
+def words_to_ass(words, pkg=None, total=None):
+    """Modern captions: short phrases; the spoken word pops yellow + scales.
+    Also lays a title card over the hook and a follow-card over the outro."""
     header = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {WIDTH}
@@ -205,6 +216,8 @@ YCbCr Matrix: TV.709
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Cap,{CAPTION_FONT_NAME},{CAP_FONTSIZE},{CAP_WHITE},{CAP_WHITE},&H00101010,&H90000000,0,0,0,0,100,100,1,0,1,7,2,5,60,60,0,1
+Style: Title,{CAPTION_FONT_NAME},112,{CAP_HL},{CAP_HL},&H00101010,&H90000000,0,0,0,0,100,100,1,0,1,9,3,8,70,70,360,1
+Style: CTA,{CAPTION_FONT_NAME},62,{CAP_WHITE},{CAP_WHITE},&H00101010,&H90000000,0,0,0,0,100,100,1,0,1,6,2,8,90,90,430,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -227,6 +240,17 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     for i, (start, text) in enumerate(events):
         end = events[i + 1][0] if i + 1 < len(events) else start + 0.6
         lines.append(f"Dialogue: 0,{ass_time(start)},{ass_time(end)},Cap,,0,0,0,,{text}")
+
+    if pkg:
+        title = sanitize_card_text((pkg.get("thumbnails") or [pkg.get("title", "")])[0])
+        if title:
+            fx = r"{\fad(120,200)\fscx80\fscy80\t(0,150,\fscx100\fscy100)}"
+            lines.append(f"Dialogue: 1,{ass_time(0)},{ass_time(TITLE_SECONDS)},Title,,0,0,0,,{fx}{title}")
+    if total and total > 12:
+        cta_start = max(0.0, total - CTA_SECONDS)
+        fx = r"{\fad(250,0)}"
+        lines.append(f"Dialogue: 1,{ass_time(cta_start)},{ass_time(total + 0.3)},CTA,,0,0,0,,{fx}FOLLOW FOR THE NEXT WHAT-IF")
+
     return header + "\n".join(lines) + "\n"
 
 
@@ -311,30 +335,58 @@ def segment_spans(segments, words, total):
     return spans
 
 
-def render_segment_clip(ffmpeg, visual, duration, out_path):
-    """Scale/crop one visual to a full-frame vertical clip of the given length."""
-    loop = ["-loop", "1"] if visual.suffix.lower() in IMAGE_EXTS else ["-stream_loop", "-1"]
-    vf = (f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
-          f"crop={WIDTH}:{HEIGHT},setsar=1,fps={FPS},"
-          f"zoompan=z='min(zoom+0.0006,1.10)':d={int(duration * FPS) + 1}:s={WIDTH}x{HEIGHT}:fps={FPS}"
-          if visual.suffix.lower() in IMAGE_EXTS else
-          f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,crop={WIDTH}:{HEIGHT},setsar=1,fps={FPS}")
+def render_segment_clip(ffmpeg, visual, duration, out_path, index=0):
+    """Scale/crop one visual to a full-frame vertical clip of the given length.
+    Still images get an alternating camera move (in / pan / out / pan back)."""
+    base = (f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
+            f"crop={WIDTH}:{HEIGHT},setsar=1,fps={FPS}")
+    if visual.suffix.lower() in IMAGE_EXTS:
+        loop = ["-loop", "1"]
+        frames = int(duration * FPS) + 1
+        center = "x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+        moves = [
+            f"zoompan=z='min(zoom+0.0006,1.10)':{center}",                          # slow push in
+            f"zoompan=z=1.08:x='(iw-iw/zoom)*on/{frames}':y='ih/2-(ih/zoom/2)'",    # drift right
+            f"zoompan=z='max(1.001,1.10-0.0007*on)':{center}",                      # pull back
+            f"zoompan=z=1.08:x='(iw-iw/zoom)*(1-on/{frames})':y='ih/2-(ih/zoom/2)'",# drift left
+        ]
+        vf = base + "," + moves[index % len(moves)] + f":d={frames}:s={WIDTH}x{HEIGHT}:fps={FPS}"
+    else:
+        loop = ["-stream_loop", "-1"]
+        vf = base
     run([ffmpeg, "-y", *loop, "-i", str(visual), "-t", f"{duration:.2f}", "-vf", vf, "-an",
          "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", str(out_path)])
 
 
 def build_clip_base(ffmpeg, visuals, spans, tmp):
-    """One clip per beat, in order, concatenated into a single base video."""
+    """One clip per beat with alternating motion, joined by crossfades.
+    Segments before the last are rendered XFADE_DUR longer so the fades
+    consume the extra tail and the visual timeline stays in sync with audio."""
+    durs = [round(max(0.4, end - start), 2) for start, end in spans]
     seg_files = []
-    for i, (start, end) in enumerate(spans):
+    for i, dur in enumerate(durs):
         seg = tmp / f"seg_{i:02d}.mp4"
-        render_segment_clip(ffmpeg, visuals[i % len(visuals)], max(0.4, end - start), seg)
+        extra = XFADE_DUR if i < len(durs) - 1 else 0.5
+        render_segment_clip(ffmpeg, visuals[i % len(visuals)], dur + extra, seg, index=i)
         seg_files.append(seg)
-    listf = tmp / "concat.txt"
-    listf.write_text("".join(f"file '{f.name}'\n" for f in seg_files), encoding="utf-8")
-    base = tmp / "base.mp4"
-    run([ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", "concat.txt", "-c", "copy", "base.mp4"], cwd=tmp)
-    return base
+
+    if len(seg_files) == 1:
+        return seg_files[0]
+
+    inputs = []
+    for f in seg_files:
+        inputs += ["-i", f.name]
+    chain = []
+    prev = "[0:v]"
+    offset = 0.0
+    for i in range(1, len(seg_files)):
+        offset += durs[i - 1]
+        label = f"[x{i}]"
+        chain.append(f"{prev}[{i}:v]xfade=transition=fade:duration={XFADE_DUR}:offset={offset:.2f}{label}")
+        prev = label
+    run([ffmpeg, "-y", *inputs, "-filter_complex", ";".join(chain), "-map", prev,
+         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "base.mp4"], cwd=tmp)
+    return tmp / "base.mp4"
 
 
 def final_render(ffmpeg, base, pkg, total, has_music, out_path, tmp):
@@ -480,8 +532,8 @@ def main():
                     shutil.copy(CAPTION_FONT_FILE, tmp / CAPTION_FONT_FILE.name)
 
                 words = asyncio.run(synthesize(text, vconf, tmp / "voice.mp3"))
-                (tmp / "subs.ass").write_text(words_to_ass(words), encoding="utf-8")
                 total = probe_duration(ffprobe, tmp / "voice.mp3")
+                (tmp / "subs.ass").write_text(words_to_ass(words, pkg, total), encoding="utf-8")
                 print(f"  voice: {vconf['voice']} ({vconf['rate']}, {vconf['pitch']}) - {total:.1f}s")
 
                 item_visuals = visuals
