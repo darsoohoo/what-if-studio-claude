@@ -3,8 +3,9 @@
 What If Studio - companion video pipeline.
 
 Turns a queue export from the app (whatifstudio-queue.json) into finished
-vertical videos: AI voiceover (Microsoft neural voices via edge-tts) +
-background visuals + word-synced burned-in captions, rendered with ffmpeg.
+vertical videos: AI voiceover (Microsoft neural voices via edge-tts),
+per-beat visuals, and modern word-by-word "pop" captions, rendered with
+ffmpeg.
 
 This tool is OPTIONAL and lives alongside the static app. The app itself
 never requires it. Nothing here posts anywhere - you review and upload
@@ -15,8 +16,13 @@ Usage:
     python make_videos.py package.json --hook 2
     python make_videos.py queue.json --backgrounds backgrounds --music music
 
+Visuals: drop clips/images in the backgrounds folder. If there are several,
+each script beat gets its own clip in order (great for "one example per
+beat" videos). With one file it is used throughout; with none, an animated
+gradient in the scenario's colors is generated.
+
 Requirements: Python 3.9+, `pip install -r requirements.txt`, ffmpeg on PATH
-(or installed via winget - it is auto-detected). edge-tts needs internet.
+(auto-detected if installed via winget). edge-tts needs internet.
 """
 
 import argparse
@@ -44,6 +50,9 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 AUDIO_EXTS = {".mp3", ".m4a", ".wav", ".ogg", ".flac"}
 
 WIDTH, HEIGHT, FPS = 1080, 1920, 30
+ASSETS = Path(__file__).resolve().parent / "assets"
+CAPTION_FONT_FILE = ASSETS / "Poppins-ExtraBold.ttf"
+CAPTION_FONT_NAME = "Poppins ExtraBold"
 
 # App voice style -> edge-tts voice + delivery tweaks
 VOICE_MAP = {
@@ -53,11 +62,12 @@ VOICE_MAP = {
 }
 DEFAULT_VOICE = {"voice": "en-US-ChristopherNeural", "rate": "+0%", "pitch": "+0Hz"}
 
-SUB_STYLE = (
-    "Fontname=Arial,FontSize=15,Bold=1,"
-    "PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,"
-    "Outline=2,Shadow=0,Alignment=10,MarginL=40,MarginR=40"
-)
+# Modern caption look (ASS): white words, spoken word pops to yellow.
+CAP_WHITE = r"&H00FFFFFF&"
+CAP_HL = r"&H0000D4FF&"      # bright yellow (ASS is &HAABBGGRR)
+CAP_FONTSIZE = 92
+CAP_MAX_WORDS = 3           # words visible per phrase
+CAP_Y = 1200                # caption anchor (of 1920) - lower third
 
 # ---------------------------------------------------------------- helpers
 
@@ -77,6 +87,13 @@ def find_tool(name):
     sys.exit(f"{name} not found. Install it (winget install Gyan.FFmpeg) or add it to PATH.")
 
 
+def run(cmd, cwd=None):
+    result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError("ffmpeg/ffprobe failed:\n" + (result.stderr or result.stdout)[-1500:])
+    return result
+
+
 def slugify(text):
     slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
     return slug[:60] or "package"
@@ -84,15 +101,16 @@ def slugify(text):
 
 def clean_for_tts(text):
     """Strip emoji/symbols the voice would mangle; keep normal punctuation."""
-    text = re.sub(r"[\U0001F000-\U0001FAFF☀-➿️]", "", text)
+    text = re.sub(r"[\U0001F000-\U0001FAFF←-⇿☀-➿️]", "", text)
     return re.sub(r"\s+", " ", text).strip()
 
 
-def narration_text(pkg, hook_index):
+def narration_segments(pkg, hook_index):
+    """Ordered spoken segments: [hook, *beats, outro] (non-empty, cleaned)."""
     hooks = pkg.get("hooks", [])
     hook = hooks[min(hook_index, len(hooks) - 1)] if hooks else ""
-    parts = [hook] + list(pkg.get("beats", [])) + [pkg.get("outro", "")]
-    return " ".join(clean_for_tts(p) for p in parts if p and p.strip())
+    raw = [hook] + list(pkg.get("beats", [])) + [pkg.get("outro", "")]
+    return [clean_for_tts(p) for p in raw if p and p.strip()]
 
 
 def hex_to_ffmpeg(color, fallback):
@@ -101,16 +119,26 @@ def hex_to_ffmpeg(color, fallback):
     return fallback
 
 
-def srt_time(seconds):
-    ms = max(0, int(round(seconds * 1000)))
-    return f"{ms // 3600000:02d}:{ms % 3600000 // 60000:02d}:{ms % 60000 // 1000:02d},{ms % 1000:03d}"
+def pick_file(directory, exts):
+    folder = Path(directory) if directory else None
+    if not folder or not folder.is_dir():
+        return None
+    files = sorted(f for f in folder.iterdir() if f.suffix.lower() in exts)
+    return random.choice(files) if files else None
 
 
-# ---------------------------------------------------------------- TTS + subs
+def list_visuals(directory):
+    folder = Path(directory) if directory else None
+    if not folder or not folder.is_dir():
+        return []
+    return sorted(f for f in folder.iterdir() if f.suffix.lower() in (VIDEO_EXTS | IMAGE_EXTS))
+
+
+# ---------------------------------------------------------------- TTS + captions
 
 
 async def synthesize(text, vconf, mp3_path):
-    """Generate speech and collect word-boundary timings (100ns ticks)."""
+    """Generate speech and collect per-word timings (needs WordBoundary)."""
     communicate = edge_tts.Communicate(text, vconf["voice"], rate=vconf["rate"], pitch=vconf["pitch"],
                                        boundary="WordBoundary")
     words = []
@@ -127,115 +155,171 @@ async def synthesize(text, vconf, mp3_path):
     return words
 
 
-def words_to_srt(words, max_words=4, max_gap=0.6, tail_pad=0.15):
-    """Group word timings into short phrase cues (TikTok-style captions)."""
-    cues = []
-    current = []
-    for i, (start, end, word) in enumerate(words):
-        if current:
-            prev_end = current[-1][1]
-            sentence_break = current[-1][2].rstrip('"”’').endswith((".", "!", "?", ":"))
-            if len(current) >= max_words or (start - prev_end) > max_gap or sentence_break:
-                cues.append(current)
-                current = []
-        current.append((start, end, word))
-    if current:
-        cues.append(current)
+def ass_time(seconds):
+    cs = max(0, int(round(seconds * 100)))
+    h = cs // 360000
+    m = cs % 360000 // 6000
+    s = cs % 6000 // 100
+    c = cs % 100
+    return f"{h}:{m:02d}:{s:02d}.{c:02d}"
+
+
+def group_phrases(words, max_words=CAP_MAX_WORDS, max_gap=0.55):
+    phrases, cur = [], []
+    for start, end, word in words:
+        if cur:
+            prev_end = cur[-1][1]
+            sentence_break = cur[-1][2].rstrip('"”’').endswith((".", "!", "?", ":", ","))
+            if len(cur) >= max_words or (start - prev_end) > max_gap or sentence_break:
+                phrases.append(cur)
+                cur = []
+        cur.append((start, end, word))
+    if cur:
+        phrases.append(cur)
+    return phrases
+
+
+def words_to_ass(words):
+    """Modern captions: short phrases; the spoken word pops yellow + scales."""
+    header = f"""[Script Info]
+ScriptType: v4.00+
+PlayResX: {WIDTH}
+PlayResY: {HEIGHT}
+WrapStyle: 1
+ScaledBorderAndShadow: yes
+YCbCr Matrix: TV.709
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Cap,{CAPTION_FONT_NAME},{CAP_FONTSIZE},{CAP_WHITE},{CAP_WHITE},&H00101010,&H90000000,0,0,0,0,100,100,1,0,1,7,2,5,60,60,0,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+    # Flatten to one caption event per word so we can butt each event exactly
+    # against the next (no overlap, no gap -> no doubled/garbled frames).
+    events = []
+    for phrase in group_phrases(words):
+        for k, (start, _, _) in enumerate(phrase):
+            parts = []
+            for j, (_, _, w) in enumerate(phrase):
+                token = w.upper()
+                parts.append(f"{{\\c{CAP_HL}}}{token}{{\\c{CAP_WHITE}}}" if j == k else token)
+            tags = f"\\an5\\pos({WIDTH // 2},{CAP_Y})"
+            if k == 0:  # entrance pop only when a new phrase appears
+                tags += "\\fad(70,0)\\fscx78\\fscy78\\t(0,120,\\fscx100\\fscy100)"
+            events.append([start, f"{{{tags}}}" + " ".join(parts)])
 
     lines = []
-    for i, cue in enumerate(cues):
-        start = cue[0][0]
-        end = cue[-1][1] + tail_pad
-        if i + 1 < len(cues):
-            end = min(end, cues[i + 1][0][0] - 0.01)
-        text = " ".join(w for _, _, w in cue)
-        lines.append(f"{i + 1}\n{srt_time(start)} --> {srt_time(end)}\n{text}\n")
-    return "\n".join(lines)
+    for i, (start, text) in enumerate(events):
+        end = events[i + 1][0] if i + 1 < len(events) else start + 0.6
+        lines.append(f"Dialogue: 0,{ass_time(start)},{ass_time(end)},Cap,,0,0,0,,{text}")
+    return header + "\n".join(lines) + "\n"
 
 
-# ---------------------------------------------------------------- rendering
+# ---------------------------------------------------------------- visuals
 
 
 def probe_duration(ffprobe, media_path):
-    out = subprocess.run(
-        [ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(media_path)],
-        capture_output=True, text=True, check=True
-    )
+    out = run([ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(media_path)])
     return float(out.stdout.strip())
 
 
-def pick_file(directory, exts):
-    if not directory:
-        return None
-    folder = Path(directory)
-    if not folder.is_dir():
-        return None
-    files = [f for f in folder.iterdir() if f.suffix.lower() in exts]
-    return random.choice(files) if files else None
+def segment_spans(segments, words, total):
+    """Map each spoken segment to a (start, end) time span using word counts."""
+    counts = [max(1, len(clean_for_tts(s).split())) for s in segments]
+    boundaries, cum = [0], 0
+    for c in counts:
+        cum += c
+        boundaries.append(min(cum, len(words)))
+    spans = []
+    for i in range(len(segments)):
+        wi_s, wi_e = boundaries[i], boundaries[i + 1]
+        start = 0.0 if i == 0 else (words[wi_s][0] if wi_s < len(words) else total)
+        end = total if i == len(segments) - 1 else (words[wi_e][0] if wi_e < len(words) else total)
+        if end <= start:
+            end = start + 0.5
+        spans.append((start, end))
+    return spans
 
 
-def build_ffmpeg_command(ffmpeg, pkg, mp3_path, srt_name, out_path, duration, background, music):
-    total = duration + 0.4
+def render_segment_clip(ffmpeg, visual, duration, out_path):
+    """Scale/crop one visual to a full-frame vertical clip of the given length."""
+    loop = ["-loop", "1"] if visual.suffix.lower() in IMAGE_EXTS else ["-stream_loop", "-1"]
+    vf = (f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
+          f"crop={WIDTH}:{HEIGHT},setsar=1,fps={FPS},"
+          f"zoompan=z='min(zoom+0.0006,1.10)':d={int(duration * FPS) + 1}:s={WIDTH}x{HEIGHT}:fps={FPS}"
+          if visual.suffix.lower() in IMAGE_EXTS else
+          f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,crop={WIDTH}:{HEIGHT},setsar=1,fps={FPS}")
+    run([ffmpeg, "-y", *loop, "-i", str(visual), "-t", f"{duration:.2f}", "-vf", vf, "-an",
+         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", str(out_path)])
 
-    if background and background.suffix.lower() in IMAGE_EXTS:
-        bg_args = ["-loop", "1", "-i", str(background)]
-    elif background:
-        bg_args = ["-stream_loop", "-1", "-i", str(background)]
+
+def build_clip_base(ffmpeg, visuals, spans, tmp):
+    """One clip per beat, in order, concatenated into a single base video."""
+    seg_files = []
+    for i, (start, end) in enumerate(spans):
+        seg = tmp / f"seg_{i:02d}.mp4"
+        render_segment_clip(ffmpeg, visuals[i % len(visuals)], max(0.4, end - start), seg)
+        seg_files.append(seg)
+    listf = tmp / "concat.txt"
+    listf.write_text("".join(f"file '{f.name}'\n" for f in seg_files), encoding="utf-8")
+    base = tmp / "base.mp4"
+    run([ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", "concat.txt", "-c", "copy", "base.mp4"], cwd=tmp)
+    return base
+
+
+def final_render(ffmpeg, base, pkg, total, has_music, out_path, tmp):
+    """Overlay captions and mix audio onto the base video (or a gradient)."""
+    if base is not None:
+        video_in = ["-i", base.name]
     else:
         colors = pkg.get("colors") or {}
         c0 = hex_to_ffmpeg(colors.get("from"), "0x151a30")
         c1 = hex_to_ffmpeg(colors.get("to"), "0x6a5ae0")
-        bg_args = ["-f", "lavfi", "-i",
-                   f"gradients=s={WIDTH}x{HEIGHT}:c0={c0}:c1={c1}:speed=0.015:rate={FPS}"]
+        video_in = ["-f", "lavfi", "-i",
+                    f"gradients=s={WIDTH}x{HEIGHT}:c0={c0}:c1={c1}:speed=0.012:rate={FPS}"]
 
-    cmd = [ffmpeg, "-y", *bg_args, "-i", str(mp3_path)]
-    filters = [
-        f"[0:v]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
-        f"crop={WIDTH}:{HEIGHT},setsar=1,fps={FPS},"
-        f"subtitles={srt_name}:force_style='{SUB_STYLE}'[v]"
-    ]
-
-    if music:
-        cmd += ["-i", str(music)]
+    inputs = [*video_in, "-i", "voice.mp3"]
+    filters = ["[0:v]ass=subs.ass:fontsdir=.[v]"]
+    music_files = list(Path(tmp).glob("music.*"))
+    if has_music and music_files:
+        inputs += ["-i", music_files[0].name]
         filters.append("[1:a]apad[va];[2:a]volume=0.12[m];[va][m]amix=inputs=2:duration=first:normalize=0[a]")
-        audio_map = "[a]"
     else:
         filters.append("[1:a]apad[a]")
-        audio_map = "[a]"
 
-    cmd += [
-        "-filter_complex", ";".join(filters),
-        "-map", "[v]", "-map", audio_map,
-        "-t", f"{total:.2f}",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-b:a", "192k",
-        "-movflags", "+faststart",
-        str(out_path),
-    ]
-    return cmd
+    cmd = [ffmpeg, "-y", *inputs, "-filter_complex", ";".join(filters),
+           "-map", "[v]", "-map", "[a]", "-t", f"{total + 0.3:.2f}",
+           "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+           "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(out_path)]
+    run(cmd, cwd=tmp)
+
+
+# ---------------------------------------------------------------- post kit
 
 
 def post_kit_text(pkg, item, hook_index):
-    lines = []
-    lines.append(f"POST KIT - {pkg.get('title', 'untitled')}")
-    lines.append(f"Platform: {pkg.get('platform', '?')} | Runtime setting: {pkg.get('runtimeLabel', '?')} | Voice: {pkg.get('voice', '?')}")
-    lines.append(f"Hook used in video: #{hook_index + 1}")
-    lines.append("")
-    lines.append("CAPTION OPTIONS (paste one):")
+    lines = [
+        f"POST KIT - {pkg.get('title', 'untitled')}",
+        f"Platform: {pkg.get('platform', '?')} | Runtime setting: {pkg.get('runtimeLabel', '?')} | Voice: {pkg.get('voice', '?')}",
+        f"Hook used in video: #{hook_index + 1}",
+        "",
+        "CAPTION OPTIONS (paste one):",
+    ]
     for i, cap in enumerate(pkg.get("captions", []), 1):
-        lines.append(f"{i}. {cap}")
-        lines.append("")
+        lines += [f"{i}. {cap}", ""]
     lines.append("TITLE / THUMBNAIL TEXT IDEAS:")
-    for t in pkg.get("thumbnails", []):
-        lines.append(f'- "{t}"')
+    lines += [f'- "{t}"' for t in pkg.get("thumbnails", [])]
     lines.append("")
     if item.get("notes"):
-        lines.append(f"YOUR QUEUE NOTES: {item['notes']}")
-        lines.append("")
-    lines.append("BEFORE POSTING:")
-    lines.append("- Watch the whole video once. You are the editor of record.")
-    lines.append("- Enable the platform's AI-generated content disclosure (AI voice).")
-    lines.append(f"- Safety framing for this scenario: {pkg.get('safety', '')}")
+        lines += [f"YOUR QUEUE NOTES: {item['notes']}", ""]
+    lines += [
+        "BEFORE POSTING:",
+        "- Watch the whole video once. You are the editor of record.",
+        "- Enable the platform's AI-generated content disclosure (AI voice).",
+        f"- Safety framing for this scenario: {pkg.get('safety', '')}",
+    ]
     return "\n".join(lines)
 
 
@@ -244,9 +328,9 @@ def post_kit_text(pkg, item, hook_index):
 
 def load_items(path):
     data = json.loads(Path(path).read_text(encoding="utf-8"))
-    if isinstance(data, dict) and "items" in data:          # queue export
-        return [(item.get("slot", i + 1), item, item["package"]) for i, item in enumerate(data["items"])]
-    if isinstance(data, dict) and "hooks" in data:          # single package export
+    if isinstance(data, dict) and "items" in data:
+        return [(it.get("slot", i + 1), it, it["package"]) for i, it in enumerate(data["items"])]
+    if isinstance(data, dict) and "hooks" in data:
         return [(1, {}, data)]
     sys.exit("Unrecognized JSON - export it from the app (Export queue / Export .json).")
 
@@ -257,16 +341,18 @@ def main():
                         help="Queue or package .json exported from the app")
     parser.add_argument("--out", default="output", help="Output folder (default: output)")
     parser.add_argument("--backgrounds", default="backgrounds",
-                        help="Folder of background videos/images; if empty, animated gradients are generated")
-    parser.add_argument("--music", default="music",
-                        help="Folder of background music; if empty, no music is mixed")
+                        help="Folder of visuals; several files = one clip per beat, in order")
+    parser.add_argument("--music", default="music", help="Folder of background music (optional)")
     parser.add_argument("--hook", type=int, default=1, choices=[1, 2, 3],
                         help="Which of the 3 hooks opens the video (default: 1)")
-    parser.add_argument("--voice", help="Override edge-tts voice for all items (e.g. en-US-AriaNeural)")
+    parser.add_argument("--voice", help="Override edge-tts voice for all items")
     parser.add_argument("--rate", help="Override speech rate, e.g. +10%%")
     parser.add_argument("--pitch", help="Override speech pitch, e.g. -2Hz")
     parser.add_argument("--slots", help="Only render these queue slots, e.g. 1,3,4")
     args = parser.parse_args()
+
+    if not CAPTION_FONT_FILE.exists():
+        print(f"Note: caption font missing at {CAPTION_FONT_FILE}; captions may fall back to a default font.")
 
     ffmpeg = find_tool("ffmpeg")
     ffprobe = find_tool("ffprobe")
@@ -281,8 +367,12 @@ def main():
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
     hook_index = args.hook - 1
+    visuals = list_visuals(args.backgrounds)
 
-    print(f"Rendering {len(items)} video(s) -> {out_dir.resolve()}\n")
+    print(f"Rendering {len(items)} video(s) -> {out_dir.resolve()}")
+    print(f"Visuals: {len(visuals)} file(s) in '{args.backgrounds}'"
+          + (" (one clip per beat)" if len(visuals) > 1 else " (single background)" if visuals else " (animated gradient)"))
+    print()
     failures = 0
 
     for slot, item, pkg in items:
@@ -299,31 +389,43 @@ def main():
         if args.pitch:
             vconf["pitch"] = args.pitch
 
-        text = narration_text(pkg, hook_index)
+        segments = narration_segments(pkg, hook_index)
+        text = " ".join(segments)
         if not text:
             print("  SKIP: package has no narration text\n")
             failures += 1
             continue
 
         try:
-            with tempfile.TemporaryDirectory() as tmp:
-                tmp = Path(tmp)
-                mp3_path = tmp / "voice.mp3"
-                words = asyncio.run(synthesize(text, vconf, mp3_path))
-                (tmp / "subs.srt").write_text(words_to_srt(words), encoding="utf-8")
-                duration = probe_duration(ffprobe, mp3_path)
-                print(f"  voice: {vconf['voice']} ({vconf['rate']}, {vconf['pitch']}) - {duration:.1f}s")
+            with tempfile.TemporaryDirectory() as tmpname:
+                tmp = Path(tmpname)
+                if CAPTION_FONT_FILE.exists():
+                    shutil.copy(CAPTION_FONT_FILE, tmp / CAPTION_FONT_FILE.name)
 
-                background = pick_file(args.backgrounds, VIDEO_EXTS | IMAGE_EXTS)
+                words = asyncio.run(synthesize(text, vconf, tmp / "voice.mp3"))
+                (tmp / "subs.ass").write_text(words_to_ass(words), encoding="utf-8")
+                total = probe_duration(ffprobe, tmp / "voice.mp3")
+                print(f"  voice: {vconf['voice']} ({vconf['rate']}, {vconf['pitch']}) - {total:.1f}s")
+
+                base = None
+                if len(visuals) > 1:
+                    spans = segment_spans(segments, words, total)
+                    base = build_clip_base(ffmpeg, visuals, spans, tmp)
+                    print(f"  visuals: {len(spans)} beat clips from {len(visuals)} source file(s)")
+                elif len(visuals) == 1:
+                    seg = tmp / "base.mp4"
+                    render_segment_clip(ffmpeg, visuals[0], total + 0.4, seg)
+                    base = seg
+                    print(f"  visuals: single background ({visuals[0].name})")
+                else:
+                    print("  visuals: generated gradient")
+
                 music = pick_file(args.music, AUDIO_EXTS)
-                print(f"  background: {background.name if background else 'generated gradient'}"
-                      + (f" | music: {music.name}" if music else ""))
+                if music:
+                    shutil.copy(music, tmp / ("music" + music.suffix))
+                    print(f"  music: {music.name}")
 
-                cmd = build_ffmpeg_command(ffmpeg, pkg, mp3_path, "subs.srt", out_path.resolve(),
-                                           duration, background, music)
-                result = subprocess.run(cmd, cwd=tmp, capture_output=True, text=True)
-                if result.returncode != 0:
-                    raise RuntimeError("ffmpeg failed:\n" + result.stderr[-1500:])
+                final_render(ffmpeg, base, pkg, total, bool(music), out_path.resolve(), tmp)
 
             (out_dir / f"{slug}-post.txt").write_text(post_kit_text(pkg, item, hook_index), encoding="utf-8")
             print(f"  done: {out_path.name} + {slug}-post.txt\n")

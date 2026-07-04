@@ -980,6 +980,125 @@ const scenarioBank = [
       "The unverifiable crowd",
       "Lights on everywhere"
     ]
+  },
+
+  /* ---------------- USER-REQUESTED TEST SCENARIOS ---------------- */
+  {
+    id: "pc-remote",
+    category: "Pop Culture",
+    title: "What if the TV remote was never invented?",
+    image: { glyph: "📺", from: "#3a6ea5", to: "#151a30" },
+    premise: "The gadget lost in your couch cushions quietly rewired how the whole world watches TV. Take it away and you don't just stand up more — you might erase the binge, the skippable ad, and the attention economy in your living room.",
+    tags: ["tech", "tv", "everyday", "alternate history"],
+    safety: "Light alternate-history speculation grounded in real TV and remote-control history.",
+    hooks: [
+      "What if you had to stand up every single time you wanted to change the channel?",
+      "The gadget in your couch cushion quietly rewired how the entire planet watches TV.",
+      "No remote means no channel surfing — and no channel surfing might mean no attention economy."
+    ],
+    beats: [
+      "Picture the before-times: you walk up to the TV and twist a dial. Game consoles with the buttons on the box itself. Getting off the couch just to skip a boring part. For decades, that was watching TV.",
+      "The remote didn't just save you steps — it invented channel surfing. Suddenly boredom cost one thumb-press, and TV had to fight for your attention every single second or lose you to the next channel.",
+      "Kill the remote and that pressure never exists. Shows can breathe, ads can't be thumb-skipped, and 'appointment TV' — everyone watching the same thing at 8pm — stays king for decades longer.",
+      "Here's the ripple: streaming's autoplay, the '5…4…3…' next-episode countdown, the engineered binge — they're all descendants of remote-era attention warfare. No remote, maybe no binge.",
+      "Payoff: the remote looks like the laziest invention ever made. It was actually the starting gun for the war over your attention — and it was fired from your own couch."
+    ],
+    shotList: [
+      "INTRO MONTAGE — rapid cuts under the hook, one example per second: (1) a hand pressing a modern TV remote; (2) someone getting up and walking to a boxy old TV to twist the channel dial; (3) close-up of a retro game console with the buttons on the unit itself; (4) a kid being told 'change it for me' and trudging to the set.",
+      "Tight on fingers turning an old dial-TV knob, satisfying mechanical click.",
+      "Split screen: a couch potato thumb-surfing 200 channels vs a family sitting still through one program.",
+      "Ad graphic: a 'SKIP' thumb-button crossed out, then a person walking to the kitchen instead of skipping.",
+      "Streaming UI mockup: the autoplay '5…4…3…' countdown, labeled 'built by the remote'.",
+      "Closer: the remote alone on a couch cushion, slow push-in, single caption line."
+    ],
+    captions: [
+      "The remote didn't make us lazy. It started a war for your attention. 📺",
+      "No remote = no channel surfing = a very different internet.",
+      "The most powerful gadget in your house is lost in the couch cushions."
+    ],
+    thumbnails: [
+      "NO REMOTE?",
+      "It started a war",
+      "Get UP to change it"
+    ]
+  },
+  {
+    id: "sc-volcano",
+    category: "Science",
+    title: "What if every country had an active volcano?",
+    image: { glyph: "🌋", from: "#b8563a", to: "#151a30" },
+    premise: "Most countries have zero active volcanoes and a handful have dozens. Hand every nation on Earth its own live volcano and the world's farmland, power grid, and disaster maps all get redrawn overnight.",
+    tags: ["geology", "earth", "volcanoes", "thought experiment"],
+    safety: "Geology thought experiment — real volcano science, an impossible even distribution. Volcanic disasters are real; keep the tone curious, never gleeful.",
+    hooks: [
+      "Most countries don't have a single active volcano. What if every one of them did?",
+      "A volcano in the Netherlands. One in Singapore. One in the middle of the desert. Now what?",
+      "Give every country a volcano and you've handed each one a free farm, a free power plant, and a countdown timer."
+    ],
+    beats: [
+      "The reality first: active volcanoes cluster on plate boundaries — the Ring of Fire, mostly. Huge regions like inland Africa, Australia, Northern Europe, and the Gulf states have essentially none.",
+      "Now drop one live volcano in every country. Instantly you've invented new mountains, new fields of lava rock, and new national landmarks in places that were board-flat yesterday.",
+      "The gift nobody expects: volcanic soil is some of the most fertile on Earth, and the heat underneath is free power. Iceland already runs its whole grid on volcanic geothermal — now every country can.",
+      "The bill: every capital now needs eruption monitoring, evacuation plans, and airspace its own volcano can shut down with a single ash cloud. Free energy, permanent anxiety.",
+      "Payoff: a volcano is the most honest neighbor a country could have. It will make your soil rich and your power cheap — and one day, on a schedule it never shares, it will try to bury you."
+    ],
+    shotList: [
+      "Hook: spinning globe where a glowing volcano icon pops up on every single country, one after another.",
+      "Map: the real Ring of Fire lit up, then the 'empty' continents highlighted with 'zero active volcanoes'.",
+      "Before/after: a flat, famous skyline (desert city or lowland) with a brand-new volcano rising behind it.",
+      "Split: lush volcanic farmland beside a geothermal plant venting steam, labeled 'the upside'.",
+      "Ash-cloud animation grounding planes over a country, labeled 'the bill'.",
+      "Closer: a calm village at the foot of a gently smoking volcano at dusk, one caption line."
+    ],
+    captions: [
+      "Most countries have zero active volcanoes. Imagine if every one had its own. 🌋",
+      "A volcano is a free farm, a free power plant, and a countdown timer.",
+      "The most honest neighbor a country could ask for."
+    ],
+    thumbnails: [
+      "A VOLCANO PER COUNTRY",
+      "Free power. Real risk.",
+      "Every flag gets a volcano"
+    ]
+  },
+  {
+    id: "sc-evolve",
+    category: "Science",
+    title: "What if humans evolved for a million years of total automation?",
+    image: { glyph: "🧬", from: "#2d8a6e", to: "#5a4a7a" },
+    premise: "Robots build everything, AI does the thinking, and nobody lifts a finger — for a million years. Everyone pictures soft, shrunken blobs. The real evolutionary answer is stranger, and it ends with the pencil in our own hands.",
+    tags: ["evolution", "biology", "future", "ai"],
+    safety: "Speculative evolutionary biology — grounded in real principles (selection needs pressure), clearly framed as far-future imagination.",
+    hooks: [
+      "A million years of robots doing everything. What do humans evolve into? Your first guess is probably wrong.",
+      "Everyone imagines we'd melt into soft little blobs. Evolution says: not so fast.",
+      "If AI thinks for us for a million years, do our brains shrink? The honest answer is unsettling."
+    ],
+    beats: [
+      "The picture everyone has: robots do the lifting, AI does the thinking, so humans go soft — short weak limbs, stubby fingers, big lazy heads. Little balls with a face. The classic sci-fi blob.",
+      "Here's the catch: you don't lose your legs just from sitting. A trait only disappears if having it costs you children. Comfort removes that pressure — which slows evolution down, it doesn't melt us into blobs.",
+      "So what actually changes? The things that still cost us. We already have smaller jaws and crowded teeth from soft cooked food — run that a million years and faces keep shrinking. And if medicine keeps everyone reproducing, we get more varied, not more uniform.",
+      "Now the wildcard: the moment we let tech choose our mates, edit our genes, or grow bodies to order, evolution stops being natural at all. We'd redesign ourselves in centuries — something blind evolution needs millions of years to do.",
+      "Payoff: we won't drift into stubby little balls by accident — that only happens if being a ball helps you have more kids. The real future is scarier and cooler: for the first time, the species doing the evolving is holding the pencil."
+    ],
+    shotList: [
+      "Hook: morph animation of a human slowly rounding into the 'sci-fi blob' — big head, tiny limbs, stubby fingers — with a cheeky 'what everyone pictures' stamp.",
+      "Record-scratch cut to a clean diagram: 'disuse ≠ disappearance', a trait needing 'selection pressure' to vanish.",
+      "Before/after skulls: a modern jaw vs a smaller future jaw with crowded teeth, 'already happening' label.",
+      "Branching graphic: one population splitting into many varied body types instead of one uniform blob.",
+      "The wildcard: a DNA strand being edited by a cursor while robots assemble a body in the background.",
+      "Closer: a hand holding a pencil over a blank human silhouette, drawing the next version; one caption line."
+    ],
+    captions: [
+      "We won't evolve into little blobs by accident. The truth is weirder. 🧬",
+      "Disuse doesn't delete a body part — only losing kids over it does.",
+      "For the first time, the species doing the evolving is holding the pencil."
+    ],
+    thumbnails: [
+      "BLOB HUMANS? NO.",
+      "1,000,000 years of AI",
+      "We hold the pencil now"
+    ]
   }
 ];
 

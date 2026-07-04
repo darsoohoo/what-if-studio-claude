@@ -1,6 +1,10 @@
 # What If Studio — Video Pipeline (optional companion tool)
 
-Turns queue exports from the app into **finished vertical videos**: AI voiceover, background visuals, and word-synced captions burned in. You review each video and post it yourself.
+Turns queue exports from the app into **finished vertical videos**: AI voiceover, per-beat visuals, and modern word-by-word "pop" captions burned in. You review each video and post it yourself.
+
+**Captions** are Poppins ExtraBold, all-caps, centered, one short phrase at a time, with the currently-spoken word popping in yellow (the TikTok/CapCut look). Timing comes from the TTS engine's own word boundaries, so highlights land exactly on the spoken word.
+
+**Visuals**: put clips/images in `backgrounds/`. With **several files, each script beat gets its own clip in order** — perfect for "one example per beat" videos. With one file it's used throughout; with none, an animated gradient in the scenario's colors is generated.
 
 The app never requires this tool — it stays a plain static page. This is the "hands-off production" add-on.
 
@@ -41,7 +45,8 @@ The app's voice styles map to neural voices automatically: Calm Narrator → Chr
 ## Good to know
 
 - **Internet required** for voice generation (the neural voices are a Microsoft service; no account or API key).
-- **Captions are word-synced** to the actual speech — the pipeline reads word timings from the TTS engine, so subtitles land exactly when words are spoken (better than the app's estimated `.srt`, which remains useful for manual editing workflows).
+- **Captions are word-synced** to the actual speech — the pipeline reads word timings from the TTS engine, so highlights land exactly when words are spoken (better than the app's estimated `.srt`, which remains useful for manual editing workflows).
+- **Per-beat visuals** cycle through the `backgrounds/` folder in order. Beat count is hook + script beats + outro (7 for a 5-beat package), so ~7 clips gives every beat a distinct visual.
 - **Video length** is set by real speech duration, not the app's runtime setting — a "60s" package typically renders 45–75s depending on voice and rate.
 - **Disclosure:** TikTok and YouTube require labeling realistic AI-generated content. Tick the AI-content disclosure when posting — the post kit reminds you every time.
 - **Monetization reality check:** fully automated TTS-over-gradient uploads are exactly what YouTube's "mass-produced or repetitious" review flags. Watch every video before posting, vary hooks (`--hook`), add your own edits or b-roll when you can, and treat this output as a strong first draft, not a finished channel.

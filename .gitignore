@@ -8,3 +8,5 @@ pipeline/backgrounds/*
 pipeline/music/*
 !pipeline/music/README.md
 pipeline/*.json
+pipeline/*.jpg
+pipeline/testclips/

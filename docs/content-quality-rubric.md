@@ -30,6 +30,7 @@ Every scenario in `scenarioBank` must pass all of the following before it ships.
 
 ## Category balance (M3 exit criteria)
 
-- 24 scenarios total, exactly 3 per category ✅
+- 24 starter scenarios total, exactly 3 per category ✅
+- **Plus 3 user-requested test scenarios** (added after M3): "TV remote never invented" (Pop Culture), "active volcano in every country" (Science), "million years of automation" (Science). Current totals: 27 scenarios — Pop Culture 4, Science 5, all other categories 3. These were commissioned directly by the creator and follow the same rubric; the strict 3-per-category invariant applies to the original starter set.
 - Every category mixes tones (at least one playful and one eerie entry) so the first screen doesn't read as a single mood ✅
 - Seed rotation covers all 8 categories with 4 seeds each, cycling category-first so consecutive presses never repeat a category ✅
