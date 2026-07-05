@@ -19,8 +19,11 @@ Write-Host "Packaging committed files at HEAD -> $zip"
 git -C $repo archive --format=zip --prefix="what-if-studio/" -o $zip HEAD
 
 $sizeMb = [math]::Round((Get-Item $zip).Length / 1MB, 2)
-$count = (& git -C $repo archive --format=tar HEAD | & tar -tf - 2>$null | Measure-Object -Line).Lines
-Write-Host "Done: $zip ($sizeMb MB)"
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$archive = [System.IO.Compression.ZipFile]::OpenRead($zip)
+$count = ($archive.Entries | Where-Object { $_.Name -ne "" }).Count
+$archive.Dispose()
+Write-Host "Done: $zip ($sizeMb MB, $count files)"
 Write-Host "Unzip it anywhere and double-click what-if-studio/index.html to run the app."
 Write-Host ""
 Write-Host "To publish this as a GitHub release (after merging the beta PRs to main):"
