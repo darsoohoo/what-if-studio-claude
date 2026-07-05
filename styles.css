@@ -212,7 +212,7 @@ code { color: var(--accent-strong); }
 
 .library-controls { margin-bottom: 14px; }
 
-input[type="search"], select, textarea {
+input[type="search"], input[type="text"], select, textarea {
   font: inherit;
   width: 100%;
   color: var(--text);
@@ -221,7 +221,60 @@ input[type="search"], select, textarea {
   border-radius: var(--radius-sm);
   padding: 9px 12px;
 }
-input[type="search"]::placeholder { color: var(--text-faint); }
+input[type="search"]::placeholder, input[type="text"]::placeholder, textarea::placeholder { color: var(--text-faint); }
+
+/* ---------- Custom scenario builder ---------- */
+
+.builder-open { margin: 0 0 14px; }
+
+.builder-dialog {
+  background: var(--bg-raised);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px;
+  width: min(560px, calc(100vw - 32px));
+  max-height: 86vh;
+  overflow-y: auto;
+}
+.builder-dialog::backdrop { background: rgba(5, 6, 12, 0.72); }
+
+.builder-dialog input, .builder-dialog select, .builder-dialog textarea { margin-bottom: 12px; }
+.builder-dialog textarea { resize: vertical; }
+
+.builder-row {
+  display: grid;
+  grid-template-columns: 1fr 120px;
+  gap: 10px;
+}
+
+.builder-error {
+  color: var(--danger);
+  font-size: 13px;
+  min-height: 18px;
+  margin: 2px 0 8px;
+}
+
+.builder-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.custom-flag {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--good);
+  border: 1px solid rgba(76, 214, 164, 0.4);
+  border-radius: 999px;
+  padding: 2px 8px;
+  margin-left: auto;
+}
+
+.banner-delete { margin-left: auto; flex: none; }
 
 .chip-group { border: 0; padding: 0; margin: 12px 0 0; }
 
