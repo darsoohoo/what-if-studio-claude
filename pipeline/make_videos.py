@@ -489,6 +489,58 @@ def build_clip_base(ffmpeg, visuals, spans, tmp, charts=None, font_ff=None):
     return tmp / "base.mp4"
 
 
+def esc_drawtext(text):
+    """Uppercase card text made safe for an ffmpeg drawtext value."""
+    text = sanitize_card_text(text)
+    text = text.replace("\\", "").replace("'", "").replace('"', "").replace("%", "")
+    return text.replace(":", "\\:")
+
+
+def wrap_title(text, max_chars=16):
+    """Split a cover title into at most two balanced lines."""
+    text = sanitize_card_text(text)
+    if len(text) <= max_chars:
+        return [text]
+    words = text.split()
+    best, best_diff = None, 10 ** 9
+    for i in range(1, len(words)):
+        a, b = " ".join(words[:i]), " ".join(words[i:])
+        if abs(len(a) - len(b)) < best_diff:
+            best_diff, best = abs(len(a) - len(b)), (a, b)
+    return list(best) if best else [text]
+
+
+def render_thumbnail(ffmpeg, visual, pkg, out_path, tmp, font_ff):
+    """Save a clean cover image: the first visual + the title-card text,
+    with no captions or counters. Ready to upload as the video's thumbnail."""
+    lines = wrap_title((pkg.get("thumbnails") or [pkg.get("title", "")])[0])
+    fontsize = 128 if len(lines) == 1 else 106
+    line_h = fontsize + 22
+
+    if visual and visual.suffix.lower() in IMAGE_EXTS:
+        inp = ["-i", str(Path(visual).resolve())]
+        pre = (f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
+               f"crop={WIDTH}:{HEIGHT},setsar=1")
+    else:
+        colors = pkg.get("colors") or {}
+        c0 = hex_to_ffmpeg(colors.get("from"), "0x151a30")
+        c1 = hex_to_ffmpeg(colors.get("to"), "0x6a5ae0")
+        inp = ["-f", "lavfi", "-i", f"gradients=s={WIDTH}x{HEIGHT}:c0={c0}:c1={c1}"]
+        pre = "null"
+
+    band_h = line_h * len(lines) + 90
+    band_y = HEIGHT // 2 - band_h // 2
+    filters = [pre, f"drawbox=x=0:y={band_y}:w={WIDTH}:h={band_h}:color=black@0.45:t=fill"]
+    start_y = HEIGHT // 2 - (line_h * len(lines)) // 2 + 6
+    for i, ln in enumerate(lines):
+        filters.append(
+            f"drawtext=fontfile={font_ff}:text='{esc_drawtext(ln)}':fontsize={fontsize}:"
+            f"fontcolor=0xF5C400:borderw=9:bordercolor=black:x=(w-tw)/2:y={start_y + i * line_h}"
+        )
+    run([ffmpeg, "-y", *inp, "-frames:v", "1", "-vf", ",".join(filters), "-q:v", "3",
+         str(out_path)], cwd=tmp)
+
+
 def final_render(ffmpeg, base, pkg, total, has_music, out_path, tmp):
     """Overlay captions and mix audio onto the base video (or a gradient)."""
     if base is not None:
@@ -521,7 +573,7 @@ def final_render(ffmpeg, base, pkg, total, has_music, out_path, tmp):
 # ---------------------------------------------------------------- post kit
 
 
-def post_kit_text(pkg, item, hook_index, music_credit=None):
+def post_kit_text(pkg, item, hook_index, music_credit=None, has_thumb=False):
     lines = [
         f"POST KIT - {pkg.get('title', 'untitled')}",
         f"Platform: {pkg.get('platform', '?')} | Runtime setting: {pkg.get('runtimeLabel', '?')} | Voice: {pkg.get('voice', '?')}",
@@ -534,6 +586,12 @@ def post_kit_text(pkg, item, hook_index, music_credit=None):
     lines.append("TITLE / THUMBNAIL TEXT IDEAS:")
     lines += [f'- "{t}"' for t in pkg.get("thumbnails", [])]
     lines.append("")
+    if has_thumb:
+        lines += [
+            "COVER IMAGE: a matching -thumb.jpg was saved next to this video.",
+            "Upload it as the cover/thumbnail so the platform doesn't pick a random frame.",
+            "",
+        ]
     if music_credit:
         lines += [
             "MUSIC CREDIT (required - paste into the video description):",
@@ -688,9 +746,20 @@ def main():
 
                 final_render(ffmpeg, base, pkg, total, bool(music), out_path.resolve(), tmp)
 
+                thumb_made = False
+                if font_ff:
+                    first_visual = item_visuals[0] if item_visuals else None
+                    try:
+                        render_thumbnail(ffmpeg, first_visual, pkg,
+                                         (out_dir / f"{slug}-thumb.jpg").resolve(), tmp, font_ff)
+                        thumb_made = True
+                    except Exception as exc:
+                        print(f"  (thumbnail skipped: {exc})")
+
             credit = music_credit_for(music, args.music)
-            (out_dir / f"{slug}-post.txt").write_text(post_kit_text(pkg, item, hook_index, credit), encoding="utf-8")
-            print(f"  done: {out_path.name} + {slug}-post.txt\n")
+            (out_dir / f"{slug}-post.txt").write_text(post_kit_text(pkg, item, hook_index, credit, thumb_made), encoding="utf-8")
+            extras = f"{slug}-post.txt" + (f" + {slug}-thumb.jpg" if thumb_made else "")
+            print(f"  done: {out_path.name} + {extras}\n")
         except Exception as exc:
             failures += 1
             print(f"  FAILED: {exc}\n")

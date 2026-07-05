@@ -49,7 +49,7 @@ Manual alternatives: double-click **`run-queue.bat`** after each export, or run 
 python make_videos.py whatifstudio-queue.json --ai-visuals
 ```
 
-Finished videos land in `output/` as `01-<title>.mp4`, each with a matching `01-<title>-post.txt` containing caption options, hashtags, title ideas, and your queue notes.
+Finished videos land in `output/` as `01-<title>.mp4`, each with a matching `01-<title>-post.txt` (caption options, hashtags, title ideas, queue notes) and a `01-<title>-thumb.jpg` **cover image** — the title-card text over the opening visual, no captions. Upload it as your video's thumbnail so the platform doesn't pick a random frame.
 
 ## Options
 
