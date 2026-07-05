@@ -537,52 +537,106 @@ def _find_video_url(obj):
     return None
 
 
+def _prewarm_url(url):
+    """Fetch a generate-on-demand image once so the provider's fetch is fast."""
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "WhatIfStudio-pipeline/1.0"})
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            return len(resp.read()) > 5000
+    except Exception:
+        return False
+
+
+def _find_price(obj):
+    """Find output.usage.price_usd anywhere in the poll response."""
+    if isinstance(obj, dict):
+        v = obj.get("price_usd")
+        if isinstance(v, (int, float)):
+            return float(v)
+        for v in obj.values():
+            found = _find_price(v)
+            if found is not None:
+                return found
+    elif isinstance(obj, list):
+        for v in obj:
+            found = _find_price(v)
+            if found is not None:
+                return found
+    return None
+
+
+def _run_infer_job(model, task, input_obj, key):
+    """Submit one job and poll to a terminal state. Returns (url, price, error)."""
+    rid = infer_submit(model, task, input_obj, key)
+    waited = 0
+    while waited < INFER_POLL_TIMEOUT:
+        time.sleep(INFER_POLL_INTERVAL)
+        waited += INFER_POLL_INTERVAL
+        resp = infer_poll(rid, key)
+        status = _find_status(resp)
+        if status in ("COMPLETED", "SUCCEEDED", "SUCCESS"):
+            url = _find_video_url(resp)
+            if not url:
+                return None, None, "completed but no video URL: " + json.dumps(resp)[:400]
+            return url, _find_price(resp), None
+        if status in ("FAILED", "ERROR", "CANCELLED", "CANCELED"):
+            err = json.dumps((resp or {}).get("error") or resp)[:300]
+            return None, None, f"{status}: {err}"
+    return None, None, f"timed out after {INFER_POLL_TIMEOUT}s"
+
+
 def generate_infer_videos(pkg, segments, key, model, task, duration, cache_root):
     """One AI-generated clip per beat via tryinfer. image-to-video animates a
-    free Pollinations first frame (shared style = coherence); text-to-video uses
-    the prompt alone. Clips cache per scenario. Paid API - one job per beat."""
+    free Pollinations first frame (shared style = coherence); if the provider
+    content-flags that image, the beat falls back to text-to-video. Clips
+    cache per scenario+model. Paid API - one billed job per beat."""
     folder = Path(cache_root) / f"{slugify(pkg.get('scenarioId', 'pkg'))}-{model}"
     folder.mkdir(parents=True, exist_ok=True)
-    files = []
+    files, spent = [], 0.0
     for i, seg in enumerate(segments):
         dest = folder / f"{i + 1:02d}.mp4"
         if dest.exists():
             files.append(dest)
             continue
         motion = ai_prompt_for_segment(pkg, i, len(segments), VIDEO_MOTION_SUFFIX)
-        input_obj = {"prompt": motion, "duration_seconds": str(duration), "aspect_ratio": "9:16"}
+        base_input = {"prompt": motion, "duration_seconds": str(duration), "aspect_ratio": "9:16"}
+
+        attempts = []
         if task == "image-to-video":
             frame_prompt = ai_prompt_for_segment(pkg, i, len(segments), AI_STYLES["cinematic"])
-            input_obj["image_url"] = pollinations_image_url(frame_prompt, seed=(i + 1) * 17)
+            image_url = pollinations_image_url(frame_prompt, seed=(i + 1) * 17)
+            if _prewarm_url(image_url):
+                attempts.append(("image-to-video", {**base_input, "image_url": image_url}))
+            else:
+                print(f"    beat {i + 1}: first-frame image unavailable, using text-to-video")
+        attempts.append(("text-to-video", dict(base_input)))
+
+        url = None
+        for attempt_task, input_obj in attempts:
+            try:
+                url, price, err = _run_infer_job(model, attempt_task, input_obj, key)
+            except Exception as exc:
+                url, price, err = None, None, str(exc)
+            if url:
+                spent += price or 0.0
+                price_note = f" (${price:.2f})" if price is not None else ""
+                print(f"    beat {i + 1}/{len(segments)}: done via {attempt_task}{price_note}")
+                break
+            print(f"    beat {i + 1}/{len(segments)} {attempt_task} failed: {err}")
+
+        if not url:
+            continue
         try:
-            rid = infer_submit(model, task, input_obj, key)
-            print(f"    beat {i + 1}/{len(segments)}: submitted ({rid[:12]}…), waiting…")
-            waited, url = 0, None
-            while waited < INFER_POLL_TIMEOUT:
-                time.sleep(INFER_POLL_INTERVAL)
-                waited += INFER_POLL_INTERVAL
-                resp = infer_poll(rid, key)
-                status = _find_status(resp)
-                if status in ("COMPLETED", "SUCCEEDED", "SUCCESS"):
-                    url = _find_video_url(resp)
-                    if not url:
-                        raise RuntimeError("job completed but no video URL found in response:\n"
-                                           + json.dumps(resp)[:600])
-                    break
-                if status in ("FAILED", "ERROR", "CANCELLED", "CANCELED"):
-                    raise RuntimeError(f"job {status}: {json.dumps(resp)[:400]}")
-            if not url:
-                raise RuntimeError(f"timed out after {INFER_POLL_TIMEOUT}s")
             dl = urllib.request.Request(url, headers={"User-Agent": "WhatIfStudio-pipeline/1.0"})
             with urllib.request.urlopen(dl, timeout=180) as resp, open(dest, "wb") as out:
                 shutil.copyfileobj(resp, out)
             if dest.stat().st_size < 20000:
                 dest.unlink(missing_ok=True)
                 raise RuntimeError("downloaded clip too small")
-            print(f"    beat {i + 1}/{len(segments)}: done")
             files.append(dest)
         except Exception as exc:
-            print(f"    beat {i + 1}/{len(segments)} FAILED: {exc}")
+            print(f"    beat {i + 1}/{len(segments)} download failed: {exc}")
+    print(f"    AI-video spend this run: ${spent:.2f}")
     if not files:
         raise RuntimeError("no AI video clips produced (check key, model name, and credits)")
     return files

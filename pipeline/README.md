@@ -41,7 +41,9 @@ Clips cache in `stock/` per scenario. Pexels clips are generic (topical, not sce
    python make_videos.py queue.json --infer --infer-model happyhorse --infer-duration 10
    ```
 
-**This is a paid API** — one clip is billed per beat (~7-12 per 60s video), so start with a single scenario and check the cost before batching. Clips cache in `infer-videos/` per scenario+model, so re-renders don't re-bill. `--infer` makes the whole video AI-generated — keep the AI-content disclosure on when posting.
+**This is a paid API — real, verified pricing:** seedance-2.0-pro bills **$0.13/second ($0.65 per 5s clip)**, so a 7-beat video costs ≈ **$4.55** in clips (double for 10s clips). The renderer prints each clip's price and the total spend per run. Clips cache in `infer-videos/` per scenario+model, so re-renders don't re-bill. If the provider content-flags a first-frame image, that beat automatically retries as text-to-video. `--infer` makes the whole video AI-generated — keep the AI-content disclosure on when posting.
+
+Given the cost, a sensible split: `--infer` for hero videos you expect to perform, `--ai-visuals` (free) or `--stock` (free) for daily volume.
 
 **Animated charts** (`--charts`): beats whose narration contains a headline number get an animated graphic overlaid — a counter that ticks up ("8 → BILLION", "$50 MILLION", "30 DAYS") or, for percentages, a number plus a filling bar ("80 PERCENT"). Detection is conservative: one graphic per beat, only clear numbers, and it skips the hook and outro (owned by the title/CTA cards) and bare years. Needs per-beat visuals, so pair it with `--ai-visuals` or a multi-file `backgrounds/` folder:
 
