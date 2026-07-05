@@ -443,6 +443,151 @@ def fetch_stock_visuals(pkg, segments, key, cache_root, credits):
     return results
 
 
+# ---------------------------------------------------------------- AI video (tryinfer / Reka Infer)
+
+INFER_BASE = "https://api.tryinfer.com/v1"
+INFER_POLL_INTERVAL = 8      # seconds between status checks
+INFER_POLL_TIMEOUT = 900     # give up on one clip after 15 minutes
+VIDEO_MOTION_SUFFIX = "cinematic, subtle natural camera movement, smooth motion, atmospheric, vertical 9:16"
+_VIDEO_EXT_RE = re.compile(r"\.(mp4|mov|webm|m4v)(\?|$)", re.I)
+
+
+def infer_api_key():
+    """Read the tryinfer key from TRYINFER_API_KEY / INFER_API_KEY or a file."""
+    for var in ("TRYINFER_API_KEY", "INFER_API_KEY"):
+        key = os.environ.get(var, "").strip()
+        if key:
+            return key
+    f = Path(__file__).resolve().parent / "tryinfer_key.txt"
+    if f.exists():
+        return f.read_text(encoding="utf-8").strip()
+    return None
+
+
+def pollinations_image_url(prompt, seed=7):
+    """A public on-demand image URL usable as an image-to-video first frame."""
+    return (AI_IMAGE_HOST + urllib.parse.quote(prompt)
+            + f"?width={WIDTH}&height={HEIGHT}&nologo=true&seed={seed}")
+
+
+def infer_submit(model, task, input_obj, key):
+    url = f"{INFER_BASE}/inference/{model}/{task}"
+    body = json.dumps({"input": input_obj}).encode("utf-8")
+    req = urllib.request.Request(url, data=body, method="POST", headers={
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "User-Agent": "WhatIfStudio-pipeline/1.0",
+    })
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        data = json.loads(resp.read())
+    rid = data.get("request_id") or data.get("id") or data.get("requestId")
+    if not rid:
+        raise RuntimeError(f"submit returned no request_id: {json.dumps(data)[:400]}")
+    return rid
+
+
+def infer_poll(request_id, key):
+    req = urllib.request.Request(f"{INFER_BASE}/inference/requests/{request_id}",
+                                 headers={"Authorization": f"Bearer {key}",
+                                          "User-Agent": "WhatIfStudio-pipeline/1.0"})
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        return json.loads(resp.read())
+
+
+def _find_status(obj):
+    """Find a status string anywhere in the poll response."""
+    known = {"COMPLETED", "SUCCEEDED", "SUCCESS", "FAILED", "ERROR", "CANCELLED",
+             "CANCELED", "PENDING", "QUEUED", "RUNNING", "IN_PROGRESS", "PROCESSING", "STARTED"}
+    if isinstance(obj, dict):
+        for key in ("status", "state"):
+            v = obj.get(key)
+            if isinstance(v, str) and v.upper() in known:
+                return v.upper()
+        for v in obj.values():
+            found = _find_status(v)
+            if found:
+                return found
+    elif isinstance(obj, list):
+        for v in obj:
+            found = _find_status(v)
+            if found:
+                return found
+    return None
+
+
+def _find_video_url(obj):
+    """Find the finished video URL anywhere in the poll response."""
+    if isinstance(obj, str):
+        return obj if obj.startswith("http") and _VIDEO_EXT_RE.search(obj) else None
+    if isinstance(obj, dict):
+        # Prefer likely keys first.
+        for key in ("video_url", "url", "output_url", "download_url", "result_url"):
+            v = obj.get(key)
+            if isinstance(v, str) and v.startswith("http") and (_VIDEO_EXT_RE.search(v) or key != "url"):
+                return v
+        for v in obj.values():
+            found = _find_video_url(v)
+            if found:
+                return found
+    elif isinstance(obj, list):
+        for v in obj:
+            found = _find_video_url(v)
+            if found:
+                return found
+    return None
+
+
+def generate_infer_videos(pkg, segments, key, model, task, duration, cache_root):
+    """One AI-generated clip per beat via tryinfer. image-to-video animates a
+    free Pollinations first frame (shared style = coherence); text-to-video uses
+    the prompt alone. Clips cache per scenario. Paid API - one job per beat."""
+    folder = Path(cache_root) / f"{slugify(pkg.get('scenarioId', 'pkg'))}-{model}"
+    folder.mkdir(parents=True, exist_ok=True)
+    files = []
+    for i, seg in enumerate(segments):
+        dest = folder / f"{i + 1:02d}.mp4"
+        if dest.exists():
+            files.append(dest)
+            continue
+        motion = ai_prompt_for_segment(pkg, i, len(segments), VIDEO_MOTION_SUFFIX)
+        input_obj = {"prompt": motion, "duration_seconds": str(duration), "aspect_ratio": "9:16"}
+        if task == "image-to-video":
+            frame_prompt = ai_prompt_for_segment(pkg, i, len(segments), AI_STYLES["cinematic"])
+            input_obj["image_url"] = pollinations_image_url(frame_prompt, seed=(i + 1) * 17)
+        try:
+            rid = infer_submit(model, task, input_obj, key)
+            print(f"    beat {i + 1}/{len(segments)}: submitted ({rid[:12]}…), waiting…")
+            waited, url = 0, None
+            while waited < INFER_POLL_TIMEOUT:
+                time.sleep(INFER_POLL_INTERVAL)
+                waited += INFER_POLL_INTERVAL
+                resp = infer_poll(rid, key)
+                status = _find_status(resp)
+                if status in ("COMPLETED", "SUCCEEDED", "SUCCESS"):
+                    url = _find_video_url(resp)
+                    if not url:
+                        raise RuntimeError("job completed but no video URL found in response:\n"
+                                           + json.dumps(resp)[:600])
+                    break
+                if status in ("FAILED", "ERROR", "CANCELLED", "CANCELED"):
+                    raise RuntimeError(f"job {status}: {json.dumps(resp)[:400]}")
+            if not url:
+                raise RuntimeError(f"timed out after {INFER_POLL_TIMEOUT}s")
+            dl = urllib.request.Request(url, headers={"User-Agent": "WhatIfStudio-pipeline/1.0"})
+            with urllib.request.urlopen(dl, timeout=180) as resp, open(dest, "wb") as out:
+                shutil.copyfileobj(resp, out)
+            if dest.stat().st_size < 20000:
+                dest.unlink(missing_ok=True)
+                raise RuntimeError("downloaded clip too small")
+            print(f"    beat {i + 1}/{len(segments)}: done")
+            files.append(dest)
+        except Exception as exc:
+            print(f"    beat {i + 1}/{len(segments)} FAILED: {exc}")
+    if not files:
+        raise RuntimeError("no AI video clips produced (check key, model name, and credits)")
+    return files
+
+
 # ---------------------------------------------------------------- visuals
 
 
@@ -750,6 +895,17 @@ def main():
                         help="Use real Pexels stock video per beat (needs a free PEXELS_API_KEY / pipeline/pexels_key.txt)")
     parser.add_argument("--stock-cache", default="stock",
                         help="Cache folder for downloaded stock clips (default: stock)")
+    parser.add_argument("--infer", action="store_true",
+                        help="Generate a paid AI-video clip per beat via tryinfer (needs TRYINFER_API_KEY / pipeline/tryinfer_key.txt)")
+    parser.add_argument("--infer-model", default="seedance-2.0-pro",
+                        help="tryinfer model id (default: seedance-2.0-pro)")
+    parser.add_argument("--infer-task", default="image-to-video",
+                        choices=["image-to-video", "text-to-video"],
+                        help="tryinfer task; image-to-video animates a free Pollinations first frame (default)")
+    parser.add_argument("--infer-duration", default="5", choices=["5", "10"],
+                        help="Seconds per generated clip (default: 5; clips loop to fill each beat)")
+    parser.add_argument("--infer-cache", default="infer-videos",
+                        help="Cache folder for generated AI clips (default: infer-videos)")
     parser.add_argument("--hook", type=int, default=1, choices=[1, 2, 3],
                         help="Which of the 3 hooks opens the video (default: 1)")
     parser.add_argument("--voice", help="Override edge-tts voice for all items")
@@ -786,8 +942,20 @@ def main():
                 "  2. Either set the PEXELS_API_KEY environment variable, or save the key in\n"
                 "     pipeline/pexels_key.txt (one line). Then re-run.")
 
+    infer_key = None
+    if args.infer:
+        infer_key = infer_api_key()
+        if not infer_key:
+            sys.exit(
+                "--infer needs your tryinfer API key.\n"
+                "  Set the TRYINFER_API_KEY environment variable, or save the key (one line)\n"
+                "  in pipeline/tryinfer_key.txt. Then re-run.")
+        print("NOTE: --infer uses the PAID tryinfer API - one clip is billed per beat.\n")
+
     print(f"Rendering {len(items)} video(s) -> {out_dir.resolve()}")
-    if args.stock:
+    if args.infer:
+        print(f"Visuals: tryinfer AI video per beat (model: {args.infer_model}, {args.infer_duration}s clips)")
+    elif args.stock:
         print(f"Visuals: Pexels stock video per beat (cache: {args.stock_cache})")
     elif args.ai_visuals:
         print(f"Visuals: free AI images per beat (style: {args.ai_style}, cache: {args.ai_cache})")
@@ -831,7 +999,11 @@ def main():
 
                 item_visuals = visuals
                 stock_authors = set()
-                if args.stock:
+                if args.infer:
+                    print(f"  generating AI video with {args.infer_model}...")
+                    item_visuals = generate_infer_videos(pkg, segments, infer_key, args.infer_model,
+                                                         args.infer_task, args.infer_duration, args.infer_cache)
+                elif args.stock:
                     print("  fetching Pexels stock footage...")
                     item_visuals = fetch_stock_visuals(pkg, segments, stock_key, args.stock_cache, stock_authors)
                 elif args.ai_visuals:

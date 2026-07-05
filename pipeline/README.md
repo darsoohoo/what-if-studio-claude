@@ -28,6 +28,21 @@ To regenerate a scenario's images (new random look), delete its folder in `ai-vi
 
 Clips cache in `stock/` per scenario. Pexels clips are generic (topical, not scene-specific), so they read as real b-roll rather than exact illustrations. Attribution isn't required but is appreciated — the post kit lists the videographers and a Pexels credit line for you to paste.
 
+**Paid AI video** (`--infer`): generates a bespoke motion clip per beat via [tryinfer](https://tryinfer.com) (Seedance, etc.). Each beat's clip is an `image-to-video` job that animates a free Pollinations first frame — so every clip shares one style anchor and the sequence feels like one production once the pipeline adds voice, captions, music, and crossfades.
+
+1. Put your tryinfer key in `TRYINFER_API_KEY` or `pipeline/tryinfer_key.txt` (git-ignored).
+2. **Confirm it works cheaply first** — one clip:
+   ```
+   python infer_probe.py            # submits ONE 5s clip, prints the result
+   ```
+3. Then render:
+   ```
+   python make_videos.py queue.json --infer --charts
+   python make_videos.py queue.json --infer --infer-model happyhorse --infer-duration 10
+   ```
+
+**This is a paid API** — one clip is billed per beat (~7-12 per 60s video), so start with a single scenario and check the cost before batching. Clips cache in `infer-videos/` per scenario+model, so re-renders don't re-bill. `--infer` makes the whole video AI-generated — keep the AI-content disclosure on when posting.
+
 **Animated charts** (`--charts`): beats whose narration contains a headline number get an animated graphic overlaid — a counter that ticks up ("8 → BILLION", "$50 MILLION", "30 DAYS") or, for percentages, a number plus a filling bar ("80 PERCENT"). Detection is conservative: one graphic per beat, only clear numbers, and it skips the hook and outro (owned by the title/CTA cards) and bare years. Needs per-beat visuals, so pair it with `--ai-visuals` or a multi-file `backgrounds/` folder:
 
 ```

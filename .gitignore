@@ -12,9 +12,11 @@ pipeline/*.jpg
 pipeline/testclips/
 pipeline/ai-visuals/
 pipeline/stock/
+pipeline/infer-videos/
 pipeline/__pycache__/
 pipeline/watcher.log
 pipeline/pexels_key.txt
+pipeline/tryinfer_key.txt
 
 # Release build artifacts
 dist/
