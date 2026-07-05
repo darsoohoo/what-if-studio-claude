@@ -11,9 +11,10 @@ pipeline/*.json
 pipeline/*.jpg
 pipeline/testclips/
 pipeline/ai-visuals/
+pipeline/stock/
 pipeline/__pycache__/
 pipeline/watcher.log
-pipeline/__pycache__/
+pipeline/pexels_key.txt
 
 # Release build artifacts
 dist/

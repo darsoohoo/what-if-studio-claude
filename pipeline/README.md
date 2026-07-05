@@ -17,6 +17,17 @@ python make_videos.py queue.json --ai-visuals --ai-style infographic # flat corp
 
 To regenerate a scenario's images (new random look), delete its folder in `ai-visuals/`. AI images make the whole video AI-generated content — the disclosure reminder in each post kit covers this.
 
+**Real stock footage** (`--stock`): uses actual vertical video clips from Pexels — real motion instead of AI stills — one clip per beat, keyword-matched from each beat's nouns. Free, but needs a Pexels API key:
+
+1. Sign up (free) at https://www.pexels.com/api/ and copy your key.
+2. Set the `PEXELS_API_KEY` environment variable, **or** save the key (one line) in `pipeline/pexels_key.txt` (git-ignored).
+3. Run:
+   ```
+   python make_videos.py queue.json --stock --charts
+   ```
+
+Clips cache in `stock/` per scenario. Pexels clips are generic (topical, not scene-specific), so they read as real b-roll rather than exact illustrations. Attribution isn't required but is appreciated — the post kit lists the videographers and a Pexels credit line for you to paste.
+
 **Animated charts** (`--charts`): beats whose narration contains a headline number get an animated graphic overlaid — a counter that ticks up ("8 → BILLION", "$50 MILLION", "30 DAYS") or, for percentages, a number plus a filling bar ("80 PERCENT"). Detection is conservative: one graphic per beat, only clear numbers, and it skips the hook and outro (owned by the title/CTA cards) and bare years. Needs per-beat visuals, so pair it with `--ai-visuals` or a multi-file `backgrounds/` folder:
 
 ```

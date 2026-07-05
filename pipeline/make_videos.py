@@ -342,6 +342,107 @@ def generate_ai_visuals(pkg, seg_count, style_key, cache_root):
     return files
 
 
+# ---------------------------------------------------------------- stock footage (Pexels)
+
+PEXELS_SEARCH = "https://api.pexels.com/videos/search"
+STOCK_STOPWORDS = set((
+    "the a an and or but of to in on for with without into over under from that this these those "
+    "it its is are was were be been being you your they them their we our us he she his her "
+    "what if would could should might will now then here there when where why how not no yes "
+    "most some many much more less every each one two three first day year time thing things "
+    "actually really just even still only about like than because so up out off down back "
+    "picture imagine setup payoff hook beat twist real reality version part"
+).split())
+
+
+def pexels_api_key():
+    """Read the free Pexels key from PEXELS_API_KEY or pipeline/pexels_key.txt."""
+    key = os.environ.get("PEXELS_API_KEY", "").strip()
+    if key:
+        return key
+    f = Path(__file__).resolve().parent / "pexels_key.txt"
+    if f.exists():
+        return f.read_text(encoding="utf-8").strip()
+    return None
+
+
+def beat_query(pkg, beat_text):
+    """A short, on-topic Pexels search query: scenario anchor + a beat noun."""
+    tags = pkg.get("tags") or []
+    anchor = tags[0] if tags else ""
+    words = [w for w in re.findall(r"[a-zA-Z]{4,}", beat_text.lower()) if w not in STOCK_STOPWORDS]
+    picks = list(dict.fromkeys(words))[:2]
+    query = " ".join(dict.fromkeys(([anchor] if anchor else []) + picks)).strip()
+    return query or anchor or sanitize_card_text(pkg.get("title", "abstract")).lower()
+
+
+def best_portrait_link(video):
+    """Pick a vertical video file, largest height up to 1920."""
+    files = [f for f in video.get("video_files", []) if f.get("link")]
+    portrait = [f for f in files if f.get("height", 0) >= f.get("width", 1)] or files
+    if not portrait:
+        return None
+    under = sorted((f for f in portrait if f.get("height", 0) <= 1920), key=lambda f: f.get("height", 0))
+    if under:
+        return under[-1].get("link")
+    return sorted(portrait, key=lambda f: f.get("height", 0))[0].get("link")
+
+
+def pexels_search(query, key, per_page=10):
+    url = PEXELS_SEARCH + "?" + urllib.parse.urlencode(
+        {"query": query, "orientation": "portrait", "per_page": per_page, "size": "medium"})
+    req = urllib.request.Request(url, headers={"Authorization": key, "User-Agent": "WhatIfStudio-pipeline/1.0"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.loads(resp.read()).get("videos", [])
+
+
+def fetch_stock_visuals(pkg, segments, key, cache_root, credits):
+    """One Pexels clip per narration segment, cached per scenario.
+    Appends contributor names to `credits` for the post kit."""
+    folder = Path(cache_root) / slugify(pkg.get("scenarioId", "pkg"))
+    folder.mkdir(parents=True, exist_ok=True)
+    results, used = [], set()
+    for i, seg in enumerate(segments):
+        dest = folder / f"{i + 1:02d}.mp4"
+        if dest.exists():
+            results.append(dest)
+            continue
+        query = beat_query(pkg, seg)
+        try:
+            videos = pexels_search(query, key)
+        except Exception as exc:
+            print(f"    stock search failed ('{query}'): {exc}")
+            videos = []
+        link, author = None, None
+        for v in videos:
+            if v.get("id") in used:
+                continue
+            link = best_portrait_link(v)
+            if link:
+                used.add(v.get("id"))
+                author = (v.get("user") or {}).get("name")
+                break
+        if not link:
+            print(f"    no stock clip for beat {i + 1} ('{query}')")
+            continue
+        try:
+            req = urllib.request.Request(link, headers={"User-Agent": "WhatIfStudio-pipeline/1.0"})
+            with urllib.request.urlopen(req, timeout=120) as resp, open(dest, "wb") as out:
+                shutil.copyfileobj(resp, out)
+            if dest.stat().st_size < 20000:
+                dest.unlink(missing_ok=True)
+                raise RuntimeError("clip too small")
+            if author:
+                credits.add(author)
+            print(f"    clip {i + 1}/{len(segments)}: '{query}'")
+            results.append(dest)
+        except Exception as exc:
+            print(f"    download failed beat {i + 1}: {exc}")
+    if not results:
+        raise RuntimeError("no stock clips fetched (check the key and your connection)")
+    return results
+
+
 # ---------------------------------------------------------------- visuals
 
 
@@ -517,7 +618,8 @@ def render_thumbnail(ffmpeg, visual, pkg, out_path, tmp, font_ff):
     fontsize = 128 if len(lines) == 1 else 106
     line_h = fontsize + 22
 
-    if visual and visual.suffix.lower() in IMAGE_EXTS:
+    if visual and visual.suffix.lower() in (IMAGE_EXTS | VIDEO_EXTS):
+        # For a video, -frames:v 1 grabs the first frame as the cover.
         inp = ["-i", str(Path(visual).resolve())]
         pre = (f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
                f"crop={WIDTH}:{HEIGHT},setsar=1")
@@ -573,7 +675,7 @@ def final_render(ffmpeg, base, pkg, total, has_music, out_path, tmp):
 # ---------------------------------------------------------------- post kit
 
 
-def post_kit_text(pkg, item, hook_index, music_credit=None, has_thumb=False):
+def post_kit_text(pkg, item, hook_index, music_credit=None, has_thumb=False, stock_authors=None):
     lines = [
         f"POST KIT - {pkg.get('title', 'untitled')}",
         f"Platform: {pkg.get('platform', '?')} | Runtime setting: {pkg.get('runtimeLabel', '?')} | Voice: {pkg.get('voice', '?')}",
@@ -596,6 +698,13 @@ def post_kit_text(pkg, item, hook_index, music_credit=None, has_thumb=False):
         lines += [
             "MUSIC CREDIT (required - paste into the video description):",
             music_credit,
+            "",
+        ]
+    if stock_authors:
+        who = ", ".join(sorted(stock_authors))
+        lines += [
+            "STOCK VIDEO: clips via Pexels (pexels.com) - attribution appreciated.",
+            f"Videographers: {who}." if who else "",
             "",
         ]
     if item.get("notes"):
@@ -637,6 +746,10 @@ def main():
                         help="Cache folder for generated images (default: ai-visuals)")
     parser.add_argument("--charts", action="store_true",
                         help="Overlay an animated counter/bar on beats with a headline number (needs per-beat visuals)")
+    parser.add_argument("--stock", action="store_true",
+                        help="Use real Pexels stock video per beat (needs a free PEXELS_API_KEY / pipeline/pexels_key.txt)")
+    parser.add_argument("--stock-cache", default="stock",
+                        help="Cache folder for downloaded stock clips (default: stock)")
     parser.add_argument("--hook", type=int, default=1, choices=[1, 2, 3],
                         help="Which of the 3 hooks opens the video (default: 1)")
     parser.add_argument("--voice", help="Override edge-tts voice for all items")
@@ -663,8 +776,20 @@ def main():
     hook_index = args.hook - 1
     visuals = list_visuals(args.backgrounds)
 
+    stock_key = None
+    if args.stock:
+        stock_key = pexels_api_key()
+        if not stock_key:
+            sys.exit(
+                "--stock needs a free Pexels API key.\n"
+                "  1. Sign up (free) at https://www.pexels.com/api/ and copy your key.\n"
+                "  2. Either set the PEXELS_API_KEY environment variable, or save the key in\n"
+                "     pipeline/pexels_key.txt (one line). Then re-run.")
+
     print(f"Rendering {len(items)} video(s) -> {out_dir.resolve()}")
-    if args.ai_visuals:
+    if args.stock:
+        print(f"Visuals: Pexels stock video per beat (cache: {args.stock_cache})")
+    elif args.ai_visuals:
         print(f"Visuals: free AI images per beat (style: {args.ai_style}, cache: {args.ai_cache})")
     else:
         print(f"Visuals: {len(visuals)} file(s) in '{args.backgrounds}'"
@@ -705,7 +830,11 @@ def main():
                 print(f"  voice: {vconf['voice']} ({vconf['rate']}, {vconf['pitch']}) - {total:.1f}s")
 
                 item_visuals = visuals
-                if args.ai_visuals:
+                stock_authors = set()
+                if args.stock:
+                    print("  fetching Pexels stock footage...")
+                    item_visuals = fetch_stock_visuals(pkg, segments, stock_key, args.stock_cache, stock_authors)
+                elif args.ai_visuals:
                     print(f"  generating AI visuals ({args.ai_style})...")
                     item_visuals = generate_ai_visuals(pkg, len(segments), args.ai_style, args.ai_cache)
 
@@ -757,7 +886,8 @@ def main():
                         print(f"  (thumbnail skipped: {exc})")
 
             credit = music_credit_for(music, args.music)
-            (out_dir / f"{slug}-post.txt").write_text(post_kit_text(pkg, item, hook_index, credit, thumb_made), encoding="utf-8")
+            (out_dir / f"{slug}-post.txt").write_text(
+                post_kit_text(pkg, item, hook_index, credit, thumb_made, stock_authors), encoding="utf-8")
             extras = f"{slug}-post.txt" + (f" + {slug}-thumb.jpg" if thumb_made else "")
             print(f"  done: {out_path.name} + {extras}\n")
         except Exception as exc:
