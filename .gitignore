@@ -13,3 +13,7 @@ pipeline/testclips/
 pipeline/ai-visuals/
 pipeline/__pycache__/
 pipeline/watcher.log
+pipeline/__pycache__/
+
+# Release build artifacts
+dist/
