@@ -1976,7 +1976,8 @@ function bindWorkspaceActions() {
     state.activeTab = 0;
     renderPackage();
     announce("Package generated.");
-    $("packageSection").scrollIntoView({ behavior: "smooth", block: "nearest" });
+    const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    $("packageSection").scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "nearest" });
   });
 
   $("voiceSelect").addEventListener("change", (event) => {
