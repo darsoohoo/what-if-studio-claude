@@ -65,6 +65,9 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
   <button type="button" id="navProduceBtn" class="side-nav-item side-nav-link">
     <span class="side-nav-icon" aria-hidden="true">🎞️</span><span class="side-nav-label">Produce</span>
   </button>
+  <button type="button" id="navHelpBtn" class="side-nav-item side-nav-link">
+    <span class="side-nav-icon" aria-hidden="true">❓</span><span class="side-nav-label">How to</span>
+  </button>
   <span id="navStatus" class="side-nav-status" role="status" aria-live="polite"></span>
 </nav>
 <header>
@@ -184,6 +187,7 @@ try { savedNav = localStorage.getItem("wis.navCollapsed"); } catch (e) {}
 setNavCollapsed(savedNav === null ? matchMedia("(max-width: 700px)").matches : savedNav === "1", false);
 
 document.getElementById("navProduceBtn").addEventListener("click", () => { location.href = "/produce"; });
+document.getElementById("navHelpBtn").addEventListener("click", () => { location.href = "/help"; });
 
 document.getElementById("navStudioBtn").addEventListener("click", () => {
   // Browsers block http -> file:// links, but going BACK to a file:// page

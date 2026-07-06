@@ -319,6 +319,13 @@ class Handler(BaseHTTPRequestHandler):
         if self.path.split("?")[0] == "/produce":
             self.send_page(PRODUCE_PAGE)
             return
+        if self.path.split("?")[0] in ("/help", "/help.html"):
+            help_page = HERE.parent / "help.html"
+            if help_page.is_file():
+                self.send_page(help_page)
+            else:
+                self.send_json({"error": "help.html not found"}, 404)
+            return
         if self.path == "/api/videos":
             self.send_json(list_videos())
             return

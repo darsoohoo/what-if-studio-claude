@@ -61,3 +61,5 @@ Docs live in `docs/`:
 
 - [Content quality rubric](docs/content-quality-rubric.md)
 - [QA checklist](docs/qa-checklist.md)
+
+User-facing help lives in [help.html](help.html) ("How to" in every page's sidebar, also served at `/help` by the dashboard). **Any change to the user-facing workflow must update help.html in the same commit.**

@@ -2154,6 +2154,7 @@ function bindGlobalActions() {
   };
   $("navVideosBtn").addEventListener("click", () => goToDashboard(""));
   $("navProduceBtn").addEventListener("click", () => goToDashboard("produce"));
+  $("navHelpBtn").addEventListener("click", () => { window.location.href = "help.html"; });
 
   $("exportQueueBtn").addEventListener("click", () => {
     const items = state.queue

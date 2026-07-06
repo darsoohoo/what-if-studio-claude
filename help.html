@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>What If Studio — How to</title>
+<style>
+:root {
+  --bg: #0b0d14; --bg-raised: #131624; --bg-inset: #0e1120;
+  --border: #262b40; --border-strong: #3a4160;
+  --text: #e8eaf2; --text-dim: #9aa1b9; --text-faint: #7d87a3;
+  --accent: #8b7bff; --accent-strong: #a99bff; --good: #4cd6a4; --warn: #ffc46b;
+  --sidenav-w: 190px;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding-left: var(--sidenav-w); background: var(--bg); color: var(--text); font: 15px/1.6 "Segoe UI", system-ui, sans-serif; }
+body.nav-collapsed { --sidenav-w: 54px; }
+.side-nav { position: fixed; top: 0; left: 0; bottom: 0; width: var(--sidenav-w); display: flex; flex-direction: column; gap: 4px; padding: 10px 8px; background: var(--bg-inset); border-right: 1px solid var(--border); z-index: 40; transition: width 150ms ease; overflow: hidden; }
+.side-nav-toggle { font: inherit; font-size: 17px; width: 38px; height: 38px; margin-bottom: 8px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--bg-raised); color: var(--text-dim); cursor: pointer; flex: none; }
+.side-nav-toggle:hover { color: var(--accent-strong); border-color: var(--accent); }
+.side-nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 8px; font-size: 13.5px; font-weight: 600; color: var(--text-dim); white-space: nowrap; }
+.side-nav-item.current { color: var(--text); background: rgba(139,123,255,0.14); border-left: 3px solid var(--accent); padding-left: 7px; }
+.side-nav-link { font: inherit; border: none; background: none; cursor: pointer; text-align: left; width: 100%; }
+.side-nav-link:hover { color: var(--accent-strong); background: var(--bg-raised); }
+.side-nav-icon { flex: none; width: 20px; text-align: center; }
+.side-nav-status { margin-top: auto; font-size: 11.5px; color: var(--text-faint); white-space: normal; line-height: 1.35; }
+body.nav-collapsed .side-nav-label, body.nav-collapsed .side-nav-status { display: none; }
+body.nav-collapsed .side-nav-item { justify-content: center; padding: 9px 0; }
+body.nav-collapsed .side-nav-item.current { padding-left: 0; border-left-width: 0; border-bottom: 3px solid var(--accent); }
+
+header { padding: 22px 24px 4px; }
+h1 { margin: 0; font-size: 21px; }
+.sub { color: var(--text-dim); font-size: 13.5px; margin: 4px 0 0; }
+main { padding: 8px 24px 60px; max-width: 780px; }
+section { margin-top: 26px; }
+h2 { font-size: 16px; margin: 0 0 4px; }
+h2 .n { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: #14102e; font-size: 13px; margin-right: 8px; }
+.caption { color: var(--text-dim); font-size: 13.5px; margin: 6px 0 10px; }
+ul.steps { margin: 8px 0 0; padding-left: 20px; color: var(--text-dim); font-size: 13.5px; }
+ul.steps li { margin-bottom: 5px; }
+ul.steps b { color: var(--text); }
+kbd { background: var(--bg-inset); border: 1px solid var(--border-strong); border-radius: 5px; padding: 1px 7px; font-size: 12px; font-family: inherit; }
+
+/* ---------- animated demo panels ("gifs") ---------- */
+.demo { position: relative; height: 150px; background: var(--bg-raised); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-top: 10px; }
+.demo * { position: absolute; }
+.cursor { width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 4px rgba(255,255,255,0.25); z-index: 5; }
+.chip { border-radius: 8px; background: var(--bg-inset); border: 1px solid var(--border-strong); color: var(--text-dim); font-size: 11.5px; padding: 7px 12px; font-weight: 600; }
+.chip.primary { background: var(--accent); color: #14102e; border-color: transparent; }
+.bar { height: 8px; border-radius: 99px; background: var(--bg-inset); border: 1px solid var(--border); overflow: hidden; }
+.bar i { position: absolute; inset: 0; background: var(--accent); transform-origin: left; }
+.tick { color: var(--good); font-size: 18px; font-weight: 700; }
+.ghost { color: var(--text-faint); font-size: 11.5px; }
+.mini { width: 46px; height: 70px; border-radius: 6px; background: var(--bg-inset); border: 1px solid var(--border-strong); }
+
+@keyframes launchPulse { 0%,15% { transform: scale(1); } 20% { transform: scale(0.92); } 25%,100% { transform: scale(1); } }
+@keyframes lightUp { 0%,30% { opacity: 0.25; } 45%,90% { opacity: 1; } 100% { opacity: 0.25; } }
+.d-launch .cursor { animation: dl-cur 5s infinite; }
+@keyframes dl-cur { 0% { left: 10%; top: 75%; } 18% { left: 23%; top: 48%; } 24% { left: 23%; top: 48%; transform: scale(0.8);} 30%,100% { left: 23%; top: 48%; transform: scale(1);} }
+.d-launch .chip.primary { left: 12%; top: 38%; animation: launchPulse 5s infinite; }
+.d-launch .svc1 { left: 46%; top: 22%; animation: lightUp 5s infinite; }
+.d-launch .svc2 { left: 46%; top: 52%; animation: lightUp 5s infinite 0.4s; }
+.d-launch .svc3 { left: 70%; top: 37%; animation: lightUp 5s infinite 0.8s; }
+
+.d-create .card { width: 90px; height: 54px; border-radius: 8px; background: var(--bg-inset); border: 1px solid var(--border-strong); }
+.d-create .c1 { left: 6%; top: 16%; } .d-create .c2 { left: 6%; top: 60%; }
+.d-create .cursor { animation: dc-cur 6s infinite; }
+@keyframes dc-cur { 0% { left: 30%; top: 80%; } 20% { left: 12%; top: 30%; } 26% { transform: scale(0.8); } 32% { transform: scale(1); } 55% { left: 55%; top: 42%; } 61% { transform: scale(0.8);} 67%,100% { transform: scale(1);} }
+.d-create .c1 { animation: dc-sel 6s infinite; }
+@keyframes dc-sel { 0%,25% { border-color: var(--border-strong); } 32%,100% { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(139,123,255,0.35); } }
+.d-create .gen { left: 46%; top: 38%; animation: dc-gen 6s infinite; }
+@keyframes dc-gen { 0%,60% { opacity: 1; } 67% { transform: scale(0.94); } 74%,100% { transform: scale(1); } }
+.d-create .line { height: 6px; border-radius: 4px; background: var(--border-strong); left: 46%; animation: dc-line 6s infinite; opacity: 0; }
+.d-create .l1 { top: 66%; width: 40%; animation-delay: 0.15s; }
+.d-create .l2 { top: 78%; width: 30%; animation-delay: 0.3s; }
+@keyframes dc-line { 0%,70% { opacity: 0; transform: translateX(-8px);} 80%,100% { opacity: 1; transform: translateX(0);} }
+
+.d-export .chip.primary { left: 6%; top: 40%; animation: launchPulse 6s infinite; }
+.d-export .file { left: 34%; top: 42%; font-size: 20px; animation: de-file 6s infinite; opacity: 0; }
+@keyframes de-file { 0%,25% { left: 30%; opacity: 0; } 35% { opacity: 1; } 60% { left: 62%; opacity: 1; } 70%,100% { left: 64%; opacity: 0; } }
+.d-export .folder { left: 64%; top: 36%; font-size: 26px; }
+.d-export .toast { right: 4%; bottom: 10%; border-radius: 8px; background: var(--bg-inset); border: 1px solid var(--good); color: var(--good); font-size: 11px; padding: 6px 10px; animation: de-toast 6s infinite; opacity: 0; }
+@keyframes de-toast { 0%,65% { opacity: 0; transform: translateY(6px);} 75%,95% { opacity: 1; transform: translateY(0);} 100% { opacity: 0; } }
+
+.d-produce .chip.copy { left: 5%; top: 18%; animation: launchPulse 7s infinite; }
+.d-produce .studio { left: 5%; top: 60%; }
+.d-produce .arrow { left: 30%; top: 62%; color: var(--accent-strong); font-size: 16px; animation: dp-arrow 7s infinite; opacity: 0; }
+@keyframes dp-arrow { 0%,30% { opacity: 0; } 40%,60% { opacity: 1; } 70%,100% { opacity: 0; } }
+.d-produce .imp { left: 42%; top: 18%; animation: launchPulse 7s infinite 0.5s; }
+.d-produce .mini { animation: dp-clip 7s infinite; opacity: 0; }
+.d-produce .m1 { left: 44%; top: 52%; animation-delay: 0.6s; }
+.d-produce .m2 { left: 54%; top: 52%; animation-delay: 0.8s; }
+.d-produce .m3 { left: 64%; top: 52%; animation-delay: 1.0s; }
+@keyframes dp-clip { 0%,55% { opacity: 0; transform: translateY(8px);} 65%,100% { opacity: 1; transform: translateY(0);} }
+.d-produce .bar { left: 78%; right: 5%; top: 30%; }
+.d-produce .bar i { animation: dp-bar 7s infinite; transform: scaleX(0); }
+@keyframes dp-bar { 0%,70% { transform: scaleX(0);} 95%,100% { transform: scaleX(1);} }
+.d-produce .tick { right: 8%; top: 44%; animation: dp-tick 7s infinite; opacity: 0; }
+@keyframes dp-tick { 0%,93% { opacity: 0; } 97%,100% { opacity: 1; } }
+
+.d-review .mini { top: 20%; }
+.d-review .v1 { left: 8%; } .d-review .v2 { left: 24%; animation: dr-swap 6s infinite; } .d-review .v3 { left: 40%; animation: dr-swap2 6s infinite; }
+@keyframes dr-swap { 0%,35% { left: 24%; } 50%,100% { left: 40%; } }
+@keyframes dr-swap2 { 0%,35% { left: 40%; } 50%,100% { left: 24%; } }
+.d-review .note { left: 60%; top: 30%; width: 32%; height: 8px; border-radius: 4px; background: var(--border-strong); animation: dr-note 6s infinite; transform-origin: left; }
+@keyframes dr-note { 0%,55% { transform: scaleX(0.1);} 90%,100% { transform: scaleX(1);} }
+.d-review .ghost { left: 60%; top: 48%; }
+
+.d-post .phone { left: 10%; top: 12%; width: 60px; height: 110px; border-radius: 10px; border: 2px solid var(--border-strong); background: var(--bg-inset); }
+.d-post .up { left: 15%; top: 40%; color: var(--accent-strong); font-size: 22px; animation: dpost-up 5s infinite; }
+@keyframes dpost-up { 0%,20% { top: 62%; opacity: 0; } 35% { opacity: 1; } 60% { top: 26%; opacity: 1; } 75%,100% { top: 20%; opacity: 0; } }
+.d-post .check { font-size: 12.5px; color: var(--text-dim); left: 34%; opacity: 0; animation: dpost-check 5s infinite; }
+.d-post .k1 { top: 22%; animation-delay: 0.4s; } .d-post .k2 { top: 42%; animation-delay: 0.9s; } .d-post .k3 { top: 62%; animation-delay: 1.4s; }
+@keyframes dpost-check { 0%,45% { opacity: 0; transform: translateX(-6px);} 60%,100% { opacity: 1; transform: translateX(0);} }
+
+details { background: var(--bg-raised); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; margin-top: 8px; }
+summary { cursor: pointer; font-weight: 600; font-size: 13.5px; color: var(--text-dim); }
+details p { color: var(--text-dim); font-size: 13px; margin: 8px 0 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+  .demo::after { content: "Animations off (reduced motion)"; position: absolute; right: 10px; bottom: 8px; color: var(--text-faint); font-size: 11px; }
+}
+:focus-visible { outline: 3px solid var(--accent-strong); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<nav class="side-nav" aria-label="Studio pages">
+  <button type="button" id="navToggle" class="side-nav-toggle" aria-label="Collapse menu" aria-expanded="true">☰</button>
+  <button type="button" id="navStudioBtn" class="side-nav-item side-nav-link">
+    <span class="side-nav-icon" aria-hidden="true">✦</span><span class="side-nav-label">Studio</span>
+  </button>
+  <button type="button" id="navVideosBtn" class="side-nav-item side-nav-link">
+    <span class="side-nav-icon" aria-hidden="true">🎬</span><span class="side-nav-label">Videos</span>
+  </button>
+  <button type="button" id="navProduceBtn" class="side-nav-item side-nav-link">
+    <span class="side-nav-icon" aria-hidden="true">🎞️</span><span class="side-nav-label">Produce</span>
+  </button>
+  <span class="side-nav-item current" aria-current="page">
+    <span class="side-nav-icon" aria-hidden="true">❓</span><span class="side-nav-label">How to</span>
+  </span>
+  <span id="navStatus" class="side-nav-status" role="status" aria-live="polite"></span>
+</nav>
+
+<header>
+  <h1>How to use What If Studio</h1>
+  <p class="sub">Idea → script → finished vertical video → posted. The full loop, step by step.</p>
+</header>
+
+<main>
+  <section>
+    <h2><span class="n">1</span>Start everything with one click</h2>
+    <div class="demo d-launch" role="img" aria-label="Animation: double-clicking the launcher lights up the dashboard, the watcher, and the Studio.">
+      <span class="chip primary">Start-What-If-Studio.bat</span>
+      <span class="cursor"></span>
+      <span class="chip svc1">🎛 Dashboard</span>
+      <span class="chip svc2">👁 Watcher</span>
+      <span class="chip svc3">✦ Studio opens</span>
+    </div>
+    <p class="caption">One double-click starts the whole studio — safe to click again anytime.</p>
+    <ul class="steps">
+      <li>Open the project folder and double-click <b>Start-What-If-Studio.bat</b>.</li>
+      <li>It starts the <b>dashboard</b> (Videos + Produce pages + the AI writer), the <b>watcher</b> (auto-renders your exports), and opens the <b>Studio</b> in your browser.</li>
+      <li>Tip: right-click the file → <b>Send to → Desktop</b> for a one-click desktop shortcut.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2><span class="n">2</span>Pick an idea — or write your own</h2>
+    <div class="demo d-create" role="img" aria-label="Animation: clicking a scenario card, then Generate Package, and script lines appearing.">
+      <span class="card c1"></span><span class="card c2"></span>
+      <span class="chip primary gen">Generate Package</span>
+      <span class="line l1"></span><span class="line l2"></span>
+      <span class="cursor"></span>
+    </div>
+    <p class="caption">Every scenario becomes a complete production package: hooks, script beats, shot list, captions, thumbnail text.</p>
+    <ul class="steps">
+      <li>Click any <b>scenario card</b> in the library (search or filter by category).</li>
+      <li>Your own idea? <b>+ Create your own scenario</b> → type just the title → <b>✨ Write it for me</b> drafts the premise and beats (everything stays editable).</li>
+      <li>Choose <b>platform</b>, <b>runtime</b>, and <b>voice style</b> — the voice style picks the narrator (Calm=Adam, High-Energy=Callum, Deadpan=George with ElevenLabs).</li>
+      <li>Click <b>Generate Package</b>, skim the <b>Script Beats</b> tab — that's exactly what the voice will say.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2><span class="n">3</span>Save it, export it — videos make themselves</h2>
+    <div class="demo d-export" role="img" aria-label="Animation: clicking Export queue, a file flying into a folder, and a rendering notification appearing.">
+      <span class="chip primary">Export queue (.json)</span>
+      <span class="file">📄</span>
+      <span class="folder">📁</span>
+      <span class="toast">Rendering 1 video…</span>
+    </div>
+    <p class="caption">The watcher spots your export and renders it automatically — free AI images, voice, captions, music, covers.</p>
+    <ul class="steps">
+      <li>Under the package, pick an <b>empty queue slot</b> → <b>Save to slot</b>. Queue up several for a week of content.</li>
+      <li>Click <b>Export queue (.json) for video pipeline</b> in the queue panel.</li>
+      <li>That's it — a notification appears, and a few minutes later the output folder opens with finished videos. New scenarios take 2–5 minutes each (AI images generate once, then they're cached).</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2><span class="n">4</span>Premium videos — the Produce page</h2>
+    <div class="demo d-produce" role="img" aria-label="Animation: copying a prompt, generating in tryinfer Studio, importing clips, and rendering with a progress bar.">
+      <span class="chip copy">Copy prompt</span>
+      <span class="chip studio">tryinfer Studio</span>
+      <span class="arrow">⬇⬇⬇</span>
+      <span class="chip primary imp">Import from Downloads</span>
+      <span class="mini m1"></span><span class="mini m2"></span><span class="mini m3"></span>
+      <span class="bar"><i></i></span>
+      <span class="tick">✓ Done</span>
+    </div>
+    <p class="caption">Real AI motion video per beat, using your unlimited tryinfer Studio subscription — no renaming, no folder hunting.</p>
+    <ul class="steps">
+      <li>Sidebar → <b>🎞️ Produce</b> → pick your package from the dropdown.</li>
+      <li><b>Copy</b> each numbered prompt → paste into <b>tryinfer Studio</b> (9:16 · 5s · your model) → generate → download. In order.</li>
+      <li>Click <b>⬇ Import newest videos from Downloads</b> — your clips are pulled in automatically, in the order you made them. Hover a clip to preview; ↑↓ to reorder.</li>
+      <li>Tick <b>ElevenLabs voice</b> (and <b>Keep clip sound</b> if you used LTX) → <b>🎬 Render video</b> → watch the live log → <b>See it in Videos</b>.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2><span class="n">5</span>Review your pipeline</h2>
+    <div class="demo d-review" role="img" aria-label="Animation: video cards reordering and a note being written.">
+      <span class="mini v1"></span><span class="mini v2"></span><span class="mini v3"></span>
+      <span class="note"></span>
+      <span class="ghost">notes autosave…</span>
+    </div>
+    <p class="caption">The Videos page is your posting queue — order it the way you plan to post.</p>
+    <ul class="steps">
+      <li>Sidebar → <b>🎬 Videos</b>. Watch each video right on the page.</li>
+      <li><b>↑ ↓</b> set your posting order (it's saved). <b>#1 = post next.</b></li>
+      <li>Write <b>notes</b> per video (hook ideas, when to post) — they autosave.</li>
+      <li><b>Remove</b> moves a video to <b>output/trash</b> — recoverable, never deleted.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2><span class="n">6</span>Post it (the part only you can do)</h2>
+    <div class="demo d-post" role="img" aria-label="Animation: an upload arrow rising over a phone and checklist items appearing.">
+      <span class="phone"></span>
+      <span class="up">⬆</span>
+      <span class="check k1">✓ Caption + hashtags from the post kit</span>
+      <span class="check k2">✓ Cover image (-thumb.jpg)</span>
+      <span class="check k3">✓ "AI-generated content" toggle ON</span>
+    </div>
+    <p class="caption">Everything you need to paste is in the video's post kit — posting takes about two minutes.</p>
+    <ul class="steps">
+      <li>Watch the video once — you're the editor of record.</li>
+      <li>Upload the <b>.mp4</b>, set the matching <b>-thumb.jpg</b> as the cover.</li>
+      <li>Open the <b>post kit</b> (on the video's card) → paste a caption + the music credit.</li>
+      <li>Turn on the platform's <b>AI-generated content</b> disclosure → post.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2><span class="n">?</span>When something's off</h2>
+    <details>
+      <summary>"Dashboard offline" or the AI writer won't work</summary>
+      <p>The helper isn't running. Double-click <b>Start-What-If-Studio.bat</b> in the project folder, then try again.</p>
+    </details>
+    <details>
+      <summary>"The writing service hiccuped"</summary>
+      <p>The free AI writer handles one request at a time. Wait a minute and click <b>✨ Write it for me</b> again.</p>
+    </details>
+    <details>
+      <summary>I want different images for a video</summary>
+      <p>Delete that scenario's folder inside <b>pipeline\ai-visuals</b> — the next render generates a fresh set (now with people in frame by default).</p>
+    </details>
+    <details>
+      <summary>My queue disappeared / "Memory only" badge</summary>
+      <p>Your work saves in this browser on this device. If the badge says <b>Memory only</b>, the browser is blocking storage for local files — export anything you want to keep, and use the same browser each time.</p>
+    </details>
+    <details>
+      <summary>Where do my videos live on disk?</summary>
+      <p><b>pipeline\output</b> — each video with its cover image (<b>-thumb.jpg</b>) and post kit (<b>-post.txt</b>). Removed videos are in <b>pipeline\output\trash</b>.</p>
+    </details>
+  </section>
+</main>
+
+<script>
+function setNavCollapsed(c, persist = true) {
+  document.body.classList.toggle("nav-collapsed", c);
+  const t = document.getElementById("navToggle");
+  t.setAttribute("aria-expanded", String(!c));
+  t.setAttribute("aria-label", c ? "Expand menu" : "Collapse menu");
+  if (persist) { try { localStorage.setItem("wis.navCollapsed", c ? "1" : "0"); } catch (e) {} }
+}
+document.getElementById("navToggle").addEventListener("click", () =>
+  setNavCollapsed(!document.body.classList.contains("nav-collapsed")));
+let sn = null; try { sn = localStorage.getItem("wis.navCollapsed"); } catch (e) {}
+setNavCollapsed(sn === null ? matchMedia("(max-width: 700px)").matches : sn === "1", false);
+
+const DASHBOARD = "http://127.0.0.1:8765/";
+const onDashboard = location.protocol !== "file:" && location.port === "8765";
+
+document.getElementById("navStudioBtn").addEventListener("click", () => {
+  if (onDashboard) {
+    if (history.length > 1) history.back();
+    else showStatus("Your Studio is index.html in the project folder (or use Start-What-If-Studio.bat).");
+  } else {
+    location.href = "index.html";
+  }
+});
+async function goDashboard(path) {
+  if (onDashboard) { location.href = "/" + path; return; }
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2500);
+    await fetch(DASHBOARD + "api/videos", { signal: controller.signal });
+    clearTimeout(timer);
+    location.href = DASHBOARD + path;
+  } catch (e) {
+    setNavCollapsed(false, false);
+    showStatus("Dashboard offline — double-click Start-What-If-Studio.bat, then try again.");
+  }
+}
+document.getElementById("navVideosBtn").addEventListener("click", () => goDashboard(""));
+document.getElementById("navProduceBtn").addEventListener("click", () => goDashboard("produce"));
+function showStatus(msg) {
+  const el = document.getElementById("navStatus");
+  el.textContent = msg;
+  setTimeout(() => { el.textContent = ""; }, 8000);
+}
+</script>
+</body>
+</html>
