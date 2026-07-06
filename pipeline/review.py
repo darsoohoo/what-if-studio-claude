@@ -20,10 +20,13 @@ import re
 import shutil
 import sys
 import threading
+import time
+import urllib.error
+import urllib.request
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote
+from urllib.parse import unquote, urlparse, parse_qs, quote
 
 HERE = Path(__file__).resolve().parent
 OUTPUT = HERE / "output"
@@ -86,6 +89,56 @@ def list_videos():
     return ordered
 
 
+TEXT_AI = "https://text.pollinations.ai/"
+
+
+def ai_draft(title, category):
+    """Draft premise/beats/tags/emoji for a scenario title via the free
+    Pollinations text API. Runs server-side because the API blocks direct
+    browser requests (Turnstile) but allows plain server calls."""
+    prompt = (
+        'You write scripts for short-form "What if?" videos (TikTok explainer style). '
+        f'For the question "{title}" (category: {category}), reply with ONLY minified JSON, '
+        'no markdown fences, exactly this shape: '
+        '{"premise":"...","beats":["...","...","...","...","..."],"tags":["...","...","..."],"emoji":"..."} '
+        "Rules: premise = 2-3 vivid sentences setting up why this is fascinating. "
+        "beats = exactly 5 spoken-narration beats, 15-30 words each, no stage directions: "
+        "1 the setup, 2 the immediate consequence, 3 the ripple effect nobody predicts, "
+        "4 the twist or surprising real fact, 5 a payoff line that reframes the question. "
+        "Anchor in real facts where possible, clearly speculative in tone, punchy. "
+        "tags = 3-5 lowercase topic words. emoji = one fitting emoji."
+    )
+    raw = None
+    for attempt in range(3):
+        url = TEXT_AI + quote(prompt) + f"?seed={int(time.time())}"
+        req = urllib.request.Request(url, headers={"User-Agent": "WhatIfStudio-review/1.0"})
+        try:
+            with urllib.request.urlopen(req, timeout=90) as resp:
+                raw = resp.read().decode("utf-8", "replace")
+            break
+        except urllib.error.HTTPError as exc:
+            # The free tier rate-limits (~1 request / 15s) - wait and retry.
+            if exc.code == 429 and attempt < 2:
+                time.sleep(18)
+                continue
+            raise
+    if raw is None:
+        raise RuntimeError("the free writing service is busy - try again in a minute")
+    start, end = raw.find("{"), raw.rfind("}")
+    if start < 0 or end <= start:
+        raise RuntimeError("no JSON in AI response")
+    data = json.loads(raw[start:end + 1])
+    beats = [str(b).strip() for b in (data.get("beats") or []) if str(b).strip()][:5]
+    if not data.get("premise") or len(beats) < 3:
+        raise RuntimeError("AI draft was incomplete - try again")
+    return {
+        "premise": str(data["premise"]).strip(),
+        "beats": beats,
+        "tags": [str(t).strip() for t in (data.get("tags") or []) if str(t).strip()][:5],
+        "emoji": str(data.get("emoji") or "").strip()[:4],
+    }
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass  # keep the console quiet
@@ -96,6 +149,8 @@ class Handler(BaseHTTPRequestHandler):
         body = json.dumps(obj).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
+        # The static app (file:// or localhost) calls /api/draft cross-origin.
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -153,6 +208,18 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == "/api/videos":
             self.send_json(list_videos())
+            return
+        if self.path.startswith("/api/draft"):
+            q = parse_qs(urlparse(self.path).query)
+            title = (q.get("title") or [""])[0].strip()[:200]
+            category = (q.get("category") or ["Speculative"])[0].strip()[:40]
+            if not title:
+                self.send_json({"error": "missing title"}, 400)
+                return
+            try:
+                self.send_json(ai_draft(title, category))
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 502)
             return
         if self.path.startswith("/files/"):
             name = safe_name(self.path[len("/files/"):])

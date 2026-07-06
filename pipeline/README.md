@@ -68,6 +68,8 @@ The app never requires this tool — it stays a plain static page. This is the "
 
 Double-click **`review.bat`** to open a local dashboard (127.0.0.1 only) of every rendered video: watch them, drag your posting order (saved), write notes per video (autosaved), read each post kit, and **Remove** videos you don't want — removed files move to `output/trash`, never permanently deleted. Notes and order live in `review-notes.json`.
 
+The dashboard also powers the app's **"✨ Write it for me"** button (in the Create-your-own-scenario form): it fetches a free AI draft of the premise/beats/tags server-side (the free service blocks direct browser calls). No key needed. The free tier handles **one request at a time per connection** — if you see "hiccuped", wait a minute and click again.
+
 ## Daily workflow (zero-click)
 
 1. Double-click **`start-watcher.bat`** once when you sit down to create (it quietly watches your Downloads folder until you log off; nothing is installed).
