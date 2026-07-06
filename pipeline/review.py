@@ -283,6 +283,8 @@ def start_render(queue_file, slot, staging, opts):
         raise RuntimeError("a render is already running - wait for it to finish")
     cmd = [sys.executable, "make_videos.py", queue_file, "--slots", str(slot),
            "--backgrounds", str(staging), "--out", "output"]
+    if opts.get("infer"):
+        cmd.append("--infer")
     if opts.get("elevenlabs"):
         cmd.append("--elevenlabs")
     if opts.get("charts"):
@@ -408,6 +410,7 @@ class Handler(BaseHTTPRequestHandler):
                     "staged": staged_list(d),
                     "voices": voices,
                     "elevenlabs": bool(key),
+                    "infer": bool(mv.infer_api_key()),
                     "rendering": render_running(),
                 })
             except Exception as exc:
