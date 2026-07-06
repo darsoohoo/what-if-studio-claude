@@ -366,9 +366,52 @@ dz.addEventListener("drop", async (e) => {
   $id("clipStatus").textContent = "";
 });
 
+/* ---------- render-done announcement: system toast + chime + title flash ----------
+   Renders take minutes and the user tabs away - make the finish unmissable.
+   Notification permission is requested on the render click (a user gesture);
+   the AudioContext is created there too so the chime survives autoplay policy. */
+let audioCtx = null;
+const baseTitle = document.title;
+
+function chime(ok) {
+  if (!audioCtx) return;
+  audioCtx.resume().catch(() => {});
+  const notes = ok ? [523.25, 659.25, 783.99] : [330, 262];   // rising triad vs. sad two-tone
+  notes.forEach((f, i) => {
+    const t = audioCtx.currentTime + i * 0.18;
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = "sine"; o.frequency.value = f;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.25, t + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(t); o.stop(t + 0.5);
+  });
+}
+
+function notifyDone(ok) {
+  const msg = ok ? "✅ Your video is ready — see it in Videos" : "❌ Render failed — check the log";
+  try {
+    if ("Notification" in window && Notification.permission === "granted") {
+      const n = new Notification("What If Studeos", { body: msg, tag: "wis-render" });
+      n.onclick = () => { window.focus(); n.close(); };
+    }
+  } catch (e) {}
+  try { chime(ok); } catch (e) {}
+  document.title = (ok ? "✅ DONE — " : "❌ FAILED — ") + baseTitle;
+  const restore = () => { document.title = baseTitle; document.removeEventListener("visibilitychange", restore); };
+  if (document.hidden) document.addEventListener("visibilitychange", restore);
+  else setTimeout(restore, 10000);
+}
+
 /* ---------- step 4: render ---------- */
 let pollTimer = null;
 $id("renderBtn").addEventListener("click", async () => {
+  // User gesture: unlock the two announcement channels for later.
+  try {
+    if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+  } catch (e) {}
   const mode = visMode();
   const engine = $id("imgEngine").value;
   const paidImages = mode === "images" && engine !== "pollinations";
@@ -410,8 +453,16 @@ async function pollRender() {
   if (!s.running) {
     clearInterval(pollTimer);
     $id("renderBtn").disabled = false;
-    if (s.ok) { setRenderStatus("✓ Done! Your video is ready.", "good"); $id("openVideosBtn").hidden = false; }
-    else setRenderStatus("Render failed — details in the log below.", "bad");
+    if (s.ok) {
+      setRenderStatus("✓ Done! Your video is ready.", "good");
+      const btn = $id("openVideosBtn");
+      btn.hidden = false;
+      btn.classList.add("primary");
+      notifyDone(true);
+    } else {
+      setRenderStatus("Render failed — details in the log below.", "bad");
+      notifyDone(false);
+    }
   }
 }
 function setRenderStatus(msg, cls) {
