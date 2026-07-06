@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>What If Studio — Produce</title>
+<style>
+:root {
+  --bg: #0b0d14; --bg-raised: #131624; --bg-inset: #0e1120;
+  --border: #262b40; --border-strong: #3a4160;
+  --text: #e8eaf2; --text-dim: #9aa1b9; --text-faint: #7d87a3;
+  --accent: #8b7bff; --accent-strong: #a99bff; --good: #4cd6a4; --danger: #ff7a8a;
+  --sidenav-w: 190px;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding-left: var(--sidenav-w); background: var(--bg); color: var(--text); font: 15px/1.5 "Segoe UI", system-ui, sans-serif; }
+body.nav-collapsed { --sidenav-w: 54px; }
+.side-nav { position: fixed; top: 0; left: 0; bottom: 0; width: var(--sidenav-w); display: flex; flex-direction: column; gap: 4px; padding: 10px 8px; background: var(--bg-inset); border-right: 1px solid var(--border); z-index: 40; transition: width 150ms ease; overflow: hidden; }
+.side-nav-toggle { font: inherit; font-size: 17px; width: 38px; height: 38px; margin-bottom: 8px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--bg-raised); color: var(--text-dim); cursor: pointer; flex: none; }
+.side-nav-toggle:hover { color: var(--accent-strong); border-color: var(--accent); }
+.side-nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 8px; font-size: 13.5px; font-weight: 600; color: var(--text-dim); white-space: nowrap; }
+.side-nav-item.current { color: var(--text); background: rgba(139,123,255,0.14); border-left: 3px solid var(--accent); padding-left: 7px; }
+.side-nav-link { font: inherit; border: none; background: none; cursor: pointer; text-align: left; width: 100%; }
+.side-nav-link:hover { color: var(--accent-strong); background: var(--bg-raised); }
+.side-nav-icon { flex: none; width: 20px; text-align: center; }
+body.nav-collapsed .side-nav-label { display: none; }
+body.nav-collapsed .side-nav-item { justify-content: center; padding: 9px 0; }
+body.nav-collapsed .side-nav-item.current { padding-left: 0; border-left-width: 0; border-bottom: 3px solid var(--accent); }
+header { padding: 20px 24px 4px; }
+h1 { margin: 0; font-size: 20px; }
+.sub { color: var(--text-dim); font-size: 13px; margin: 4px 0 0; }
+main { padding: 8px 24px 48px; max-width: 900px; }
+section { background: var(--bg-raised); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-top: 16px; }
+h2 { margin: 0 0 10px; font-size: 15px; }
+h2 .step { color: var(--accent-strong); margin-right: 6px; }
+select, input[type="number"] { font: inherit; color: var(--text); background: var(--bg-inset); border: 1px solid var(--border-strong); border-radius: 8px; padding: 8px 10px; }
+select { width: 100%; }
+button { font: inherit; font-size: 13px; font-weight: 600; padding: 8px 13px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--bg-inset); color: var(--text); cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button:disabled { opacity: 0.45; cursor: default; }
+.primary { background: linear-gradient(135deg, var(--accent), #6a5ae0); border-color: transparent; color: #fff; }
+.hint { color: var(--text-faint); font-size: 12.5px; margin: 6px 0 0; }
+.prompt { display: flex; gap: 10px; align-items: flex-start; background: var(--bg-inset); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-top: 8px; }
+.prompt .num { flex: none; font-weight: 700; color: var(--accent-strong); }
+.prompt .text { flex: 1; font-size: 13px; color: var(--text-dim); }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+.drop { border: 2px dashed var(--border-strong); border-radius: 10px; padding: 22px; text-align: center; color: var(--text-faint); margin-top: 12px; }
+.drop.over { border-color: var(--accent); color: var(--accent-strong); background: rgba(139,123,255,0.06); }
+.clip { display: flex; gap: 12px; align-items: center; background: var(--bg-inset); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin-top: 8px; }
+.clip video { width: 64px; aspect-ratio: 9/16; background: #000; border-radius: 6px; }
+.clip .name { flex: 1; font-size: 13px; }
+label.opt { display: flex; gap: 8px; align-items: center; font-size: 13.5px; color: var(--text-dim); }
+pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(--border); border-radius: 8px; padding: 10px; max-height: 240px; overflow-y: auto; font-size: 12px; margin-top: 10px; }
+.status { font-size: 13px; margin-top: 10px; min-height: 18px; }
+.status.good { color: var(--good); }
+.status.bad { color: var(--danger); }
+:focus-visible { outline: 3px solid var(--accent-strong); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<nav class="side-nav" aria-label="Studio pages">
+  <button type="button" id="navToggle" class="side-nav-toggle" aria-label="Collapse menu" aria-expanded="true">☰</button>
+  <button type="button" id="navStudioBtn" class="side-nav-item side-nav-link">
+    <span class="side-nav-icon" aria-hidden="true">✦</span><span class="side-nav-label">Studio</span>
+  </button>
+  <button type="button" id="navVideosBtn" class="side-nav-item side-nav-link">
+    <span class="side-nav-icon" aria-hidden="true">🎬</span><span class="side-nav-label">Videos</span>
+  </button>
+  <span class="side-nav-item current" aria-current="page">
+    <span class="side-nav-icon" aria-hidden="true">🎞️</span><span class="side-nav-label">Produce</span>
+  </span>
+  <button type="button" id="navHelpBtn" class="side-nav-item side-nav-link">
+    <span class="side-nav-icon" aria-hidden="true">❓</span><span class="side-nav-label">How to</span>
+  </button>
+</nav>
+
+<header>
+  <h1>Produce</h1>
+  <p class="sub">Turn tryinfer Studio clips into a finished video — prompts, clips, and render, all here.</p>
+</header>
+
+<main>
+  <section>
+    <h2><span class="step">1</span>Pick a package</h2>
+    <select id="pkgSelect"><option value="">Loading…</option></select>
+    <p class="hint">These come from your queue exports. Export a queue in the Studio and it appears here.</p>
+  </section>
+
+  <div id="flow" hidden>
+    <section>
+      <h2><span class="step">2</span>Generate the clips in <a href="https://tryinfer.com" target="_blank" rel="noopener" style="color:var(--accent-strong)">tryinfer Studio</a></h2>
+      <p class="hint">Settings per clip: <strong>9:16 vertical · 5s</strong> · your chosen model. Copy each prompt, generate, download — in order.</p>
+      <div id="prompts"></div>
+    </section>
+
+    <section>
+      <h2><span class="step">3</span>Bring the clips in</h2>
+      <div class="row">
+        <button type="button" id="importBtn" class="primary">⬇ Import newest <span id="importCount">7</span> videos from Downloads</button>
+        <span class="hint" style="margin:0">…or drag the downloaded files into the box below.</span>
+      </div>
+      <div class="drop" id="dropZone">Drop clips here (they'll be numbered in the order you drop them)</div>
+      <div id="clips"></div>
+      <div class="row">
+        <button type="button" id="clearBtn">Clear all clips</button>
+      </div>
+      <p class="status" id="clipStatus" role="status" aria-live="polite"></p>
+    </section>
+
+    <section>
+      <h2><span class="step">4</span>Render</h2>
+      <div class="row">
+        <label class="opt"><input type="checkbox" id="optEleven"> ElevenLabs voice</label>
+        <label class="opt">Voice: <select id="optVoice" style="width:auto"><option value="auto">Auto (from style)</option></select></label>
+        <label class="opt"><input type="checkbox" id="optCharts" checked> Animated numbers</label>
+        <label class="opt"><input type="checkbox" id="optClipAudio"> Keep clip sound (LTX)</label>
+      </div>
+      <div class="row">
+        <button type="button" id="renderBtn" class="primary">🎬 Render video</button>
+        <button type="button" id="openVideosBtn" hidden>See it in Videos →</button>
+      </div>
+      <p class="status" id="renderStatus" role="status" aria-live="polite"></p>
+      <pre id="renderLog" hidden></pre>
+    </section>
+  </div>
+</main>
+
+<script>
+const S = { queue: null, slot: null, dir: null, prompts: [], rendering: false };
+const $id = (x) => document.getElementById(x);
+
+async function api(path, body) {
+  const opts = body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {};
+  return (await fetch(path, opts)).json();
+}
+
+/* ---------- sidebar ---------- */
+function setNavCollapsed(c, persist = true) {
+  document.body.classList.toggle("nav-collapsed", c);
+  const t = $id("navToggle");
+  t.setAttribute("aria-expanded", String(!c));
+  t.setAttribute("aria-label", c ? "Expand menu" : "Collapse menu");
+  if (persist) { try { localStorage.setItem("wis.navCollapsed", c ? "1" : "0"); } catch (e) {} }
+}
+$id("navToggle").addEventListener("click", () => setNavCollapsed(!document.body.classList.contains("nav-collapsed")));
+let sn = null; try { sn = localStorage.getItem("wis.navCollapsed"); } catch (e) {}
+setNavCollapsed(sn === null ? matchMedia("(max-width: 700px)").matches : sn === "1", false);
+$id("navVideosBtn").addEventListener("click", () => { location.href = "/"; });
+$id("navHelpBtn").addEventListener("click", () => { location.href = "/help"; });
+$id("navStudioBtn").addEventListener("click", () => {
+  if (history.length > 1) history.back();
+  else alert("Your Studio is index.html — open it from the project folder (or Start-What-If-Studio.bat).");
+});
+
+/* ---------- step 1: packages ---------- */
+async function loadQueues() {
+  const queues = await api("/api/produce/queues");
+  const sel = $id("pkgSelect");
+  sel.innerHTML = "<option value=''>— choose a video package —</option>";
+  for (const q of queues) {
+    for (const it of q.items) {
+      const opt = document.createElement("option");
+      opt.value = q.file + "|" + it.slot;
+      opt.textContent = it.title + "  (" + q.file + ", slot " + it.slot + ")";
+      sel.appendChild(opt);
+    }
+  }
+}
+$id("pkgSelect").addEventListener("change", async (e) => {
+  if (!e.target.value) { $id("flow").hidden = true; return; }
+  const [queue, slot] = e.target.value.split("|");
+  const info = await api(`/api/produce/info?queue=${encodeURIComponent(queue)}&slot=${slot}`);
+  if (info.error) { alert(info.error); return; }
+  S.queue = queue; S.slot = Number(slot); S.dir = info.dir; S.prompts = info.prompts;
+  renderPrompts(info.prompts);
+  renderClips(info.staged);
+  $id("importCount").textContent = info.prompts.length;
+  $id("optEleven").checked = info.elevenlabs;
+  $id("optEleven").disabled = !info.elevenlabs;
+  const vs = $id("optVoice");
+  vs.innerHTML = "<option value='auto'>Auto (from style)</option>";
+  (info.voices || []).forEach(v => { const o = document.createElement("option"); o.value = v; o.textContent = v; vs.appendChild(o); });
+  $id("flow").hidden = false;
+});
+
+/* ---------- step 2: prompts ---------- */
+function renderPrompts(prompts) {
+  const box = $id("prompts");
+  box.innerHTML = "";
+  prompts.forEach((p, i) => {
+    const div = document.createElement("div");
+    div.className = "prompt";
+    const btn = document.createElement("button");
+    btn.textContent = "Copy";
+    btn.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(p); btn.textContent = "Copied ✓"; }
+      catch (e) { btn.textContent = "Select + copy"; }
+      setTimeout(() => { btn.textContent = "Copy"; }, 2000);
+    });
+    div.innerHTML = `<span class="num">${String(i + 1).padStart(2, "0")}</span><span class="text"></span>`;
+    div.querySelector(".text").textContent = p;
+    div.appendChild(btn);
+    box.appendChild(div);
+  });
+}
+
+/* ---------- step 3: clips ---------- */
+function renderClips(staged) {
+  const box = $id("clips");
+  box.innerHTML = "";
+  staged.forEach((c, i) => {
+    const div = document.createElement("div");
+    div.className = "clip";
+    const vid = document.createElement("video");
+    vid.src = `/produce-files/${S.dir}/${c.name}`;
+    vid.preload = "metadata"; vid.muted = true;
+    vid.addEventListener("mouseenter", () => vid.play().catch(() => {}));
+    vid.addEventListener("mouseleave", () => { vid.pause(); vid.currentTime = 0; });
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = `Clip ${String(i + 1).padStart(2, "0")} — ${c.size_mb} MB` + (S.prompts[i] ? "" : "  (extra)");
+    const up = mkBtn("↑", i === 0, async () => swap(staged[i - 1].name, c.name));
+    const down = mkBtn("↓", i === staged.length - 1, async () => swap(staged[i + 1].name, c.name));
+    const rm = mkBtn("Remove", false, async () => {
+      const r = await api("/api/produce/remove", { dir: S.dir, name: c.name });
+      renderClips(r.staged || []);
+    });
+    rm.style.color = "var(--danger)";
+    div.append(vid, name, up, down, rm);
+    box.appendChild(div);
+  });
+  const need = S.prompts.length, have = staged.length;
+  $id("clipStatus").className = "status " + (have >= need ? "good" : "");
+  $id("clipStatus").textContent = have === 0 ? "" :
+    have >= need ? `✓ ${have} clip(s) staged — ready to render.` :
+    `${have} of ${need} clips staged — beats without a clip reuse earlier ones.`;
+}
+function mkBtn(label, disabled, fn) {
+  const b = document.createElement("button");
+  b.textContent = label; b.disabled = disabled;
+  b.addEventListener("click", fn);
+  return b;
+}
+async function swap(a, b) {
+  const r = await api("/api/produce/swap", { dir: S.dir, a, b });
+  renderClips(r.staged || []);
+}
+$id("importBtn").addEventListener("click", async () => {
+  $id("clipStatus").textContent = "Importing from Downloads…";
+  const r = await api("/api/produce/import", { dir: S.dir, count: S.prompts.length });
+  if (r.error) { $id("clipStatus").className = "status bad"; $id("clipStatus").textContent = r.error; return; }
+  renderClips(r.staged);
+});
+$id("clearBtn").addEventListener("click", async () => {
+  const r = await api("/api/produce/clear", { dir: S.dir });
+  renderClips(r.staged || []);
+});
+const dz = $id("dropZone");
+dz.addEventListener("dragover", (e) => { e.preventDefault(); dz.classList.add("over"); });
+dz.addEventListener("dragleave", () => dz.classList.remove("over"));
+dz.addEventListener("drop", async (e) => {
+  e.preventDefault(); dz.classList.remove("over");
+  const files = [...e.dataTransfer.files].filter(f => f.name.toLowerCase().endsWith(".mp4"));
+  if (!files.length) { $id("clipStatus").textContent = "Only .mp4 files, please."; return; }
+  let last = null;
+  for (const f of files) {
+    $id("clipStatus").textContent = `Uploading ${f.name}…`;
+    last = await (await fetch(`/api/produce/upload?dir=${encodeURIComponent(S.dir)}`, { method: "POST", body: f })).json();
+  }
+  if (last && last.staged) renderClips(last.staged);
+  $id("clipStatus").textContent = "";
+});
+
+/* ---------- step 4: render ---------- */
+let pollTimer = null;
+$id("renderBtn").addEventListener("click", async () => {
+  const r = await api("/api/produce/render", {
+    queue: S.queue, slot: S.slot,
+    elevenlabs: $id("optEleven").checked,
+    charts: $id("optCharts").checked,
+    clip_audio: $id("optClipAudio").checked ? 0.25 : 0,
+    voice: $id("optVoice").value,
+  });
+  if (r.error) { setRenderStatus(r.error, "bad"); return; }
+  $id("renderBtn").disabled = true;
+  $id("openVideosBtn").hidden = true;
+  $id("renderLog").hidden = false;
+  setRenderStatus("Rendering… (a minute or two)", "");
+  pollTimer = setInterval(pollRender, 3000);
+});
+async function pollRender() {
+  const s = await api("/api/produce/render-status");
+  $id("renderLog").textContent = s.log || "";
+  $id("renderLog").scrollTop = $id("renderLog").scrollHeight;
+  if (!s.running) {
+    clearInterval(pollTimer);
+    $id("renderBtn").disabled = false;
+    if (s.ok) { setRenderStatus("✓ Done! Your video is ready.", "good"); $id("openVideosBtn").hidden = false; }
+    else setRenderStatus("Render failed — details in the log below.", "bad");
+  }
+}
+function setRenderStatus(msg, cls) {
+  const el = $id("renderStatus");
+  el.className = "status " + cls;
+  el.textContent = msg;
+}
+$id("openVideosBtn").addEventListener("click", () => { location.href = "/"; });
+
+loadQueues();
+</script>
+</body>
+</html>

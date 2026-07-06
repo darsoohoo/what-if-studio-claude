@@ -17,6 +17,34 @@ python make_videos.py queue.json --ai-visuals --ai-style infographic # flat corp
 
 To regenerate a scenario's images (new random look), delete its folder in `ai-visuals/`. AI images make the whole video AI-generated content — the disclosure reminder in each post kit covers this.
 
+**Real stock footage** (`--stock`): uses actual vertical video clips from Pexels — real motion instead of AI stills — one clip per beat, keyword-matched from each beat's nouns. Free, but needs a Pexels API key:
+
+1. Sign up (free) at https://www.pexels.com/api/ and copy your key.
+2. Set the `PEXELS_API_KEY` environment variable, **or** save the key (one line) in `pipeline/pexels_key.txt` (git-ignored).
+3. Run:
+   ```
+   python make_videos.py queue.json --stock --charts
+   ```
+
+Clips cache in `stock/` per scenario. Pexels clips are generic (topical, not scene-specific), so they read as real b-roll rather than exact illustrations. Attribution isn't required but is appreciated — the post kit lists the videographers and a Pexels credit line for you to paste.
+
+**Paid AI video** (`--infer`): generates a bespoke motion clip per beat via [tryinfer](https://tryinfer.com) (Seedance, etc.). Each beat's clip is an `image-to-video` job that animates a free Pollinations first frame — so every clip shares one style anchor and the sequence feels like one production once the pipeline adds voice, captions, music, and crossfades.
+
+1. Put your tryinfer key in `TRYINFER_API_KEY` or `pipeline/tryinfer_key.txt` (git-ignored).
+2. **Confirm it works cheaply first** — one clip:
+   ```
+   python infer_probe.py            # submits ONE 5s clip, prints the result
+   ```
+3. Then render:
+   ```
+   python make_videos.py queue.json --infer --charts
+   python make_videos.py queue.json --infer --infer-model happyhorse --infer-duration 10
+   ```
+
+**This is a paid API — real, verified pricing:** seedance-2.0-pro bills **$0.13/second ($0.65 per 5s clip)**, so a 7-beat video costs ≈ **$4.55** in clips (double for 10s clips). The renderer prints each clip's price and the total spend per run. Clips cache in `infer-videos/` per scenario+model, so re-renders don't re-bill. If the provider content-flags a first-frame image, that beat automatically retries as text-to-video. `--infer` makes the whole video AI-generated — keep the AI-content disclosure on when posting.
+
+Given the cost, a sensible split: `--infer` for hero videos you expect to perform, `--ai-visuals` (free) or `--stock` (free) for daily volume.
+
 **Animated charts** (`--charts`): beats whose narration contains a headline number get an animated graphic overlaid — a counter that ticks up ("8 → BILLION", "$50 MILLION", "30 DAYS") or, for percentages, a number plus a filling bar ("80 PERCENT"). Detection is conservative: one graphic per beat, only clear numbers, and it skips the hook and outro (owned by the title/CTA cards) and bare years. Needs per-beat visuals, so pair it with `--ai-visuals` or a multi-file `backgrounds/` folder:
 
 ```
@@ -36,9 +64,15 @@ The app never requires this tool — it stays a plain static page. This is the "
 4. *(Optional but recommended)* Drop a few copyright-free vertical background videos into `backgrounds/` (see the README in that folder). Without them, the pipeline generates an animated gradient in each scenario's brand colors — clean, but real footage retains viewers better.
 5. *(Recommended)* Run `python get_music.py` once — it downloads a curated, properly-licensed music set into mood folders. Each video then gets a background bed matched to its scenario's mood (eerie / tense / wonder / upbeat), faded out at the end, with the required credit line added to the post kit automatically. See `music/README.md`.
 
+## Review dashboard
+
+Double-click **`review.bat`** to open a local dashboard (127.0.0.1 only) of every rendered video: watch them, drag your posting order (saved), write notes per video (autosaved), read each post kit, and **Remove** videos you don't want — removed files move to `output/trash`, never permanently deleted. Notes and order live in `review-notes.json`.
+
+The dashboard also powers the app's **"✨ Write it for me"** button (in the Create-your-own-scenario form): it fetches a free AI draft of the premise/beats/tags server-side (the free service blocks direct browser calls). No key needed. The free tier handles **one request at a time per connection** — if you see "hiccuped", wait a minute and click again.
+
 ## Daily workflow (zero-click)
 
-1. Double-click **`start-watcher.bat`** once when you sit down to create (it quietly watches your Downloads folder until you log off; nothing is installed).
+1. Double-click **`Start-What-If-Studio.bat`** (in the project root) once when you sit down — it starts the dashboard, the watcher, and opens the Studio in one click. (`start-watcher.bat` / `review.bat` here remain as granular alternatives.)
 2. In the app: build your queue, then click **Export queue (.json) for video pipeline**.
 3. That's it. The watcher picks the export up from Downloads, renders every package with free AI visuals, and pops the `output/` folder open when done. Progress is logged to `watcher.log`.
 4. Watch each video, copy a caption from its `-post.txt` post kit, and upload.
@@ -49,7 +83,7 @@ Manual alternatives: double-click **`run-queue.bat`** after each export, or run 
 python make_videos.py whatifstudio-queue.json --ai-visuals
 ```
 
-Finished videos land in `output/` as `01-<title>.mp4`, each with a matching `01-<title>-post.txt` containing caption options, hashtags, title ideas, and your queue notes.
+Finished videos land in `output/` as `01-<title>.mp4`, each with a matching `01-<title>-post.txt` (caption options, hashtags, title ideas, queue notes) and a `01-<title>-thumb.jpg` **cover image** — the title-card text over the opening visual, no captions. Upload it as your video's thumbnail so the platform doesn't pick a random frame.
 
 ## Options
 
@@ -62,6 +96,22 @@ python make_videos.py package.json                   # single "Export .json" pac
 ```
 
 The app's voice styles map to neural voices automatically: Calm Narrator → Christopher, High-Energy Storyteller → Guy (faster), Deadpan Documentarian → Eric (slower, flatter). List every available voice with `python -m edge_tts --list-voices`.
+
+**ElevenLabs voice** (`--elevenlabs`, paid subscription): swaps the free Microsoft voices for ElevenLabs' more expressive ones, with the same word-synced captions (timings come from ElevenLabs' character alignment). Put your API key (elevenlabs.io → profile → API keys) in `pipeline/elevenlabs_key.txt` (git-ignored) or the `ELEVENLABS_API_KEY` env var, then:
+
+```
+python make_videos.py queue.json --ai-visuals --elevenlabs
+python make_videos.py queue.json --infer --elevenlabs --charts     # max quality: AI video + AI voice
+python make_videos.py queue.json --elevenlabs --el-voice Rachel    # pick any voice on your account
+```
+
+Voice styles map to premade voices (Calm → Adam, High-Energy → Josh, Deadpan → Arnold, with fallbacks based on what your account has). Character usage counts against your ElevenLabs plan (~1,200 characters per 60s video).
+
+**Clip ambience** (`--clip-audio VOL`): some video models (e.g. LTX) generate clips **with sound** — scene ambience and effects. Normally clip audio is stripped (the narration replaces it); `--clip-audio 0.25` keeps it, mixed under the voice at that volume, aligned beat-for-beat. Note: model-generated clip audio is *scene sound*, not narration — it complements a voice track, it can't replace one (no script reading, no consistent voice, no caption timestamps).
+
+```
+python make_videos.py queue.json --backgrounds backgrounds --clip-audio 0.25 --elevenlabs --charts
+```
 
 ## Good to know
 

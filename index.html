@@ -10,6 +10,23 @@
 
 <a class="skip-link" href="#library">Skip to scenario library</a>
 
+<nav class="side-nav" aria-label="Studio pages">
+  <button type="button" id="navToggle" class="side-nav-toggle" aria-label="Collapse menu" aria-expanded="true">☰</button>
+  <span class="side-nav-item current" aria-current="page">
+    <span class="side-nav-icon" aria-hidden="true">✦</span><span class="side-nav-label">Studio</span>
+  </span>
+  <button type="button" id="navVideosBtn" class="side-nav-item side-nav-link">
+    <span class="side-nav-icon" aria-hidden="true">🎬</span><span class="side-nav-label">Videos</span>
+  </button>
+  <button type="button" id="navProduceBtn" class="side-nav-item side-nav-link">
+    <span class="side-nav-icon" aria-hidden="true">🎞️</span><span class="side-nav-label">Produce</span>
+  </button>
+  <button type="button" id="navHelpBtn" class="side-nav-item side-nav-link">
+    <span class="side-nav-icon" aria-hidden="true">❓</span><span class="side-nav-label">How to</span>
+  </button>
+  <span id="navStatus" class="side-nav-status" role="status" aria-live="polite"></span>
+</nav>
+
 <header class="app-header">
   <div class="brand">
     <span class="brand-mark" aria-hidden="true">?</span>
@@ -161,6 +178,11 @@
 
     <label class="field-label" for="bTitle">Title — the question</label>
     <input type="text" id="bTitle" placeholder="What if …?" autocomplete="off">
+
+    <div class="builder-ai-row">
+      <button type="button" id="builderAiBtn" class="btn btn-ghost">✨ Write it for me</button>
+      <span id="builderAiStatus" class="builder-ai-status" role="status" aria-live="polite">Type a title, and a free AI drafts the rest — you can edit everything.</span>
+    </div>
 
     <div class="builder-row">
       <div>

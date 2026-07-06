@@ -9,10 +9,12 @@ Pick a scenario, generate a complete production package (hooks, script beats, sh
 1. Download or clone this repository.
 2. Double-click `index.html`. That's it — no install, no server, no account, no internet.
 
+**Using the video pipeline too?** Double-click **`Start-What-If-Studio.bat`** instead — one click starts the review dashboard (Videos page + AI writer), the auto-render watcher, and opens the Studio. Safe to click again anytime; running services are detected and skipped.
+
 ## What it does
 
 - **Scenario Library** — 27 starter scenarios across 8 categories (Speculative, Science, History, Pop Culture, Internet Mystery, Alternate Reality, Unsettling Everyday, Scary/Weird), searchable and filterable. Each one is a complete content package, not just an idea.
-- **Create your own scenario** — the "+ Create your own scenario" button opens a form where you enter a title, category, premise, and 3–5 beats; the app scaffolds the rest (hooks, captions, thumbnail text, shot list, safety framing) into a full scenario saved in your library. Custom scenarios flow through everything downstream — queue, export, and the video pipeline (AI visuals, mood-matched music) — exactly like the built-ins.
+- **Create your own scenario** — the "+ Create your own scenario" button opens a form where you enter a title, category, premise, and 3–5 beats; the app scaffolds the rest (hooks, captions, thumbnail text, shot list, safety framing) into a full scenario saved in your library. Custom scenarios flow through everything downstream — queue, export, and the video pipeline (AI visuals, mood-matched music) — exactly like the built-ins. An optional **"✨ Write it for me"** button drafts the premise, beats, and tags from just your title using a free AI service (routed through the review dashboard — start `pipeline/review.bat` first); everything stays editable.
 - **Package Generator** — choose a platform (TikTok / YT Shorts / Reels), runtime (30s / 60s / 3 min), and voice style (Calm / High-Energy / Deadpan). The package adapts: beat count, pacing notes, outro, caption hashtags, and subtitle timing all follow your settings.
 - **Exports** — copy any section, copy the full package, download it as `.txt`, or download timed subtitles as `.srt` sized to your chosen runtime.
 - **Content Queue** — 7 slots to plan a week. Each slot tracks a saved package, a production status (Planned → Scripted → Recorded → Edited → Posted), and free-form notes. Persists across reloads via local storage.
@@ -59,3 +61,5 @@ Docs live in `docs/`:
 
 - [Content quality rubric](docs/content-quality-rubric.md)
 - [QA checklist](docs/qa-checklist.md)
+
+User-facing help lives in [help.html](help.html) ("How to" in every page's sidebar, also served at `/help` by the dashboard). **Any change to the user-facing workflow must update help.html in the same commit.**

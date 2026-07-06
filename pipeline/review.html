@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>What If Studio — Video Review</title>
+<style>
+:root {
+  --bg: #0b0d14; --bg-raised: #131624; --bg-inset: #0e1120;
+  --border: #262b40; --border-strong: #3a4160;
+  --text: #e8eaf2; --text-dim: #9aa1b9; --text-faint: #7d87a3;
+  --accent: #8b7bff; --accent-strong: #a99bff; --accent-ink: #14102e;
+  --good: #4cd6a4; --danger: #ff7a8a;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding-left: var(--sidenav-w, 190px); background: var(--bg); color: var(--text); font: 15px/1.5 "Segoe UI", system-ui, sans-serif; }
+:root { --sidenav-w: 190px; }
+body.nav-collapsed { --sidenav-w: 54px; }
+.side-nav { position: fixed; top: 0; left: 0; bottom: 0; width: var(--sidenav-w); display: flex; flex-direction: column; gap: 4px; padding: 10px 8px; background: var(--bg-inset); border-right: 1px solid var(--border); z-index: 40; transition: width 150ms ease; overflow: hidden; }
+.side-nav-toggle { font: inherit; font-size: 17px; width: 38px; height: 38px; margin-bottom: 8px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--bg-raised); color: var(--text-dim); cursor: pointer; flex: none; }
+.side-nav-toggle:hover { color: var(--accent-strong); border-color: var(--accent); }
+.side-nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 8px; font-size: 13.5px; font-weight: 600; color: var(--text-dim); white-space: nowrap; }
+.side-nav-item.current { color: var(--text); background: rgba(139, 123, 255, 0.14); border-left: 3px solid var(--accent); padding-left: 7px; }
+.side-nav-link { font: inherit; border: none; background: none; cursor: pointer; text-align: left; width: 100%; }
+.side-nav-link:hover { color: var(--accent-strong); background: var(--bg-raised); }
+.side-nav-icon { flex: none; width: 20px; text-align: center; }
+.side-nav-status { margin-top: auto; font-size: 11.5px; color: var(--text-faint); white-space: normal; line-height: 1.35; }
+body.nav-collapsed .side-nav-label, body.nav-collapsed .side-nav-status { display: none; }
+body.nav-collapsed .side-nav-item { justify-content: center; padding: 9px 0; }
+body.nav-collapsed .side-nav-item.current { padding-left: 0; border-left-width: 0; border-bottom: 3px solid var(--accent); }
+header { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; padding: 20px 24px 6px; }
+h1 { margin: 0; font-size: 20px; }
+.sub { color: var(--text-dim); font-size: 13px; }
+.hint { color: var(--text-faint); font-size: 12.5px; padding: 0 24px 14px; }
+main { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; padding: 0 24px 40px; }
+.card { background: var(--bg-raised); border: 1px solid var(--border); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+video { width: 100%; aspect-ratio: 9/16; max-height: 460px; background: #000; border-radius: 8px; }
+.row { display: flex; align-items: center; gap: 8px; }
+.pos { font-size: 12px; font-weight: 700; color: var(--accent-strong); min-width: 26px; }
+.title { font-weight: 650; font-size: 14px; flex: 1; }
+.meta { color: var(--text-faint); font-size: 12px; }
+button { font: inherit; font-size: 12.5px; font-weight: 600; padding: 6px 11px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--bg-inset); color: var(--text); cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button:disabled { opacity: 0.4; cursor: default; }
+.del { color: var(--danger); }
+textarea { width: 100%; min-height: 56px; resize: vertical; font: inherit; font-size: 13px; color: var(--text); background: var(--bg-inset); border: 1px solid var(--border-strong); border-radius: 8px; padding: 8px 10px; }
+textarea::placeholder { color: var(--text-faint); }
+details { font-size: 12.5px; }
+summary { cursor: pointer; color: var(--text-dim); }
+pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(--border); border-radius: 8px; padding: 10px; max-height: 260px; overflow-y: auto; font-size: 12px; }
+.saved { color: var(--good); font-size: 11.5px; min-height: 14px; }
+.empty { color: var(--text-dim); padding: 40px 24px; }
+:focus-visible { outline: 3px solid var(--accent-strong); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<nav class="side-nav" aria-label="Studio pages">
+  <button type="button" id="navToggle" class="side-nav-toggle" aria-label="Collapse menu" aria-expanded="true">☰</button>
+  <button type="button" id="navStudioBtn" class="side-nav-item side-nav-link">
+    <span class="side-nav-icon" aria-hidden="true">✦</span><span class="side-nav-label">Studio</span>
+  </button>
+  <span class="side-nav-item current" aria-current="page">
+    <span class="side-nav-icon" aria-hidden="true">🎬</span><span class="side-nav-label">Videos</span>
+  </span>
+  <button type="button" id="navProduceBtn" class="side-nav-item side-nav-link">
+    <span class="side-nav-icon" aria-hidden="true">🎞️</span><span class="side-nav-label">Produce</span>
+  </button>
+  <button type="button" id="navHelpBtn" class="side-nav-item side-nav-link">
+    <span class="side-nav-icon" aria-hidden="true">❓</span><span class="side-nav-label">How to</span>
+  </button>
+  <span id="navStatus" class="side-nav-status" role="status" aria-live="polite"></span>
+</nav>
+<header>
+  <h1>Video Review</h1>
+  <span class="sub" id="count"></span>
+</header>
+<p class="hint">Order here = your posting order (it's saved). "Remove" moves a video to <code>output/trash</code> — nothing is permanently deleted. Notes autosave.</p>
+<main id="grid"></main>
+<p class="empty" id="empty" hidden>No videos in the pipeline yet — export a queue from the app (with the watcher running) and they'll appear here.</p>
+
+<script>
+let videos = [];
+
+async function api(path, body) {
+  const opts = body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {};
+  const res = await fetch(path, opts);
+  return res.json();
+}
+
+function el(tag, attrs = {}, children = []) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "text") n.textContent = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else n.setAttribute(k, v);
+  }
+  children.forEach(c => n.appendChild(c));
+  return n;
+}
+
+function saveOrder() {
+  api("/api/order", { order: videos.map(v => v.name) });
+}
+
+function move(i, delta) {
+  const j = i + delta;
+  if (j < 0 || j >= videos.length) return;
+  [videos[i], videos[j]] = [videos[j], videos[i]];
+  saveOrder();
+  render();
+}
+
+async function removeVideo(i) {
+  const v = videos[i];
+  if (!confirm(`Remove "${v.title}" from the pipeline?\n(It moves to output\\trash — recoverable.)`)) return;
+  const res = await api("/api/delete", { name: v.name });
+  if (res.ok) { videos.splice(i, 1); render(); }
+  else alert("Remove failed: " + (res.error || "unknown"));
+}
+
+let noteTimers = {};
+function noteChanged(v, textarea, savedEl) {
+  clearTimeout(noteTimers[v.name]);
+  noteTimers[v.name] = setTimeout(async () => {
+    await api("/api/note", { name: v.name, text: textarea.value });
+    savedEl.textContent = "saved";
+    setTimeout(() => { savedEl.textContent = ""; }, 1500);
+  }, 500);
+}
+
+function render() {
+  const grid = document.getElementById("grid");
+  grid.innerHTML = "";
+  document.getElementById("count").textContent =
+    videos.length + " video" + (videos.length === 1 ? "" : "s") + " in the pipeline";
+  document.getElementById("empty").hidden = videos.length > 0;
+
+  videos.forEach((v, i) => {
+    const player = el("video", { controls: "", preload: "none", src: "/files/" + encodeURIComponent(v.name) });
+    if (v.thumb) player.poster = "/files/" + encodeURIComponent(v.thumb);
+
+    const saved = el("span", { class: "saved" });
+    const note = el("textarea", { placeholder: "Your notes — hook ideas, edits, when to post…" });
+    note.value = v.note || "";
+    note.addEventListener("input", () => noteChanged(v, note, saved));
+
+    const card = el("div", { class: "card" }, [
+      el("div", { class: "row" }, [
+        el("span", { class: "pos", text: "#" + (i + 1) }),
+        el("span", { class: "title", text: v.title }),
+      ]),
+      player,
+      el("div", { class: "row" }, [
+        el("button", { text: "↑", "aria-label": "Move up", onclick: () => move(i, -1), ...(i === 0 ? { disabled: "" } : {}) }),
+        el("button", { text: "↓", "aria-label": "Move down", onclick: () => move(i, 1), ...(i === videos.length - 1 ? { disabled: "" } : {}) }),
+        el("span", { class: "meta", text: v.size_mb + " MB" }),
+        el("span", { style: "flex:1" }),
+        el("button", { class: "del", text: "Remove", onclick: () => removeVideo(i) }),
+      ]),
+      note,
+      saved,
+      v.post ? el("details", {}, [
+        el("summary", { text: "Post kit (captions, credits, checklist)" }),
+        el("pre", { text: v.post }),
+      ]) : el("span", {}),
+    ]);
+    grid.appendChild(card);
+  });
+}
+
+function setNavCollapsed(collapsed, persist = true) {
+  document.body.classList.toggle("nav-collapsed", collapsed);
+  const toggle = document.getElementById("navToggle");
+  toggle.setAttribute("aria-expanded", String(!collapsed));
+  toggle.setAttribute("aria-label", collapsed ? "Expand menu" : "Collapse menu");
+  if (persist) {
+    try { localStorage.setItem("wis.navCollapsed", collapsed ? "1" : "0"); } catch (e) {}
+  }
+}
+
+document.getElementById("navToggle").addEventListener("click", () => {
+  setNavCollapsed(!document.body.classList.contains("nav-collapsed"));
+});
+
+let savedNav = null;
+try { savedNav = localStorage.getItem("wis.navCollapsed"); } catch (e) {}
+setNavCollapsed(savedNav === null ? matchMedia("(max-width: 700px)").matches : savedNav === "1", false);
+
+document.getElementById("navProduceBtn").addEventListener("click", () => { location.href = "/produce"; });
+document.getElementById("navHelpBtn").addEventListener("click", () => { location.href = "/help"; });
+
+document.getElementById("navStudioBtn").addEventListener("click", () => {
+  // Browsers block http -> file:// links, but going BACK to a file:// page
+  // in this tab's history is allowed. Fallback covers direct opens.
+  if (history.length > 1) {
+    history.back();
+  } else {
+    setNavCollapsed(false, false);
+    document.getElementById("navStatus").textContent =
+      "This tab opened straight to the dashboard — your Studio is index.html (or its open tab).";
+    setTimeout(() => { document.getElementById("navStatus").textContent = ""; }, 8000);
+  }
+});
+
+(async () => {
+  videos = await api("/api/videos");
+  render();
+})();
+</script>
+</body>
+</html>

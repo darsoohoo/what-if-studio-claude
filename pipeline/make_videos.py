@@ -205,6 +205,109 @@ async def synthesize(text, vconf, mp3_path):
     return words
 
 
+# ---------------------------------------------------------------- ElevenLabs voice (optional, paid)
+
+ELEVENLABS_API = "https://api.elevenlabs.io/v1"
+
+# App voice style -> preferred ElevenLabs premade voices, by name (first match wins).
+ELEVENLABS_VOICE_BY_STYLE = {
+    "Calm Narrator":           ["Adam", "Brian", "Rachel", "Daniel"],
+    "High-Energy Storyteller": ["Josh", "Antoni", "Callum", "Charlie"],
+    "Deadpan Documentarian":   ["Arnold", "Clyde", "George", "Bill"],
+}
+
+
+def elevenlabs_key():
+    key = os.environ.get("ELEVENLABS_API_KEY", "").strip()
+    if key:
+        return key
+    f = Path(__file__).resolve().parent / "elevenlabs_key.txt"
+    if f.exists():
+        return f.read_text(encoding="utf-8").strip()
+    return None
+
+
+def elevenlabs_voices(key):
+    """{name: voice_id} for every voice on the account (premade + cloned)."""
+    req = urllib.request.Request(f"{ELEVENLABS_API}/voices",
+                                 headers={"xi-api-key": key, "User-Agent": "WhatIfStudio-pipeline/1.0"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        data = json.loads(resp.read())
+    return {v["name"]: v["voice_id"] for v in data.get("voices", []) if v.get("voice_id")}
+
+
+def _voice_base(name):
+    """'Adam - Dominant, Firm' -> 'adam' (accounts often carry descriptive suffixes)."""
+    return name.split(" - ")[0].strip().lower()
+
+
+def pick_elevenlabs_voice(style, override, key):
+    """Resolve a voice: explicit override (name or raw id) beats style mapping."""
+    voices = elevenlabs_voices(key)
+    if override:
+        want = override.strip().lower()
+        for name, vid in voices.items():
+            if name.lower() == want or _voice_base(name) == want:
+                return vid, name
+        return override, override      # assume the user passed a raw voice id
+    for wanted in ELEVENLABS_VOICE_BY_STYLE.get(style, []):
+        for name, vid in voices.items():
+            if _voice_base(name) == wanted.lower():
+                return vid, name
+    if voices:
+        name = sorted(voices)[0]
+        return voices[name], name
+    raise RuntimeError("no voices available on this ElevenLabs account")
+
+
+def chars_to_words(chars, starts, ends):
+    """Group ElevenLabs character-level timestamps into (start, end, word)."""
+    words, cur, w_start, w_end = [], "", None, None
+    for ch, s, e in zip(chars, starts, ends):
+        if str(ch).isspace():
+            if cur:
+                words.append((w_start, w_end, cur))
+                cur = ""
+        else:
+            if not cur:
+                w_start = s
+            cur += str(ch)
+            w_end = e
+    if cur:
+        words.append((w_start, w_end, cur))
+    return words
+
+
+def synthesize_elevenlabs(text, voice_id, model, mp3_path, key):
+    """ElevenLabs TTS with character timestamps -> mp3 + per-word timings,
+    matching the edge-tts word format so captions/charts work unchanged."""
+    import base64
+    url = f"{ELEVENLABS_API}/text-to-speech/{voice_id}/with-timestamps?output_format=mp3_44100_128"
+    body = json.dumps({
+        "text": text,
+        "model_id": model,
+        "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
+    }).encode("utf-8")
+    req = urllib.request.Request(url, data=body, method="POST", headers={
+        "xi-api-key": key,
+        "Content-Type": "application/json",
+        "User-Agent": "WhatIfStudio-pipeline/1.0",
+    })
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        data = json.loads(resp.read())
+    audio = data.get("audio_base64")
+    align = data.get("alignment") or data.get("normalized_alignment")
+    if not audio or not align:
+        raise RuntimeError("ElevenLabs response missing audio or alignment:\n" + json.dumps(data)[:400])
+    Path(mp3_path).write_bytes(base64.b64decode(audio))
+    words = chars_to_words(align.get("characters", []),
+                           align.get("character_start_times_seconds", []),
+                           align.get("character_end_times_seconds", []))
+    if not words:
+        raise RuntimeError("ElevenLabs alignment produced no word timings")
+    return words
+
+
 def ass_time(seconds):
     cs = max(0, int(round(seconds * 100)))
     h = cs // 360000
@@ -290,17 +393,43 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 # ---------------------------------------------------------------- AI visuals
 
 
+# Most short-form content works better with humans in frame ("reenactments").
+# When a shot description has no people, one is added - disable with --no-people.
+PEOPLE_BIAS = True
+_PERSON_RE = re.compile(
+    r"\b(person|people|man|men|woman|women|human|humans|hand|hands|face|faces|figure|silhouette|"
+    r"crowd|narrator|kid|kids|child|children|family|friend|someone|somebody|guy|girl|boy|"
+    r"commuter|farmer|scientist|worker|villager|audience|viewer|couple|stranger|player|character|"
+    r"you|body|eyes|portrait)\b", re.I)
+HUMAN_HINT = "a real person on camera acting out the moment, natural expression"
+
+
+def _shot_for_segment(seg_index, seg_count, shot_count):
+    return min(round(seg_index * (shot_count - 1) / max(1, seg_count - 1)), shot_count - 1)
+
+
 def ai_prompt_for_segment(pkg, seg_index, seg_count, style_suffix):
-    """Build an image prompt for one narration segment from the shot list."""
+    """Build an image/video prompt for one narration segment from the shot list.
+    When there are fewer shots than segments, only the FIRST segment mapped to
+    a shot uses it - later ones fall back to their own narration beat, so
+    every prompt is unique and matched to what's being said."""
     shots = pkg.get("shotList") or [pkg.get("premise", pkg.get("title", "abstract scene"))]
-    pick = min(round(seg_index * (len(shots) - 1) / max(1, seg_count - 1)), len(shots) - 1)
-    src = shots[pick]
+    pick = _shot_for_segment(seg_index, seg_count, len(shots))
+    first_claimant = next(j for j in range(seg_count)
+                          if _shot_for_segment(j, seg_count, len(shots)) == pick)
+    if seg_index == first_claimant:
+        src = shots[pick]
+    else:
+        beats = pkg.get("beats") or []
+        src = beats[seg_index - 1] if 1 <= seg_index <= len(beats) else shots[pick]
     src = re.sub(r"^[A-Za-z /-]{2,20}:", "", src)                      # "Hook:" style prefixes
     src = re.sub(r"[\"“”‘’']", "", src)
     # Drop instructions about on-screen text - generated text comes out garbled.
     src = re.sub(r"\b(labeled|labelled|stamped|caption|chyron|lower.third|overlay|typed|on.screen text)\b[^,.;]*",
                  "", src, flags=re.I)
     src = re.sub(r"\s+", " ", src).strip(" ,.;-")
+    if PEOPLE_BIAS and not _PERSON_RE.search(src):
+        src = f"{src}, {HUMAN_HINT}"
     return f"{src}, {style_suffix}"
 
 
@@ -339,6 +468,315 @@ def generate_ai_visuals(pkg, seg_count, style_key, cache_root):
             files.append(dest)
     if not files:
         raise RuntimeError("AI visual generation produced no images (network down?)")
+    return files
+
+
+# ---------------------------------------------------------------- stock footage (Pexels)
+
+PEXELS_SEARCH = "https://api.pexels.com/videos/search"
+STOCK_STOPWORDS = set((
+    "the a an and or but of to in on for with without into over under from that this these those "
+    "it its is are was were be been being you your they them their we our us he she his her "
+    "what if would could should might will now then here there when where why how not no yes "
+    "most some many much more less every each one two three first day year time thing things "
+    "actually really just even still only about like than because so up out off down back "
+    "picture imagine setup payoff hook beat twist real reality version part"
+).split())
+
+
+def pexels_api_key():
+    """Read the free Pexels key from PEXELS_API_KEY or pipeline/pexels_key.txt."""
+    key = os.environ.get("PEXELS_API_KEY", "").strip()
+    if key:
+        return key
+    f = Path(__file__).resolve().parent / "pexels_key.txt"
+    if f.exists():
+        return f.read_text(encoding="utf-8").strip()
+    return None
+
+
+def beat_query(pkg, beat_text):
+    """A short, on-topic Pexels search query: scenario anchor + a beat noun."""
+    tags = pkg.get("tags") or []
+    anchor = tags[0] if tags else ""
+    words = [w for w in re.findall(r"[a-zA-Z]{4,}", beat_text.lower()) if w not in STOCK_STOPWORDS]
+    picks = list(dict.fromkeys(words))[:2]
+    query = " ".join(dict.fromkeys(([anchor] if anchor else []) + picks)).strip()
+    return query or anchor or sanitize_card_text(pkg.get("title", "abstract")).lower()
+
+
+def best_portrait_link(video):
+    """Pick a vertical video file, largest height up to 1920."""
+    files = [f for f in video.get("video_files", []) if f.get("link")]
+    portrait = [f for f in files if f.get("height", 0) >= f.get("width", 1)] or files
+    if not portrait:
+        return None
+    under = sorted((f for f in portrait if f.get("height", 0) <= 1920), key=lambda f: f.get("height", 0))
+    if under:
+        return under[-1].get("link")
+    return sorted(portrait, key=lambda f: f.get("height", 0))[0].get("link")
+
+
+def pexels_search(query, key, per_page=10):
+    url = PEXELS_SEARCH + "?" + urllib.parse.urlencode(
+        {"query": query, "orientation": "portrait", "per_page": per_page, "size": "medium"})
+    req = urllib.request.Request(url, headers={"Authorization": key, "User-Agent": "WhatIfStudio-pipeline/1.0"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.loads(resp.read()).get("videos", [])
+
+
+def fetch_stock_visuals(pkg, segments, key, cache_root, credits):
+    """One Pexels clip per narration segment, cached per scenario.
+    Appends contributor names to `credits` for the post kit."""
+    folder = Path(cache_root) / slugify(pkg.get("scenarioId", "pkg"))
+    folder.mkdir(parents=True, exist_ok=True)
+    results, used = [], set()
+    for i, seg in enumerate(segments):
+        dest = folder / f"{i + 1:02d}.mp4"
+        if dest.exists():
+            results.append(dest)
+            continue
+        query = beat_query(pkg, seg)
+        try:
+            videos = pexels_search(query, key)
+        except Exception as exc:
+            print(f"    stock search failed ('{query}'): {exc}")
+            videos = []
+        link, author = None, None
+        for v in videos:
+            if v.get("id") in used:
+                continue
+            link = best_portrait_link(v)
+            if link:
+                used.add(v.get("id"))
+                author = (v.get("user") or {}).get("name")
+                break
+        if not link:
+            print(f"    no stock clip for beat {i + 1} ('{query}')")
+            continue
+        try:
+            req = urllib.request.Request(link, headers={"User-Agent": "WhatIfStudio-pipeline/1.0"})
+            with urllib.request.urlopen(req, timeout=120) as resp, open(dest, "wb") as out:
+                shutil.copyfileobj(resp, out)
+            if dest.stat().st_size < 20000:
+                dest.unlink(missing_ok=True)
+                raise RuntimeError("clip too small")
+            if author:
+                credits.add(author)
+            print(f"    clip {i + 1}/{len(segments)}: '{query}'")
+            results.append(dest)
+        except Exception as exc:
+            print(f"    download failed beat {i + 1}: {exc}")
+    if not results:
+        raise RuntimeError("no stock clips fetched (check the key and your connection)")
+    return results
+
+
+# ---------------------------------------------------------------- AI video (tryinfer / Reka Infer)
+
+INFER_BASE = "https://api.tryinfer.com/v1"
+INFER_POLL_INTERVAL = 8      # seconds between status checks
+INFER_POLL_TIMEOUT = 900     # give up on one clip after 15 minutes
+VIDEO_MOTION_SUFFIX = "cinematic, subtle natural camera movement, smooth motion, atmospheric, vertical 9:16"
+_VIDEO_EXT_RE = re.compile(r"\.(mp4|mov|webm|m4v)(\?|$)", re.I)
+
+
+def infer_api_key():
+    """Read the tryinfer key from TRYINFER_API_KEY / INFER_API_KEY or a file."""
+    for var in ("TRYINFER_API_KEY", "INFER_API_KEY"):
+        key = os.environ.get(var, "").strip()
+        if key:
+            return key
+    f = Path(__file__).resolve().parent / "tryinfer_key.txt"
+    if f.exists():
+        return f.read_text(encoding="utf-8").strip()
+    return None
+
+
+def pollinations_image_url(prompt, seed=7):
+    """A public on-demand image URL usable as an image-to-video first frame."""
+    return (AI_IMAGE_HOST + urllib.parse.quote(prompt)
+            + f"?width={WIDTH}&height={HEIGHT}&nologo=true&seed={seed}")
+
+
+def infer_submit(model, task, input_obj, key):
+    url = f"{INFER_BASE}/inference/{model}/{task}"
+    body = json.dumps({"input": input_obj}).encode("utf-8")
+    req = urllib.request.Request(url, data=body, method="POST", headers={
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "User-Agent": "WhatIfStudio-pipeline/1.0",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.loads(resp.read())
+    except urllib.error.HTTPError as exc:
+        # Surface the provider's error body - "403 Forbidden" alone is undiagnosable.
+        detail = ""
+        try:
+            detail = exc.read().decode("utf-8", "replace")[:300]
+        except Exception:
+            pass
+        raise RuntimeError(f"HTTP {exc.code}: {detail or exc.reason}") from None
+    rid = data.get("request_id") or data.get("id") or data.get("requestId")
+    if not rid:
+        raise RuntimeError(f"submit returned no request_id: {json.dumps(data)[:400]}")
+    return rid
+
+
+def infer_poll(request_id, key):
+    req = urllib.request.Request(f"{INFER_BASE}/inference/requests/{request_id}",
+                                 headers={"Authorization": f"Bearer {key}",
+                                          "User-Agent": "WhatIfStudio-pipeline/1.0"})
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        return json.loads(resp.read())
+
+
+def _find_status(obj):
+    """Find a status string anywhere in the poll response."""
+    known = {"COMPLETED", "SUCCEEDED", "SUCCESS", "FAILED", "ERROR", "CANCELLED",
+             "CANCELED", "PENDING", "QUEUED", "RUNNING", "IN_PROGRESS", "PROCESSING", "STARTED"}
+    if isinstance(obj, dict):
+        for key in ("status", "state"):
+            v = obj.get(key)
+            if isinstance(v, str) and v.upper() in known:
+                return v.upper()
+        for v in obj.values():
+            found = _find_status(v)
+            if found:
+                return found
+    elif isinstance(obj, list):
+        for v in obj:
+            found = _find_status(v)
+            if found:
+                return found
+    return None
+
+
+def _find_video_url(obj):
+    """Find the finished video URL anywhere in the poll response."""
+    if isinstance(obj, str):
+        return obj if obj.startswith("http") and _VIDEO_EXT_RE.search(obj) else None
+    if isinstance(obj, dict):
+        # Prefer likely keys first.
+        for key in ("video_url", "url", "output_url", "download_url", "result_url"):
+            v = obj.get(key)
+            if isinstance(v, str) and v.startswith("http") and (_VIDEO_EXT_RE.search(v) or key != "url"):
+                return v
+        for v in obj.values():
+            found = _find_video_url(v)
+            if found:
+                return found
+    elif isinstance(obj, list):
+        for v in obj:
+            found = _find_video_url(v)
+            if found:
+                return found
+    return None
+
+
+def _prewarm_url(url):
+    """Fetch a generate-on-demand image once so the provider's fetch is fast."""
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "WhatIfStudio-pipeline/1.0"})
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            return len(resp.read()) > 5000
+    except Exception:
+        return False
+
+
+def _find_price(obj):
+    """Find output.usage.price_usd anywhere in the poll response."""
+    if isinstance(obj, dict):
+        v = obj.get("price_usd")
+        if isinstance(v, (int, float)):
+            return float(v)
+        for v in obj.values():
+            found = _find_price(v)
+            if found is not None:
+                return found
+    elif isinstance(obj, list):
+        for v in obj:
+            found = _find_price(v)
+            if found is not None:
+                return found
+    return None
+
+
+def _run_infer_job(model, task, input_obj, key):
+    """Submit one job and poll to a terminal state. Returns (url, price, error)."""
+    rid = infer_submit(model, task, input_obj, key)
+    waited = 0
+    while waited < INFER_POLL_TIMEOUT:
+        time.sleep(INFER_POLL_INTERVAL)
+        waited += INFER_POLL_INTERVAL
+        resp = infer_poll(rid, key)
+        status = _find_status(resp)
+        if status in ("COMPLETED", "SUCCEEDED", "SUCCESS"):
+            url = _find_video_url(resp)
+            if not url:
+                return None, None, "completed but no video URL: " + json.dumps(resp)[:400]
+            return url, _find_price(resp), None
+        if status in ("FAILED", "ERROR", "CANCELLED", "CANCELED"):
+            err = json.dumps((resp or {}).get("error") or resp)[:300]
+            return None, None, f"{status}: {err}"
+    return None, None, f"timed out after {INFER_POLL_TIMEOUT}s"
+
+
+def generate_infer_videos(pkg, segments, key, model, task, duration, cache_root):
+    """One AI-generated clip per beat via tryinfer. image-to-video animates a
+    free Pollinations first frame (shared style = coherence); if the provider
+    content-flags that image, the beat falls back to text-to-video. Clips
+    cache per scenario+model. Paid API - one billed job per beat."""
+    folder = Path(cache_root) / f"{slugify(pkg.get('scenarioId', 'pkg'))}-{model}"
+    folder.mkdir(parents=True, exist_ok=True)
+    files, spent = [], 0.0
+    for i, seg in enumerate(segments):
+        dest = folder / f"{i + 1:02d}.mp4"
+        if dest.exists():
+            files.append(dest)
+            continue
+        motion = ai_prompt_for_segment(pkg, i, len(segments), VIDEO_MOTION_SUFFIX)
+        base_input = {"prompt": motion, "duration_seconds": str(duration), "aspect_ratio": "9:16"}
+
+        attempts = []
+        if task == "image-to-video":
+            frame_prompt = ai_prompt_for_segment(pkg, i, len(segments), AI_STYLES["cinematic"])
+            image_url = pollinations_image_url(frame_prompt, seed=(i + 1) * 17)
+            if _prewarm_url(image_url):
+                attempts.append(("image-to-video", {**base_input, "image_url": image_url}))
+            else:
+                print(f"    beat {i + 1}: first-frame image unavailable, using text-to-video")
+        attempts.append(("text-to-video", dict(base_input)))
+
+        url = None
+        for attempt_task, input_obj in attempts:
+            try:
+                url, price, err = _run_infer_job(model, attempt_task, input_obj, key)
+            except Exception as exc:
+                url, price, err = None, None, str(exc)
+            if url:
+                spent += price or 0.0
+                price_note = f" (${price:.2f})" if price is not None else ""
+                print(f"    beat {i + 1}/{len(segments)}: done via {attempt_task}{price_note}")
+                break
+            print(f"    beat {i + 1}/{len(segments)} {attempt_task} failed: {err}")
+
+        if not url:
+            continue
+        try:
+            dl = urllib.request.Request(url, headers={"User-Agent": "WhatIfStudio-pipeline/1.0"})
+            with urllib.request.urlopen(dl, timeout=180) as resp, open(dest, "wb") as out:
+                shutil.copyfileobj(resp, out)
+            if dest.stat().st_size < 20000:
+                dest.unlink(missing_ok=True)
+                raise RuntimeError("downloaded clip too small")
+            files.append(dest)
+        except Exception as exc:
+            print(f"    beat {i + 1}/{len(segments)} download failed: {exc}")
+    print(f"    AI-video spend this run: ${spent:.2f}")
+    if not files:
+        raise RuntimeError("no AI video clips produced (check key, model name, and credits)")
     return files
 
 
@@ -427,12 +865,22 @@ def chart_overlay_vf(spec, duration, font_ff):
     return ",".join(parts)
 
 
-def render_segment_clip(ffmpeg, visual, duration, out_path, index=0, chart=None, font_ff=None, cwd=None):
+def has_audio(ffprobe, media_path):
+    out = run([ffprobe, "-v", "error", "-select_streams", "a", "-show_entries",
+               "stream=codec_type", "-of", "csv=p=0", str(Path(media_path).resolve())])
+    return "audio" in out.stdout
+
+
+def render_segment_clip(ffmpeg, visual, duration, out_path, index=0, chart=None, font_ff=None, cwd=None,
+                        keep_audio=False, ffprobe=None):
     """Scale/crop one visual to a full-frame vertical clip of the given length.
     Still images get an alternating camera move (in / pan / out / pan back).
     If a chart spec is given, an animated counter/bar is overlaid.
-    `cwd` lets the chart drawtext reference the font by bare filename, avoiding
-    the Windows drive-letter colon that breaks ffmpeg's filtergraph parser."""
+    `keep_audio` preserves the clip's own sound (models like LTX generate
+    ambience) - segments without sound get a silent track so concat stays
+    uniform. `cwd` lets the chart drawtext reference the font by bare
+    filename, avoiding the Windows drive-letter colon that breaks ffmpeg's
+    filtergraph parser."""
     base = (f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
             f"crop={WIDTH}:{HEIGHT},setsar=1,fps={FPS}")
     if visual.suffix.lower() in IMAGE_EXTS:
@@ -451,15 +899,27 @@ def render_segment_clip(ffmpeg, visual, duration, out_path, index=0, chart=None,
         vf = base
     if chart and font_ff:
         vf += "," + chart_overlay_vf(chart, duration, font_ff)
-    run([ffmpeg, "-y", *loop, "-i", str(Path(visual).resolve()), "-t", f"{duration:.2f}", "-vf", vf, "-an",
-         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", str(out_path)], cwd=cwd)
+
+    cmd = [ffmpeg, "-y", *loop, "-i", str(Path(visual).resolve())]
+    audio_args = ["-an"]
+    if keep_audio:
+        if visual.suffix.lower() in VIDEO_EXTS and ffprobe and has_audio(ffprobe, visual):
+            audio_args = ["-map", "0:v", "-map", "0:a", "-af", "apad", "-c:a", "aac", "-b:a", "160k"]
+        else:
+            cmd += ["-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo"]
+            audio_args = ["-map", "0:v", "-map", "1:a", "-c:a", "aac", "-b:a", "160k"]
+    cmd += ["-t", f"{duration:.2f}", "-vf", vf, *audio_args,
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", str(out_path)]
+    run(cmd, cwd=cwd)
 
 
-def build_clip_base(ffmpeg, visuals, spans, tmp, charts=None, font_ff=None):
+def build_clip_base(ffmpeg, visuals, spans, tmp, charts=None, font_ff=None, keep_audio=False, ffprobe=None):
     """One clip per beat with alternating motion, joined by crossfades.
     Segments before the last are rendered XFADE_DUR longer so the fades
     consume the extra tail and the visual timeline stays in sync with audio.
-    `charts` (aligned to spans) overlays an animated number on chart beats."""
+    `charts` (aligned to spans) overlays an animated number on chart beats.
+    With `keep_audio`, each segment's sound is trimmed to its exact span and
+    hard-concatenated, so the ambience track stays aligned with the voice."""
     durs = [round(max(0.4, end - start), 2) for start, end in spans]
     seg_files = []
     for i, dur in enumerate(durs):
@@ -467,7 +927,8 @@ def build_clip_base(ffmpeg, visuals, spans, tmp, charts=None, font_ff=None):
         extra = XFADE_DUR if i < len(durs) - 1 else 0.5
         chart = charts[i] if charts and i < len(charts) else None
         render_segment_clip(ffmpeg, visuals[i % len(visuals)], dur + extra, seg, index=i,
-                            chart=chart, font_ff=font_ff, cwd=tmp)
+                            chart=chart, font_ff=font_ff, cwd=tmp,
+                            keep_audio=keep_audio, ffprobe=ffprobe)
         seg_files.append(seg)
 
     if len(seg_files) == 1:
@@ -484,13 +945,76 @@ def build_clip_base(ffmpeg, visuals, spans, tmp, charts=None, font_ff=None):
         label = f"[x{i}]"
         chain.append(f"{prev}[{i}:v]xfade=transition=fade:duration={XFADE_DUR}:offset={offset:.2f}{label}")
         prev = label
-    run([ffmpeg, "-y", *inputs, "-filter_complex", ";".join(chain), "-map", prev,
-         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "base.mp4"], cwd=tmp)
+    maps = ["-map", prev]
+    codecs = []
+    if keep_audio:
+        for i, d in enumerate(durs):
+            chain.append(f"[{i}:a]atrim=0:{d},asetpts=PTS-STARTPTS[a{i}]")
+        chain.append("".join(f"[a{i}]" for i in range(len(durs))) + f"concat=n={len(durs)}:v=0:a=1[aout]")
+        maps += ["-map", "[aout]"]
+        codecs = ["-c:a", "aac", "-b:a", "160k"]
+    run([ffmpeg, "-y", *inputs, "-filter_complex", ";".join(chain), *maps,
+         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", *codecs, "base.mp4"], cwd=tmp)
     return tmp / "base.mp4"
 
 
-def final_render(ffmpeg, base, pkg, total, has_music, out_path, tmp):
-    """Overlay captions and mix audio onto the base video (or a gradient)."""
+def esc_drawtext(text):
+    """Uppercase card text made safe for an ffmpeg drawtext value."""
+    text = sanitize_card_text(text)
+    text = text.replace("\\", "").replace("'", "").replace('"', "").replace("%", "")
+    return text.replace(":", "\\:")
+
+
+def wrap_title(text, max_chars=16):
+    """Split a cover title into at most two balanced lines."""
+    text = sanitize_card_text(text)
+    if len(text) <= max_chars:
+        return [text]
+    words = text.split()
+    best, best_diff = None, 10 ** 9
+    for i in range(1, len(words)):
+        a, b = " ".join(words[:i]), " ".join(words[i:])
+        if abs(len(a) - len(b)) < best_diff:
+            best_diff, best = abs(len(a) - len(b)), (a, b)
+    return list(best) if best else [text]
+
+
+def render_thumbnail(ffmpeg, visual, pkg, out_path, tmp, font_ff):
+    """Save a clean cover image: the first visual + the title-card text,
+    with no captions or counters. Ready to upload as the video's thumbnail."""
+    lines = wrap_title((pkg.get("thumbnails") or [pkg.get("title", "")])[0])
+    fontsize = 128 if len(lines) == 1 else 106
+    line_h = fontsize + 22
+
+    if visual and visual.suffix.lower() in (IMAGE_EXTS | VIDEO_EXTS):
+        # For a video, -frames:v 1 grabs the first frame as the cover.
+        inp = ["-i", str(Path(visual).resolve())]
+        pre = (f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
+               f"crop={WIDTH}:{HEIGHT},setsar=1")
+    else:
+        colors = pkg.get("colors") or {}
+        c0 = hex_to_ffmpeg(colors.get("from"), "0x151a30")
+        c1 = hex_to_ffmpeg(colors.get("to"), "0x6a5ae0")
+        inp = ["-f", "lavfi", "-i", f"gradients=s={WIDTH}x{HEIGHT}:c0={c0}:c1={c1}"]
+        pre = "null"
+
+    band_h = line_h * len(lines) + 90
+    band_y = HEIGHT // 2 - band_h // 2
+    filters = [pre, f"drawbox=x=0:y={band_y}:w={WIDTH}:h={band_h}:color=black@0.45:t=fill"]
+    start_y = HEIGHT // 2 - (line_h * len(lines)) // 2 + 6
+    for i, ln in enumerate(lines):
+        filters.append(
+            f"drawtext=fontfile={font_ff}:text='{esc_drawtext(ln)}':fontsize={fontsize}:"
+            f"fontcolor=0xF5C400:borderw=9:bordercolor=black:x=(w-tw)/2:y={start_y + i * line_h}"
+        )
+    run([ffmpeg, "-y", *inp, "-frames:v", "1", "-vf", ",".join(filters), "-q:v", "3",
+         str(out_path)], cwd=tmp)
+
+
+def final_render(ffmpeg, base, pkg, total, has_music, out_path, tmp, clip_audio=0.0):
+    """Overlay captions and mix audio onto the base video (or a gradient).
+    `clip_audio` > 0 mixes the base video's own sound (e.g. LTX-generated
+    ambience) under the voice at that volume."""
     if base is not None:
         video_in = ["-i", base.name]
     else:
@@ -501,15 +1025,21 @@ def final_render(ffmpeg, base, pkg, total, has_music, out_path, tmp):
                     f"gradients=s={WIDTH}x{HEIGHT}:c0={c0}:c1={c1}:speed=0.012:rate={FPS}"]
 
     inputs = [*video_in, "-i", "voice.mp3"]
-    filters = ["[0:v]ass=subs.ass:fontsdir=.[v]"]
+    filters = ["[0:v]ass=subs.ass:fontsdir=.[v]", "[1:a]apad[va]"]
+    mix = ["[va]"]
+    if clip_audio > 0 and base is not None:
+        filters.append(f"[0:a]volume={clip_audio}[ca]")
+        mix.append("[ca]")
     music_files = list(Path(tmp).glob("music.*"))
     if has_music and music_files:
         inputs += ["-i", music_files[0].name]
         fade_start = max(0.0, total - 1.5)
-        filters.append(f"[1:a]apad[va];[2:a]volume={MUSIC_VOLUME},afade=t=out:st={fade_start:.2f}:d=1.5[m];"
-                       "[va][m]amix=inputs=2:duration=first:normalize=0[a]")
+        filters.append(f"[2:a]volume={MUSIC_VOLUME},afade=t=out:st={fade_start:.2f}:d=1.5[m]")
+        mix.append("[m]")
+    if len(mix) > 1:
+        filters.append("".join(mix) + f"amix=inputs={len(mix)}:duration=first:normalize=0[a]")
     else:
-        filters.append("[1:a]apad[a]")
+        filters[1] = "[1:a]apad[a]"
 
     cmd = [ffmpeg, "-y", *inputs, "-filter_complex", ";".join(filters),
            "-map", "[v]", "-map", "[a]", "-t", f"{total + 0.3:.2f}",
@@ -521,7 +1051,7 @@ def final_render(ffmpeg, base, pkg, total, has_music, out_path, tmp):
 # ---------------------------------------------------------------- post kit
 
 
-def post_kit_text(pkg, item, hook_index, music_credit=None):
+def post_kit_text(pkg, item, hook_index, music_credit=None, has_thumb=False, stock_authors=None):
     lines = [
         f"POST KIT - {pkg.get('title', 'untitled')}",
         f"Platform: {pkg.get('platform', '?')} | Runtime setting: {pkg.get('runtimeLabel', '?')} | Voice: {pkg.get('voice', '?')}",
@@ -534,10 +1064,23 @@ def post_kit_text(pkg, item, hook_index, music_credit=None):
     lines.append("TITLE / THUMBNAIL TEXT IDEAS:")
     lines += [f'- "{t}"' for t in pkg.get("thumbnails", [])]
     lines.append("")
+    if has_thumb:
+        lines += [
+            "COVER IMAGE: a matching -thumb.jpg was saved next to this video.",
+            "Upload it as the cover/thumbnail so the platform doesn't pick a random frame.",
+            "",
+        ]
     if music_credit:
         lines += [
             "MUSIC CREDIT (required - paste into the video description):",
             music_credit,
+            "",
+        ]
+    if stock_authors:
+        who = ", ".join(sorted(stock_authors))
+        lines += [
+            "STOCK VIDEO: clips via Pexels (pexels.com) - attribution appreciated.",
+            f"Videographers: {who}." if who else "",
             "",
         ]
     if item.get("notes"):
@@ -579,6 +1122,32 @@ def main():
                         help="Cache folder for generated images (default: ai-visuals)")
     parser.add_argument("--charts", action="store_true",
                         help="Overlay an animated counter/bar on beats with a headline number (needs per-beat visuals)")
+    parser.add_argument("--stock", action="store_true",
+                        help="Use real Pexels stock video per beat (needs a free PEXELS_API_KEY / pipeline/pexels_key.txt)")
+    parser.add_argument("--stock-cache", default="stock",
+                        help="Cache folder for downloaded stock clips (default: stock)")
+    parser.add_argument("--infer", action="store_true",
+                        help="Generate a paid AI-video clip per beat via tryinfer (needs TRYINFER_API_KEY / pipeline/tryinfer_key.txt)")
+    parser.add_argument("--infer-model", default="seedance-2.0-pro",
+                        help="tryinfer model id (default: seedance-2.0-pro)")
+    parser.add_argument("--infer-task", default="image-to-video",
+                        choices=["image-to-video", "text-to-video"],
+                        help="tryinfer task; image-to-video animates a free Pollinations first frame (default)")
+    parser.add_argument("--infer-duration", default="5", choices=["5", "10"],
+                        help="Seconds per generated clip (default: 5; clips loop to fill each beat)")
+    parser.add_argument("--infer-cache", default="infer-videos",
+                        help="Cache folder for generated AI clips (default: infer-videos)")
+    parser.add_argument("--elevenlabs", action="store_true",
+                        help="Use ElevenLabs for the voiceover (needs ELEVENLABS_API_KEY / pipeline/elevenlabs_key.txt)")
+    parser.add_argument("--el-voice", help="ElevenLabs voice name or id (default: mapped from the package's voice style)")
+    parser.add_argument("--el-model", default="eleven_multilingual_v2",
+                        help="ElevenLabs model id (default: eleven_multilingual_v2)")
+    parser.add_argument("--prompt-sheet", action="store_true",
+                        help="Write per-beat video prompts (for pasting into tryinfer Studio etc.) instead of rendering")
+    parser.add_argument("--clip-audio", type=float, default=0.0, metavar="VOL",
+                        help="Keep the clips' own sound (e.g. LTX ambience) mixed under the voice at this volume (try 0.25)")
+    parser.add_argument("--no-people", action="store_true",
+                        help="Don't add a person to visual prompts for shots that lack one (people are added by default)")
     parser.add_argument("--hook", type=int, default=1, choices=[1, 2, 3],
                         help="Which of the 3 hooks opens the video (default: 1)")
     parser.add_argument("--voice", help="Override edge-tts voice for all items")
@@ -586,6 +1155,10 @@ def main():
     parser.add_argument("--pitch", help="Override speech pitch, e.g. -2Hz")
     parser.add_argument("--slots", help="Only render these queue slots, e.g. 1,3,4")
     args = parser.parse_args()
+
+    global PEOPLE_BIAS
+    if args.no_people:
+        PEOPLE_BIAS = False
 
     if not CAPTION_FONT_FILE.exists():
         print(f"Note: caption font missing at {CAPTION_FONT_FILE}; captions may fall back to a default font.")
@@ -605,8 +1178,68 @@ def main():
     hook_index = args.hook - 1
     visuals = list_visuals(args.backgrounds)
 
+    if args.prompt_sheet:
+        for slot, item, pkg in items:
+            segments = narration_segments(pkg, hook_index)
+            slug = f"{slot:02d}-{slugify(pkg.get('title', 'untitled'))}"
+            lines = [
+                f"VIDEO PROMPT SHEET - {pkg.get('title', 'untitled')}",
+                "Paste each prompt into tryinfer Studio (or any AI video tool).",
+                "Settings per clip: 9:16 vertical, 5s (or 10s), Seedance or your favorite model.",
+                "",
+            ]
+            for i, seg in enumerate(segments):
+                prompt = ai_prompt_for_segment(pkg, i, len(segments), VIDEO_MOTION_SUFFIX)
+                lines += [f"=== Clip {i + 1:02d} of {len(segments)} ===", prompt, ""]
+            lines += [
+                "HOW TO ASSEMBLE:",
+                "1. Generate + download each clip; name them 01.mp4, 02.mp4, ... in clip order.",
+                "2. Empty pipeline/backgrounds/ and drop the clips in.",
+                "3. Render (voice, captions, charts, music, cards are added automatically):",
+                f"   python make_videos.py {args.queue} --slots {slot} --elevenlabs --charts",
+                "4. For a different scenario, empty backgrounds/ first - clips map to beats in filename order.",
+            ]
+            sheet = out_dir / f"{slug}-prompts.txt"
+            sheet.write_text("\n".join(lines), encoding="utf-8")
+            print(f"[slot {slot}] prompt sheet -> {sheet}")
+        sys.exit(0)
+
+    stock_key = None
+    if args.stock:
+        stock_key = pexels_api_key()
+        if not stock_key:
+            sys.exit(
+                "--stock needs a free Pexels API key.\n"
+                "  1. Sign up (free) at https://www.pexels.com/api/ and copy your key.\n"
+                "  2. Either set the PEXELS_API_KEY environment variable, or save the key in\n"
+                "     pipeline/pexels_key.txt (one line). Then re-run.")
+
+    infer_key = None
+    if args.infer:
+        infer_key = infer_api_key()
+        if not infer_key:
+            sys.exit(
+                "--infer needs your tryinfer API key.\n"
+                "  Set the TRYINFER_API_KEY environment variable, or save the key (one line)\n"
+                "  in pipeline/tryinfer_key.txt. Then re-run.")
+        print("NOTE: --infer uses the PAID tryinfer API - one clip is billed per beat.\n")
+
+    el_key = None
+    if args.elevenlabs:
+        el_key = elevenlabs_key()
+        if not el_key:
+            sys.exit(
+                "--elevenlabs needs your ElevenLabs API key.\n"
+                "  Grab it from elevenlabs.io (profile icon -> API keys), then either set the\n"
+                "  ELEVENLABS_API_KEY environment variable or save it (one line) in\n"
+                "  pipeline/elevenlabs_key.txt. Then re-run.")
+
     print(f"Rendering {len(items)} video(s) -> {out_dir.resolve()}")
-    if args.ai_visuals:
+    if args.infer:
+        print(f"Visuals: tryinfer AI video per beat (model: {args.infer_model}, {args.infer_duration}s clips)")
+    elif args.stock:
+        print(f"Visuals: Pexels stock video per beat (cache: {args.stock_cache})")
+    elif args.ai_visuals:
         print(f"Visuals: free AI images per beat (style: {args.ai_style}, cache: {args.ai_cache})")
     else:
         print(f"Visuals: {len(visuals)} file(s) in '{args.backgrounds}'"
@@ -641,13 +1274,28 @@ def main():
                 if CAPTION_FONT_FILE.exists():
                     shutil.copy(CAPTION_FONT_FILE, tmp / CAPTION_FONT_FILE.name)
 
-                words = asyncio.run(synthesize(text, vconf, tmp / "voice.mp3"))
-                total = probe_duration(ffprobe, tmp / "voice.mp3")
+                if args.elevenlabs:
+                    el_voice_id, el_voice_name = pick_elevenlabs_voice(
+                        pkg.get("voice", ""), args.el_voice, el_key)
+                    words = synthesize_elevenlabs(text, el_voice_id, args.el_model, tmp / "voice.mp3", el_key)
+                    total = probe_duration(ffprobe, tmp / "voice.mp3")
+                    print(f"  voice: ElevenLabs {el_voice_name} ({args.el_model}) - {total:.1f}s")
+                else:
+                    words = asyncio.run(synthesize(text, vconf, tmp / "voice.mp3"))
+                    total = probe_duration(ffprobe, tmp / "voice.mp3")
+                    print(f"  voice: {vconf['voice']} ({vconf['rate']}, {vconf['pitch']}) - {total:.1f}s")
                 (tmp / "subs.ass").write_text(words_to_ass(words, pkg, total), encoding="utf-8")
-                print(f"  voice: {vconf['voice']} ({vconf['rate']}, {vconf['pitch']}) - {total:.1f}s")
 
                 item_visuals = visuals
-                if args.ai_visuals:
+                stock_authors = set()
+                if args.infer:
+                    print(f"  generating AI video with {args.infer_model}...")
+                    item_visuals = generate_infer_videos(pkg, segments, infer_key, args.infer_model,
+                                                         args.infer_task, args.infer_duration, args.infer_cache)
+                elif args.stock:
+                    print("  fetching Pexels stock footage...")
+                    item_visuals = fetch_stock_visuals(pkg, segments, stock_key, args.stock_cache, stock_authors)
+                elif args.ai_visuals:
                     print(f"  generating AI visuals ({args.ai_style})...")
                     item_visuals = generate_ai_visuals(pkg, len(segments), args.ai_style, args.ai_cache)
 
@@ -668,14 +1316,18 @@ def main():
                 # colon breaks the ffmpeg filtergraph parser.
                 font_ff = CAPTION_FONT_FILE.name if CAPTION_FONT_FILE.exists() else None
 
+                keep_audio = args.clip_audio > 0
                 base = None
                 if len(item_visuals) > 1:
                     spans = segment_spans(segments, words, total)
-                    base = build_clip_base(ffmpeg, item_visuals, spans, tmp, charts=charts, font_ff=font_ff)
-                    print(f"  visuals: {len(spans)} beat clips from {len(item_visuals)} source file(s)")
+                    base = build_clip_base(ffmpeg, item_visuals, spans, tmp, charts=charts, font_ff=font_ff,
+                                           keep_audio=keep_audio, ffprobe=ffprobe)
+                    print(f"  visuals: {len(spans)} beat clips from {len(item_visuals)} source file(s)"
+                          + (f" (clip audio at {args.clip_audio})" if keep_audio else ""))
                 elif len(item_visuals) == 1:
                     seg = tmp / "base.mp4"
-                    render_segment_clip(ffmpeg, item_visuals[0], total + 0.4, seg)
+                    render_segment_clip(ffmpeg, item_visuals[0], total + 0.4, seg,
+                                        keep_audio=keep_audio, ffprobe=ffprobe)
                     base = seg
                     print(f"  visuals: single background ({item_visuals[0].name})")
                 else:
@@ -686,11 +1338,24 @@ def main():
                     shutil.copy(music, tmp / ("music" + music.suffix))
                     print(f"  music: {music.parent.name}/{music.name}")
 
-                final_render(ffmpeg, base, pkg, total, bool(music), out_path.resolve(), tmp)
+                final_render(ffmpeg, base, pkg, total, bool(music), out_path.resolve(), tmp,
+                             clip_audio=args.clip_audio if base is not None else 0.0)
+
+                thumb_made = False
+                if font_ff:
+                    first_visual = item_visuals[0] if item_visuals else None
+                    try:
+                        render_thumbnail(ffmpeg, first_visual, pkg,
+                                         (out_dir / f"{slug}-thumb.jpg").resolve(), tmp, font_ff)
+                        thumb_made = True
+                    except Exception as exc:
+                        print(f"  (thumbnail skipped: {exc})")
 
             credit = music_credit_for(music, args.music)
-            (out_dir / f"{slug}-post.txt").write_text(post_kit_text(pkg, item, hook_index, credit), encoding="utf-8")
-            print(f"  done: {out_path.name} + {slug}-post.txt\n")
+            (out_dir / f"{slug}-post.txt").write_text(
+                post_kit_text(pkg, item, hook_index, credit, thumb_made, stock_authors), encoding="utf-8")
+            extras = f"{slug}-post.txt" + (f" + {slug}-thumb.jpg" if thumb_made else "")
+            print(f"  done: {out_path.name} + {extras}\n")
         except Exception as exc:
             failures += 1
             print(f"  FAILED: {exc}\n")

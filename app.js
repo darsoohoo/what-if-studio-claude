@@ -1288,6 +1288,19 @@ function el(tag, attrs = {}, children = []) {
   return node;
 }
 
+/* Collapsible sidebar state (plain localStorage: UI pref, not app data). */
+function setNavCollapsed(collapsed, persist = true) {
+  document.body.classList.toggle("nav-collapsed", collapsed);
+  const toggle = $("navToggle");
+  if (toggle) {
+    toggle.setAttribute("aria-expanded", String(!collapsed));
+    toggle.setAttribute("aria-label", collapsed ? "Expand menu" : "Collapse menu");
+  }
+  if (persist) {
+    try { window.localStorage.setItem("wis.navCollapsed", collapsed ? "1" : "0"); } catch (err) { /* ignore */ }
+  }
+}
+
 let statusTimer = null;
 function announce(message) {
   const box = $("actionStatus");
@@ -1885,8 +1898,8 @@ function scaffoldScenario(input) {
     ],
     beats: input.beats,
     shotList: [
-      "Hook shot: " + firstSentence(premise),
-      ...input.beats.map(b => "Visual: " + firstSentence(b))
+      "Hook shot: a person face to camera, wide-eyed, teasing the question — " + firstSentence(premise),
+      ...input.beats.map(b => "Reenactment: a person acting out this moment — " + firstSentence(b))
     ],
     captions: [
       title,
@@ -1901,6 +1914,43 @@ function scaffoldScenario(input) {
   };
 }
 
+/* ---------- Optional AI draft ----------
+   Fires only when the user clicks "Write it for me". The free writing
+   service blocks direct browser calls, so the request goes through the
+   local review dashboard (pipeline/review.bat) which fetches the draft
+   server-side. Everything stays editable; the app works fine without it. */
+
+const DRAFT_SERVICE = "http://127.0.0.1:8765/api/draft";
+
+async function draftScenarioWithAI(title, category) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 90000);
+  try {
+    let response;
+    try {
+      response = await fetch(
+        `${DRAFT_SERVICE}?title=${encodeURIComponent(title)}&category=${encodeURIComponent(category)}`,
+        { signal: controller.signal }
+      );
+    } catch (err) {
+      throw new Error("dashboard-offline");
+    }
+    const data = await response.json();
+    if (!response.ok || data.error) throw new Error(data.error || "service error");
+    const beats = (Array.isArray(data.beats) ? data.beats : [])
+      .map(b => String(b).trim()).filter(Boolean).slice(0, 5);
+    if (!data.premise || beats.length < 3) throw new Error("draft was incomplete");
+    return {
+      premise: String(data.premise).trim(),
+      beats,
+      tags: (Array.isArray(data.tags) ? data.tags : []).map(t => String(t).trim()).filter(Boolean).slice(0, 5),
+      emoji: typeof data.emoji === "string" ? data.emoji.trim().slice(0, 4) : ""
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function bindBuilder() {
   const dialog = $("builderDialog");
   const form = $("builderForm");
@@ -1909,14 +1959,51 @@ function bindBuilder() {
   const categorySelect = $("bCategory");
   CATEGORIES.forEach(c => categorySelect.appendChild(el("option", { value: c, text: c })));
 
+  const aiBtn = $("builderAiBtn");
+  const aiStatus = $("builderAiStatus");
+  const AI_HINT = "Type a title, and a free AI drafts the rest — you can edit everything.";
+
   $("newScenarioBtn").addEventListener("click", () => {
     form.reset();
     error.textContent = "";
+    aiStatus.textContent = AI_HINT;
     dialog.showModal();
     $("bTitle").focus();
   });
 
   $("builderCancel").addEventListener("click", () => dialog.close());
+
+  aiBtn.addEventListener("click", async () => {
+    const title = $("bTitle").value.trim();
+    if (!title) {
+      aiStatus.textContent = "Give it a title first — that's the idea the AI writes from.";
+      $("bTitle").focus();
+      return;
+    }
+    aiBtn.disabled = true;
+    aiStatus.textContent = "Writing a draft… (a few seconds)";
+    try {
+      const draft = await draftScenarioWithAI(title, categorySelect.value);
+      // Fill only fields the user hasn't written in - never clobber their words.
+      const kept = [];
+      if (!$("bPremise").value.trim()) $("bPremise").value = draft.premise; else kept.push("premise");
+      ["bBeat1", "bBeat2", "bBeat3", "bBeat4", "bBeat5"].forEach((id, i) => {
+        if (!$(id).value.trim() && draft.beats[i]) $(id).value = draft.beats[i];
+        else if ($(id).value.trim()) kept.push("beat " + (i + 1));
+      });
+      if (!$("bTags").value.trim() && draft.tags.length) $("bTags").value = draft.tags.join(", ");
+      if (!$("bGlyph").value.trim() && draft.emoji) $("bGlyph").value = draft.emoji;
+      aiStatus.textContent = kept.length
+        ? `Draft filled in (kept your ${kept.slice(0, 3).join(", ")}${kept.length > 3 ? "…" : ""}). Edit anything, then add it.`
+        : "Draft ready — edit anything, then add it to your library.";
+    } catch (err) {
+      aiStatus.textContent = err && err.message === "dashboard-offline"
+        ? "The AI writer needs the Studio's helper running — double-click “Start-What-If-Studio” in the project folder once, then try again."
+        : "The writing service hiccuped — try again in a moment, or fill it in yourself.";
+    } finally {
+      aiBtn.disabled = false;
+    }
+  });
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -2045,6 +2132,30 @@ function bindGlobalActions() {
 
   $("resetAllBtn").addEventListener("click", resetAll);
 
+  $("navToggle").addEventListener("click", () => {
+    setNavCollapsed(!document.body.classList.contains("nav-collapsed"));
+  });
+
+  const goToDashboard = async (path) => {
+    const DASHBOARD = "http://127.0.0.1:8765/";
+    const status = $("navStatus");
+    status.textContent = "Checking…";
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 2500);
+      await fetch(DASHBOARD + "api/videos", { signal: controller.signal });
+      clearTimeout(timer);
+      window.location.href = DASHBOARD + path;   // same tab - the sidebar's "Studio" goes back
+    } catch (err) {
+      setNavCollapsed(false, false);             // make sure the hint is visible
+      status.textContent = "Dashboard offline — double-click “Start-What-If-Studio” in the project folder, then try again.";
+      setTimeout(() => { status.textContent = ""; }, 8000);
+    }
+  };
+  $("navVideosBtn").addEventListener("click", () => goToDashboard(""));
+  $("navProduceBtn").addEventListener("click", () => goToDashboard("produce"));
+  $("navHelpBtn").addEventListener("click", () => { window.location.href = "help.html"; });
+
   $("exportQueueBtn").addEventListener("click", () => {
     const items = state.queue
       .map((slot, i) => slot.pkg ? { slot: i + 1, status: slot.status, notes: slot.notes, package: slot.pkg } : null)
@@ -2069,6 +2180,11 @@ function bindGlobalActions() {
    ============================================================ */
 
 function init() {
+  let savedNav = null;
+  try { savedNav = window.localStorage.getItem("wis.navCollapsed"); } catch (err) { /* ignore */ }
+  setNavCollapsed(savedNav === null
+    ? window.matchMedia("(max-width: 700px)").matches   // start collapsed on phones
+    : savedNav === "1", false);
   restore();
   renderStorageBadge();
   renderCategoryChips();
