@@ -97,6 +97,16 @@ python make_videos.py package.json                   # single "Export .json" pac
 
 The app's voice styles map to neural voices automatically: Calm Narrator → Christopher, High-Energy Storyteller → Guy (faster), Deadpan Documentarian → Eric (slower, flatter). List every available voice with `python -m edge_tts --list-voices`.
 
+**ElevenLabs voice** (`--elevenlabs`, paid subscription): swaps the free Microsoft voices for ElevenLabs' more expressive ones, with the same word-synced captions (timings come from ElevenLabs' character alignment). Put your API key (elevenlabs.io → profile → API keys) in `pipeline/elevenlabs_key.txt` (git-ignored) or the `ELEVENLABS_API_KEY` env var, then:
+
+```
+python make_videos.py queue.json --ai-visuals --elevenlabs
+python make_videos.py queue.json --infer --elevenlabs --charts     # max quality: AI video + AI voice
+python make_videos.py queue.json --elevenlabs --el-voice Rachel    # pick any voice on your account
+```
+
+Voice styles map to premade voices (Calm → Adam, High-Energy → Josh, Deadpan → Arnold, with fallbacks based on what your account has). Character usage counts against your ElevenLabs plan (~1,200 characters per 60s video).
+
 ## Good to know
 
 - **Internet required** for voice generation (the neural voices are a Microsoft service; no account or API key).

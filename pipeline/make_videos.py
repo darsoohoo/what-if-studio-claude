@@ -205,6 +205,102 @@ async def synthesize(text, vconf, mp3_path):
     return words
 
 
+# ---------------------------------------------------------------- ElevenLabs voice (optional, paid)
+
+ELEVENLABS_API = "https://api.elevenlabs.io/v1"
+
+# App voice style -> preferred ElevenLabs premade voices, by name (first match wins).
+ELEVENLABS_VOICE_BY_STYLE = {
+    "Calm Narrator":           ["Adam", "Brian", "Rachel", "Daniel"],
+    "High-Energy Storyteller": ["Josh", "Antoni", "Callum", "Charlie"],
+    "Deadpan Documentarian":   ["Arnold", "Clyde", "George", "Bill"],
+}
+
+
+def elevenlabs_key():
+    key = os.environ.get("ELEVENLABS_API_KEY", "").strip()
+    if key:
+        return key
+    f = Path(__file__).resolve().parent / "elevenlabs_key.txt"
+    if f.exists():
+        return f.read_text(encoding="utf-8").strip()
+    return None
+
+
+def elevenlabs_voices(key):
+    """{name: voice_id} for every voice on the account (premade + cloned)."""
+    req = urllib.request.Request(f"{ELEVENLABS_API}/voices",
+                                 headers={"xi-api-key": key, "User-Agent": "WhatIfStudio-pipeline/1.0"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        data = json.loads(resp.read())
+    return {v["name"]: v["voice_id"] for v in data.get("voices", []) if v.get("voice_id")}
+
+
+def pick_elevenlabs_voice(style, override, key):
+    """Resolve a voice: explicit override (name or raw id) beats style mapping."""
+    voices = elevenlabs_voices(key)
+    if override:
+        for name, vid in voices.items():
+            if name.lower() == override.lower():
+                return vid, name
+        return override, override      # assume the user passed a raw voice id
+    for name in ELEVENLABS_VOICE_BY_STYLE.get(style, []):
+        if name in voices:
+            return voices[name], name
+    if voices:
+        name = sorted(voices)[0]
+        return voices[name], name
+    raise RuntimeError("no voices available on this ElevenLabs account")
+
+
+def chars_to_words(chars, starts, ends):
+    """Group ElevenLabs character-level timestamps into (start, end, word)."""
+    words, cur, w_start, w_end = [], "", None, None
+    for ch, s, e in zip(chars, starts, ends):
+        if str(ch).isspace():
+            if cur:
+                words.append((w_start, w_end, cur))
+                cur = ""
+        else:
+            if not cur:
+                w_start = s
+            cur += str(ch)
+            w_end = e
+    if cur:
+        words.append((w_start, w_end, cur))
+    return words
+
+
+def synthesize_elevenlabs(text, voice_id, model, mp3_path, key):
+    """ElevenLabs TTS with character timestamps -> mp3 + per-word timings,
+    matching the edge-tts word format so captions/charts work unchanged."""
+    import base64
+    url = f"{ELEVENLABS_API}/text-to-speech/{voice_id}/with-timestamps?output_format=mp3_44100_128"
+    body = json.dumps({
+        "text": text,
+        "model_id": model,
+        "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
+    }).encode("utf-8")
+    req = urllib.request.Request(url, data=body, method="POST", headers={
+        "xi-api-key": key,
+        "Content-Type": "application/json",
+        "User-Agent": "WhatIfStudio-pipeline/1.0",
+    })
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        data = json.loads(resp.read())
+    audio = data.get("audio_base64")
+    align = data.get("alignment") or data.get("normalized_alignment")
+    if not audio or not align:
+        raise RuntimeError("ElevenLabs response missing audio or alignment:\n" + json.dumps(data)[:400])
+    Path(mp3_path).write_bytes(base64.b64decode(audio))
+    words = chars_to_words(align.get("characters", []),
+                           align.get("character_start_times_seconds", []),
+                           align.get("character_end_times_seconds", []))
+    if not words:
+        raise RuntimeError("ElevenLabs alignment produced no word timings")
+    return words
+
+
 def ass_time(seconds):
     cs = max(0, int(round(seconds * 100)))
     h = cs // 360000
@@ -960,6 +1056,11 @@ def main():
                         help="Seconds per generated clip (default: 5; clips loop to fill each beat)")
     parser.add_argument("--infer-cache", default="infer-videos",
                         help="Cache folder for generated AI clips (default: infer-videos)")
+    parser.add_argument("--elevenlabs", action="store_true",
+                        help="Use ElevenLabs for the voiceover (needs ELEVENLABS_API_KEY / pipeline/elevenlabs_key.txt)")
+    parser.add_argument("--el-voice", help="ElevenLabs voice name or id (default: mapped from the package's voice style)")
+    parser.add_argument("--el-model", default="eleven_multilingual_v2",
+                        help="ElevenLabs model id (default: eleven_multilingual_v2)")
     parser.add_argument("--hook", type=int, default=1, choices=[1, 2, 3],
                         help="Which of the 3 hooks opens the video (default: 1)")
     parser.add_argument("--voice", help="Override edge-tts voice for all items")
@@ -1006,6 +1107,16 @@ def main():
                 "  in pipeline/tryinfer_key.txt. Then re-run.")
         print("NOTE: --infer uses the PAID tryinfer API - one clip is billed per beat.\n")
 
+    el_key = None
+    if args.elevenlabs:
+        el_key = elevenlabs_key()
+        if not el_key:
+            sys.exit(
+                "--elevenlabs needs your ElevenLabs API key.\n"
+                "  Grab it from elevenlabs.io (profile icon -> API keys), then either set the\n"
+                "  ELEVENLABS_API_KEY environment variable or save it (one line) in\n"
+                "  pipeline/elevenlabs_key.txt. Then re-run.")
+
     print(f"Rendering {len(items)} video(s) -> {out_dir.resolve()}")
     if args.infer:
         print(f"Visuals: tryinfer AI video per beat (model: {args.infer_model}, {args.infer_duration}s clips)")
@@ -1046,10 +1157,17 @@ def main():
                 if CAPTION_FONT_FILE.exists():
                     shutil.copy(CAPTION_FONT_FILE, tmp / CAPTION_FONT_FILE.name)
 
-                words = asyncio.run(synthesize(text, vconf, tmp / "voice.mp3"))
-                total = probe_duration(ffprobe, tmp / "voice.mp3")
+                if args.elevenlabs:
+                    el_voice_id, el_voice_name = pick_elevenlabs_voice(
+                        pkg.get("voice", ""), args.el_voice, el_key)
+                    words = synthesize_elevenlabs(text, el_voice_id, args.el_model, tmp / "voice.mp3", el_key)
+                    total = probe_duration(ffprobe, tmp / "voice.mp3")
+                    print(f"  voice: ElevenLabs {el_voice_name} ({args.el_model}) - {total:.1f}s")
+                else:
+                    words = asyncio.run(synthesize(text, vconf, tmp / "voice.mp3"))
+                    total = probe_duration(ffprobe, tmp / "voice.mp3")
+                    print(f"  voice: {vconf['voice']} ({vconf['rate']}, {vconf['pitch']}) - {total:.1f}s")
                 (tmp / "subs.ass").write_text(words_to_ass(words, pkg, total), encoding="utf-8")
-                print(f"  voice: {vconf['voice']} ({vconf['rate']}, {vconf['pitch']}) - {total:.1f}s")
 
                 item_visuals = visuals
                 stock_authors = set()
