@@ -122,6 +122,7 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
       <div class="row">
         <label class="opt"><input type="checkbox" id="optEleven"> ElevenLabs voice</label>
         <label class="opt">Voice: <select id="optVoice" style="width:auto"><option value="auto">Auto (from style)</option></select></label>
+        <button type="button" id="voicePlayBtn" title="Play a short sample of the selected voice">▶ Hear it</button>
         <label class="opt"><input type="checkbox" id="optCharts" checked> Animated numbers</label>
         <label class="opt"><input type="checkbox" id="optClipAudio"> Keep clip sound (LTX)</label>
       </div>
@@ -195,9 +196,44 @@ $id("pkgSelect").addEventListener("change", async (e) => {
   $id("optEleven").checked = info.elevenlabs;
   $id("optEleven").disabled = !info.elevenlabs;
   const vs = $id("optVoice");
-  vs.innerHTML = "<option value='auto'>Auto (from style)</option>";
-  (info.voices || []).forEach(v => { const o = document.createElement("option"); o.value = v; o.textContent = v; vs.appendChild(o); });
+  vs.innerHTML = "";
+  const autoOpt = document.createElement("option");
+  autoOpt.value = "auto";
+  autoOpt.textContent = info.auto_voice ? `Auto — ${info.auto_voice}` : "Auto (from style)";
+  vs.appendChild(autoOpt);
+  S.voicePreviews = { auto: null };
+  (info.voices || []).forEach(v => {
+    const name = typeof v === "string" ? v : v.name;
+    S.voicePreviews[name] = (typeof v === "object" && v.preview) || null;
+    if (name === info.auto_voice) S.voicePreviews.auto = S.voicePreviews[name];
+    const o = document.createElement("option");
+    o.value = name; o.textContent = name;
+    vs.appendChild(o);
+  });
+  updateVoicePlayBtn();
   $id("flow").hidden = false;
+});
+
+/* ---------- voice sample preview (free - ElevenLabs hosts one per voice) ---------- */
+let voiceAudio = null;
+function stopVoiceSample() {
+  if (voiceAudio) { voiceAudio.pause(); voiceAudio = null; }
+  $id("voicePlayBtn").textContent = "▶ Hear it";
+}
+function updateVoicePlayBtn() {
+  stopVoiceSample();
+  $id("voicePlayBtn").disabled = !(S.voicePreviews || {})[$id("optVoice").value];
+}
+$id("optVoice").addEventListener("change", updateVoicePlayBtn);
+$id("voicePlayBtn").addEventListener("click", () => {
+  if (voiceAudio) { stopVoiceSample(); return; }
+  const url = (S.voicePreviews || {})[$id("optVoice").value];
+  if (!url) return;
+  voiceAudio = new Audio(url);
+  voiceAudio.addEventListener("ended", stopVoiceSample);
+  voiceAudio.addEventListener("error", stopVoiceSample);
+  voiceAudio.play().then(() => { $id("voicePlayBtn").textContent = "◼ Stop"; })
+    .catch(stopVoiceSample);
 });
 
 /* ---------- API mode: skip the manual steps ---------- */
