@@ -85,6 +85,53 @@ code { color: var(--accent-strong); }
   }
 }
 
+/* ---------- Global navbar (Studio <-> Videos) ---------- */
+
+.global-nav {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 24px;
+  background: var(--bg-inset);
+  border-bottom: 1px solid var(--border);
+  font-size: 13.5px;
+}
+
+.global-nav-brand {
+  display: grid;
+  place-items: center;
+  width: 22px; height: 22px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #8b7bff, #4cd6a4);
+  color: #0b0d14;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.global-nav-current {
+  font-weight: 700;
+  color: var(--text);
+  border-bottom: 2px solid var(--accent);
+  padding: 2px 0;
+}
+
+.global-nav-link {
+  font: inherit;
+  font-weight: 600;
+  padding: 2px 0;
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.global-nav-link:hover { color: var(--accent-strong); }
+
+.global-nav-status {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
 /* ---------- Header ---------- */
 
 .app-header {

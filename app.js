@@ -2119,23 +2119,20 @@ function bindGlobalActions() {
 
   $("resetAllBtn").addEventListener("click", resetAll);
 
-  $("openDashboardBtn").addEventListener("click", async () => {
+  $("navVideosBtn").addEventListener("click", async () => {
     const DASHBOARD = "http://127.0.0.1:8765/";
-    const status = $("dashboardStatus");
-    status.textContent = "Checking for the dashboard…";
+    const status = $("navStatus");
+    status.textContent = "Checking…";
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 2500);
       await fetch(DASHBOARD + "api/videos", { signal: controller.signal });
       clearTimeout(timer);
-      const win = window.open(DASHBOARD, "_blank");
-      status.textContent = win
-        ? "Dashboard opened in a new tab."
-        : `Your browser blocked the new tab — open ${DASHBOARD} manually.`;
+      window.location.href = DASHBOARD;   // same tab - the dashboard's "Studio" goes back
     } catch (err) {
-      status.textContent = "The dashboard isn't running — double-click pipeline\\review.bat, then click this again.";
+      status.textContent = "Dashboard offline — double-click pipeline\\review.bat, then click 🎬 Videos again.";
+      setTimeout(() => { status.textContent = ""; }, 8000);
     }
-    setTimeout(() => { status.textContent = ""; }, 8000);
   });
 
   $("exportQueueBtn").addEventListener("click", () => {
