@@ -346,6 +346,17 @@ input[type="search"]::placeholder, input[type="text"]::placeholder, textarea::pl
 }
 .builder-ai-row .btn { flex: none; }
 
+.builder-runtime {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.builder-runtime select { width: auto; padding: 6px 8px; }
+
 .builder-ai-status {
   font-size: 12px;
   color: var(--text-faint);

@@ -1430,12 +1430,26 @@ function renderWorkspace() {
   scenario.tags.forEach(t => tagRow.appendChild(el("span", { class: "tag", text: t })));
 
   renderSegmented($("platformGroup"), PLATFORMS.map(p => ({ value: p.id, label: p.label })), state.options.platform, v => { state.options.platform = v; });
-  renderSegmented($("runtimeGroup"), RUNTIMES.map(r => ({ value: String(r.id), label: r.label })), String(state.options.runtime), v => { state.options.runtime = Number(v); });
+  renderRuntimeControl();
 
   const voiceSelect = $("voiceSelect");
   voiceSelect.innerHTML = "";
   VOICES.forEach(v => voiceSelect.appendChild(el("option", { value: v.id, text: v.label })));
   voiceSelect.value = state.options.voice;
+}
+
+/* Runtime is picked in two places (Package Settings and the builder dialog) -
+   both write state.options.runtime and re-sync the other control. */
+function renderRuntimeControl() {
+  renderSegmented($("runtimeGroup"), RUNTIMES.map(r => ({ value: String(r.id), label: r.label })), String(state.options.runtime), v => {
+    state.options.runtime = Number(v);
+    syncBuilderRuntime();
+  });
+}
+
+function syncBuilderRuntime() {
+  const sel = $("bRuntime");
+  if (sel && sel.options.length) sel.value = String(state.options.runtime);
 }
 
 function renderSegmented(container, items, activeValue, onPick) {
@@ -1962,6 +1976,13 @@ function bindBuilder() {
   const categorySelect = $("bCategory");
   CATEGORIES.forEach(c => categorySelect.appendChild(el("option", { value: c, text: c })));
 
+  const runtimeSelect = $("bRuntime");
+  RUNTIMES.forEach(r => runtimeSelect.appendChild(el("option", { value: String(r.id), text: r.label })));
+  runtimeSelect.addEventListener("change", () => {
+    state.options.runtime = Number(runtimeSelect.value);
+    renderRuntimeControl();   // keep Package Settings in step
+  });
+
   const aiBtn = $("builderAiBtn");
   const aiStatus = $("builderAiStatus");
   const AI_HINT = "Type a title, and AI drafts the rest — you can edit everything.";
@@ -1970,6 +1991,7 @@ function bindBuilder() {
     form.reset();
     error.textContent = "";
     aiStatus.textContent = AI_HINT;
+    syncBuilderRuntime();     // form.reset() clears the select; restore the current pick
     dialog.showModal();
     $("bTitle").focus();
   });
