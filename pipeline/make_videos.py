@@ -236,17 +236,24 @@ def elevenlabs_voices(key):
     return {v["name"]: v["voice_id"] for v in data.get("voices", []) if v.get("voice_id")}
 
 
+def _voice_base(name):
+    """'Adam - Dominant, Firm' -> 'adam' (accounts often carry descriptive suffixes)."""
+    return name.split(" - ")[0].strip().lower()
+
+
 def pick_elevenlabs_voice(style, override, key):
     """Resolve a voice: explicit override (name or raw id) beats style mapping."""
     voices = elevenlabs_voices(key)
     if override:
+        want = override.strip().lower()
         for name, vid in voices.items():
-            if name.lower() == override.lower():
+            if name.lower() == want or _voice_base(name) == want:
                 return vid, name
         return override, override      # assume the user passed a raw voice id
-    for name in ELEVENLABS_VOICE_BY_STYLE.get(style, []):
-        if name in voices:
-            return voices[name], name
+    for wanted in ELEVENLABS_VOICE_BY_STYLE.get(style, []):
+        for name, vid in voices.items():
+            if _voice_base(name) == wanted.lower():
+                return vid, name
     if voices:
         name = sorted(voices)[0]
         return voices[name], name
