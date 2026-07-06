@@ -44,6 +44,7 @@ const PLATFORMS = [
 const RUNTIMES = [
   { id: 30, label: "30s", beats: 3, note: "Tight cut: hook, three fast beats, out. Every word earns its place." },
   { id: 60, label: "60s", beats: 5, note: "Standard cut: full beat structure at a brisk pace." },
+  { id: 90, label: "90s", beats: 5, note: "Room to breathe: full beat structure with one extra detail or example per beat — let the twist land (~15s per beat)." },
   { id: 180, label: "3 min", beats: 5, note: "Extended cut: expand each beat with one extra example, visual, or aside (~25–30s per beat)." }
 ];
 
