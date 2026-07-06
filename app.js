@@ -1924,14 +1924,14 @@ function scaffoldScenario(input) {
 
 const DRAFT_SERVICE = "http://127.0.0.1:8765/api/draft";
 
-async function draftScenarioWithAI(title, category) {
+async function draftScenarioWithAI(title, category, runtime) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 90000);
   try {
     let response;
     try {
       response = await fetch(
-        `${DRAFT_SERVICE}?title=${encodeURIComponent(title)}&category=${encodeURIComponent(category)}`,
+        `${DRAFT_SERVICE}?title=${encodeURIComponent(title)}&category=${encodeURIComponent(category)}&runtime=${encodeURIComponent(runtime || 60)}`,
         { signal: controller.signal }
       );
     } catch (err) {
@@ -1984,9 +1984,10 @@ function bindBuilder() {
       return;
     }
     aiBtn.disabled = true;
-    aiStatus.textContent = "Writing a draft… (a few seconds)";
+    const rt = RUNTIMES.find(r => r.id === state.options.runtime);
+    aiStatus.textContent = `Writing a ${rt ? rt.label : "60s"} draft… (a few seconds)`;
     try {
-      const draft = await draftScenarioWithAI(title, categorySelect.value);
+      const draft = await draftScenarioWithAI(title, categorySelect.value, state.options.runtime);
       // Fill only fields the user hasn't written in - never clobber their words.
       const kept = [];
       if (!$("bPremise").value.trim()) $("bPremise").value = draft.premise; else kept.push("premise");
