@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>What If Studio — Short-Form Scenario Engine</title>
+<title>What If Studeos — Short-Form Scenario Engine</title>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -31,7 +31,7 @@
   <div class="brand">
     <span class="brand-mark" aria-hidden="true">?</span>
     <div class="brand-text">
-      <h1>What If Studio</h1>
+      <h1>What If Studeos</h1>
       <p class="tagline">Turn one question into a ready-to-record short.</p>
     </div>
   </div>
@@ -166,7 +166,7 @@
 </main>
 
 <footer class="app-footer">
-  <p><strong>What If Studio</strong> runs 100% locally — no server, no account, no tracking, no remote content. Open <code>index.html</code> and it works.</p>
+  <p><strong>What If Studeos</strong> runs 100% locally — no server, no account, no tracking, no remote content. Open <code>index.html</code> and it works.</p>
   <p>All scenarios are speculative fiction and thought experiments for entertainment. Publishing, performance, and monetization are up to you and your platforms — no growth is promised or automated here.</p>
 </footer>
 
@@ -181,7 +181,10 @@
 
     <div class="builder-ai-row">
       <button type="button" id="builderAiBtn" class="btn btn-ghost">✨ Write it for me</button>
-      <span id="builderAiStatus" class="builder-ai-status" role="status" aria-live="polite">Type a title, and a free AI drafts the rest — you can edit everything.</span>
+      <label class="builder-runtime" for="bRuntime">for a
+        <select id="bRuntime" aria-label="Draft length (runtime)"></select>
+        video</label>
+      <span id="builderAiStatus" class="builder-ai-status" role="status" aria-live="polite">Type a title, and AI drafts the rest — you can edit everything.</span>
     </div>
 
     <div class="builder-row">
