@@ -396,11 +396,13 @@ class Handler(BaseHTTPRequestHandler):
                 slot = int((q.get("slot") or ["0"])[0])
                 pkg = load_package(queue, slot)
                 d = produce_dir(staging_key(queue, slot, pkg))
-                voices = []
+                voices, auto_voice = [], None
                 key = mv.elevenlabs_key()
                 if key:
                     try:
-                        voices = sorted(mv.elevenlabs_voices(key))
+                        voices = mv.elevenlabs_voice_meta(key)
+                        auto_voice = mv.auto_voice_name(pkg.get("voice", ""),
+                                                        [v["name"] for v in voices])
                     except Exception:
                         voices = []
                 self.send_json({
@@ -409,6 +411,7 @@ class Handler(BaseHTTPRequestHandler):
                     "prompts": beat_prompts(pkg),
                     "staged": staged_list(d),
                     "voices": voices,
+                    "auto_voice": auto_voice,
                     "elevenlabs": bool(key),
                     "infer": bool(mv.infer_api_key()),
                     "rendering": render_running(),
@@ -547,7 +550,8 @@ class Handler(BaseHTTPRequestHandler):
                 slot = int(data.get("slot") or 0)
                 pkg = load_package(queue, slot)
                 d = produce_dir(staging_key(queue, slot, pkg))
-                if not list(d.glob("*.mp4")):
+                # API mode generates its own clips - staged ones aren't needed.
+                if not data.get("infer") and not list(d.glob("*.mp4")):
                     raise RuntimeError("no clips staged - import or drop clips first")
                 start_render(queue, slot, d, data)
                 self.send_json({"ok": True})

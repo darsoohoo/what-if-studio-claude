@@ -236,9 +236,30 @@ def elevenlabs_voices(key):
     return {v["name"]: v["voice_id"] for v in data.get("voices", []) if v.get("voice_id")}
 
 
+def elevenlabs_voice_meta(key):
+    """[{name, preview}] for the account's voices - preview is the free sample
+    mp3 ElevenLabs hosts per voice (no TTS cost to play)."""
+    req = urllib.request.Request(f"{ELEVENLABS_API}/voices",
+                                 headers={"xi-api-key": key, "User-Agent": "WhatIfStudio-pipeline/1.0"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        data = json.loads(resp.read())
+    return sorted(({"name": v["name"], "preview": v.get("preview_url") or ""}
+                   for v in data.get("voices", []) if v.get("voice_id")),
+                  key=lambda m: m["name"].lower())
+
+
 def _voice_base(name):
     """'Adam - Dominant, Firm' -> 'adam' (accounts often carry descriptive suffixes)."""
     return name.split(" - ")[0].strip().lower()
+
+
+def auto_voice_name(style, voice_names):
+    """Which account voice the style mapping would pick (None if no match)."""
+    for wanted in ELEVENLABS_VOICE_BY_STYLE.get(style, []):
+        for name in voice_names:
+            if _voice_base(name) == wanted.lower():
+                return name
+    return sorted(voice_names)[0] if voice_names else None
 
 
 def pick_elevenlabs_voice(style, override, key):
@@ -250,12 +271,8 @@ def pick_elevenlabs_voice(style, override, key):
             if name.lower() == want or _voice_base(name) == want:
                 return vid, name
         return override, override      # assume the user passed a raw voice id
-    for wanted in ELEVENLABS_VOICE_BY_STYLE.get(style, []):
-        for name, vid in voices.items():
-            if _voice_base(name) == wanted.lower():
-                return vid, name
-    if voices:
-        name = sorted(voices)[0]
+    name = auto_voice_name(style, list(voices))
+    if name:
         return voices[name], name
     raise RuntimeError("no voices available on this ElevenLabs account")
 
