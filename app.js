@@ -2119,6 +2119,25 @@ function bindGlobalActions() {
 
   $("resetAllBtn").addEventListener("click", resetAll);
 
+  $("openDashboardBtn").addEventListener("click", async () => {
+    const DASHBOARD = "http://127.0.0.1:8765/";
+    const status = $("dashboardStatus");
+    status.textContent = "Checking for the dashboard…";
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 2500);
+      await fetch(DASHBOARD + "api/videos", { signal: controller.signal });
+      clearTimeout(timer);
+      const win = window.open(DASHBOARD, "_blank");
+      status.textContent = win
+        ? "Dashboard opened in a new tab."
+        : `Your browser blocked the new tab — open ${DASHBOARD} manually.`;
+    } catch (err) {
+      status.textContent = "The dashboard isn't running — double-click pipeline\\review.bat, then click this again.";
+    }
+    setTimeout(() => { status.textContent = ""; }, 8000);
+  });
+
   $("exportQueueBtn").addEventListener("click", () => {
     const items = state.queue
       .map((slot, i) => slot.pkg ? { slot: i + 1, status: slot.status, notes: slot.notes, package: slot.pkg } : null)
