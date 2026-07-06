@@ -54,6 +54,9 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
 .status { font-size: 13px; margin-top: 10px; min-height: 18px; }
 .status.good { color: var(--good); }
 .status.bad { color: var(--danger); }
+.apibox { background: rgba(139,123,255,0.08); border: 1px solid var(--accent); border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; }
+.apibox label.opt { color: var(--text); }
+.skipped { opacity: 0.4; pointer-events: none; }
 :focus-visible { outline: 3px solid var(--accent-strong); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
@@ -77,7 +80,7 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
 
 <header>
   <h1>Produce</h1>
-  <p class="sub">Turn tryinfer Studio clips into a finished video — prompts, clips, and render, all here.</p>
+  <p class="sub">Premium AI-video production — generate clips with the tryinfer API in one click, or bring your own from Studio.</p>
 </header>
 
 <main>
@@ -89,12 +92,18 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
 
   <div id="flow" hidden>
     <section>
-      <h2><span class="step">2</span>Generate the clips in <a href="https://tryinfer.com" target="_blank" rel="noopener" style="color:var(--accent-strong)">tryinfer Studio</a></h2>
-      <p class="hint">Settings per clip: <strong>9:16 vertical · 5s</strong> · your chosen model. Copy each prompt, generate, download — in order.</p>
-      <div id="prompts"></div>
+      <h2><span class="step">2</span>Get the clips</h2>
+      <div class="apibox" id="apiBox" hidden>
+        <label class="opt"><input type="checkbox" id="optInfer"> <strong>⚡ Generate the clips for me (tryinfer API)</strong></label>
+        <p class="hint" id="apiHint"></p>
+      </div>
+      <div id="manualPrompts">
+        <p class="hint">Manual path — in <a href="https://tryinfer.com" target="_blank" rel="noopener" style="color:var(--accent-strong)">tryinfer Studio</a>: <strong>9:16 vertical · 5s</strong> · your chosen model. Copy each prompt, generate, download — in order.</p>
+        <div id="prompts"></div>
+      </div>
     </section>
 
-    <section>
+    <section id="stepClips">
       <h2><span class="step">3</span>Bring the clips in</h2>
       <div class="row">
         <button type="button" id="importBtn" class="primary">⬇ Import newest <span id="importCount">7</span> videos from Downloads</button>
@@ -176,6 +185,13 @@ $id("pkgSelect").addEventListener("change", async (e) => {
   renderPrompts(info.prompts);
   renderClips(info.staged);
   $id("importCount").textContent = info.prompts.length;
+  $id("apiBox").hidden = !info.infer;
+  if (!info.infer) $id("optInfer").checked = false;
+  const est = (info.prompts.length * 5 * 0.13).toFixed(2);
+  $id("apiHint").textContent =
+    `One 5-second AI clip per beat, straight from the API — no copying, no downloads. ` +
+    `About $${est} for ${info.prompts.length} clips (seedance-2.0-pro; already-generated clips are cached and free).`;
+  applyInferMode();
   $id("optEleven").checked = info.elevenlabs;
   $id("optEleven").disabled = !info.elevenlabs;
   const vs = $id("optVoice");
@@ -183,6 +199,18 @@ $id("pkgSelect").addEventListener("change", async (e) => {
   (info.voices || []).forEach(v => { const o = document.createElement("option"); o.value = v; o.textContent = v; vs.appendChild(o); });
   $id("flow").hidden = false;
 });
+
+/* ---------- API mode: skip the manual steps ---------- */
+function inferMode() {
+  return !$id("apiBox").hidden && $id("optInfer").checked;
+}
+function applyInferMode() {
+  const on = inferMode();
+  $id("manualPrompts").classList.toggle("skipped", on);
+  $id("stepClips").classList.toggle("skipped", on);
+  $id("renderBtn").textContent = on ? "⚡ Generate clips + render" : "🎬 Render video";
+}
+$id("optInfer").addEventListener("change", applyInferMode);
 
 /* ---------- step 2: prompts ---------- */
 function renderPrompts(prompts) {
@@ -275,8 +303,15 @@ dz.addEventListener("drop", async (e) => {
 /* ---------- step 4: render ---------- */
 let pollTimer = null;
 $id("renderBtn").addEventListener("click", async () => {
+  const infer = inferMode();
+  if (infer) {
+    const est = (S.prompts.length * 5 * 0.13).toFixed(2);
+    if (!confirm(`This generates ${S.prompts.length} AI clips via the tryinfer API — about $${est} `
+        + `billed to your tryinfer account (cached clips are free). Start?`)) return;
+  }
   const r = await api("/api/produce/render", {
     queue: S.queue, slot: S.slot,
+    infer,
     elevenlabs: $id("optEleven").checked,
     charts: $id("optCharts").checked,
     clip_audio: $id("optClipAudio").checked ? 0.25 : 0,
@@ -286,7 +321,9 @@ $id("renderBtn").addEventListener("click", async () => {
   $id("renderBtn").disabled = true;
   $id("openVideosBtn").hidden = true;
   $id("renderLog").hidden = false;
-  setRenderStatus("Rendering… (a minute or two)", "");
+  setRenderStatus(infer
+    ? "Generating AI clips + rendering… (5–15 minutes — per-clip cost prints in the log)"
+    : "Rendering… (a minute or two)", "");
   pollTimer = setInterval(pollRender, 3000);
 });
 async function pollRender() {
