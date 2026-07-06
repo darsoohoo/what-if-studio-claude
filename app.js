@@ -2136,7 +2136,7 @@ function bindGlobalActions() {
     setNavCollapsed(!document.body.classList.contains("nav-collapsed"));
   });
 
-  $("navVideosBtn").addEventListener("click", async () => {
+  const goToDashboard = async (path) => {
     const DASHBOARD = "http://127.0.0.1:8765/";
     const status = $("navStatus");
     status.textContent = "Checking…";
@@ -2145,13 +2145,15 @@ function bindGlobalActions() {
       const timer = setTimeout(() => controller.abort(), 2500);
       await fetch(DASHBOARD + "api/videos", { signal: controller.signal });
       clearTimeout(timer);
-      window.location.href = DASHBOARD;   // same tab - the dashboard's "Studio" goes back
+      window.location.href = DASHBOARD + path;   // same tab - the sidebar's "Studio" goes back
     } catch (err) {
-      setNavCollapsed(false, false);      // make sure the hint is visible
-      status.textContent = "Dashboard offline — double-click “Start-What-If-Studio” in the project folder, then click 🎬 Videos again.";
+      setNavCollapsed(false, false);             // make sure the hint is visible
+      status.textContent = "Dashboard offline — double-click “Start-What-If-Studio” in the project folder, then try again.";
       setTimeout(() => { status.textContent = ""; }, 8000);
     }
-  });
+  };
+  $("navVideosBtn").addEventListener("click", () => goToDashboard(""));
+  $("navProduceBtn").addEventListener("click", () => goToDashboard("produce"));
 
   $("exportQueueBtn").addEventListener("click", () => {
     const items = state.queue

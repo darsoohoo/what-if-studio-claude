@@ -18,6 +18,7 @@ import argparse
 import json
 import re
 import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -33,9 +34,16 @@ OUTPUT = HERE / "output"
 TRASH = OUTPUT / "trash"
 STATE_FILE = HERE / "review-notes.json"
 PAGE_FILE = HERE / "review.html"
+PRODUCE_PAGE = HERE / "produce.html"
+PRODUCE_DIR = HERE / "produce"
+DOWNLOADS = Path.home() / "Downloads"
 PORT = 8765
 
 _lock = threading.Lock()
+_render = {"proc": None, "log": HERE / "produce-render.log", "label": ""}
+
+# The pipeline itself, imported for prompt building and voice listing.
+import make_videos as mv
 
 
 def load_state():
@@ -139,6 +147,102 @@ def ai_draft(title, category):
     }
 
 
+# ---------------- produce (premium clip workflow) ----------------
+
+
+def produce_dir(key):
+    safe = re.sub(r"[^a-zA-Z0-9_-]", "-", str(key))[:80] or "clips"
+    d = PRODUCE_DIR / safe
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def list_queues():
+    """Queue exports in the pipeline folder, newest first."""
+    out = []
+    for f in sorted(HERE.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        if f.name == "review-notes.json":
+            continue
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        items = data.get("items") if isinstance(data, dict) else None
+        if not items:
+            continue
+        out.append({
+            "file": f.name,
+            "items": [{
+                "slot": it.get("slot"),
+                "title": (it.get("package") or {}).get("title", "untitled"),
+                "scenarioId": (it.get("package") or {}).get("scenarioId", ""),
+            } for it in items if it.get("package")],
+        })
+    return out
+
+
+def load_package(queue_file, slot):
+    name = safe_name(queue_file)
+    path = (HERE / name) if name else None
+    if not path or not path.is_file():
+        raise RuntimeError("queue file not found")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for it in data.get("items", []):
+        if it.get("slot") == slot and it.get("package"):
+            return it["package"]
+    raise RuntimeError(f"slot {slot} not in {name}")
+
+
+def staging_key(queue_file, slot, pkg):
+    return f"{slot:02d}-{pkg.get('scenarioId', 'clips')}"
+
+
+def staged_list(d):
+    return [{"name": f.name, "size_mb": round(f.stat().st_size / 1e6, 2)}
+            for f in sorted(d.glob("*.mp4"))]
+
+
+def renumber(d):
+    files = sorted(d.glob("*.mp4"))
+    for i, f in enumerate(files):
+        f.rename(d / f"zztmp_{i:02d}.mp4")
+    for i, f in enumerate(sorted(d.glob("zztmp_*.mp4"))):
+        f.rename(d / f"{i + 1:02d}.mp4")
+
+
+def beat_prompts(pkg):
+    segments = mv.narration_segments(pkg, 0)
+    return [mv.ai_prompt_for_segment(pkg, i, len(segments), mv.VIDEO_MOTION_SUFFIX)
+            for i in range(len(segments))]
+
+
+def render_running():
+    return _render["proc"] is not None and _render["proc"].poll() is None
+
+
+def start_render(queue_file, slot, staging, opts):
+    if render_running():
+        raise RuntimeError("a render is already running - wait for it to finish")
+    cmd = [sys.executable, "make_videos.py", queue_file, "--slots", str(slot),
+           "--backgrounds", str(staging), "--out", "output"]
+    if opts.get("elevenlabs"):
+        cmd.append("--elevenlabs")
+    if opts.get("charts"):
+        cmd.append("--charts")
+    try:
+        vol = float(opts.get("clip_audio") or 0)
+    except (TypeError, ValueError):
+        vol = 0
+    if vol > 0:
+        cmd += ["--clip-audio", str(min(vol, 1.0))]
+    voice = str(opts.get("voice") or "").strip()
+    if voice and voice.lower() != "auto":
+        cmd += ["--el-voice", voice]
+    log = open(_render["log"], "w", encoding="utf-8")
+    _render["proc"] = subprocess.Popen(cmd, cwd=HERE, stdout=log, stderr=subprocess.STDOUT)
+    _render["label"] = f"slot {slot} from {queue_file}"
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass  # keep the console quiet
@@ -197,17 +301,72 @@ class Handler(BaseHTTPRequestHandler):
 
     # ---------------- routes ----------------
 
+    def send_page(self, page_file):
+        body = page_file.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self):
         if self.path in ("/", "/index.html"):
-            body = PAGE_FILE.read_bytes()
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            self.send_page(PAGE_FILE)
+            return
+        if self.path.split("?")[0] == "/produce":
+            self.send_page(PRODUCE_PAGE)
             return
         if self.path == "/api/videos":
             self.send_json(list_videos())
+            return
+        if self.path == "/api/produce/queues":
+            self.send_json(list_queues())
+            return
+        if self.path.startswith("/api/produce/info"):
+            q = parse_qs(urlparse(self.path).query)
+            try:
+                queue = (q.get("queue") or [""])[0]
+                slot = int((q.get("slot") or ["0"])[0])
+                pkg = load_package(queue, slot)
+                d = produce_dir(staging_key(queue, slot, pkg))
+                voices = []
+                key = mv.elevenlabs_key()
+                if key:
+                    try:
+                        voices = sorted(mv.elevenlabs_voices(key))
+                    except Exception:
+                        voices = []
+                self.send_json({
+                    "title": pkg.get("title"),
+                    "dir": d.name,
+                    "prompts": beat_prompts(pkg),
+                    "staged": staged_list(d),
+                    "voices": voices,
+                    "elevenlabs": bool(key),
+                    "rendering": render_running(),
+                })
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 400)
+            return
+        if self.path == "/api/produce/render-status":
+            log_tail = ""
+            try:
+                log_tail = _render["log"].read_text(encoding="utf-8", errors="replace")[-2500:]
+            except Exception:
+                pass
+            done_ok = (_render["proc"] is not None and _render["proc"].poll() == 0)
+            self.send_json({"running": render_running(), "label": _render["label"],
+                            "ok": done_ok, "log": log_tail})
+            return
+        if self.path.startswith("/produce-files/"):
+            parts = self.path[len("/produce-files/"):].split("/")
+            if len(parts) == 2:
+                dname, fname = safe_name(parts[0]), safe_name(parts[1])
+                path = (PRODUCE_DIR / dname / fname) if dname and fname else None
+                if path and path.is_file():
+                    self.send_file(path, "video/mp4")
+                    return
+            self.send_json({"error": "not found"}, 404)
             return
         if self.path.startswith("/api/draft"):
             q = parse_qs(urlparse(self.path).query)
@@ -233,10 +392,99 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json({"error": "not found"}, 404)
 
     def do_POST(self):
+        # Raw-body clip upload (drag & drop) - not JSON.
+        if self.path.startswith("/api/produce/upload"):
+            q = parse_qs(urlparse(self.path).query)
+            dname = safe_name((q.get("dir") or [""])[0])
+            if not dname:
+                self.send_json({"error": "bad dir"}, 400)
+                return
+            d = produce_dir(dname)
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            if length <= 0 or length > 500_000_000:
+                self.send_json({"error": "bad size"}, 400)
+                return
+            with _lock:
+                index = len(list(d.glob("*.mp4"))) + 1
+                dest = d / f"{index:02d}.mp4"
+                with open(dest, "wb") as out:
+                    remaining = length
+                    while remaining > 0:
+                        chunk = self.rfile.read(min(65536, remaining))
+                        if not chunk:
+                            break
+                        out.write(chunk)
+                        remaining -= len(chunk)
+            self.send_json({"ok": True, "staged": staged_list(d)})
+            return
+
         try:
             data = self.read_body()
         except Exception:
             self.send_json({"error": "bad json"}, 400)
+            return
+
+        if self.path == "/api/produce/import":
+            dname = safe_name(str(data.get("dir", "")))
+            count = max(1, min(int(data.get("count") or 1), 20))
+            if not dname:
+                self.send_json({"error": "bad dir"}, 400)
+                return
+            d = produce_dir(dname)
+            recent = sorted(
+                (f for f in DOWNLOADS.glob("*.mp4") if f.is_file()),
+                key=lambda f: f.stat().st_mtime, reverse=True)[:count]
+            if not recent:
+                self.send_json({"error": "no .mp4 files found in your Downloads folder"}, 404)
+                return
+            with _lock:
+                for old in d.glob("*.mp4"):
+                    old.unlink()
+                for i, src in enumerate(reversed(recent)):   # oldest first = generation order
+                    shutil.copy2(src, d / f"{i + 1:02d}.mp4")
+            self.send_json({"ok": True, "imported": [f.name for f in reversed(recent)],
+                            "staged": staged_list(d)})
+            return
+
+        if self.path in ("/api/produce/remove", "/api/produce/clear", "/api/produce/swap"):
+            dname = safe_name(str(data.get("dir", "")))
+            if not dname or not (PRODUCE_DIR / dname).is_dir():
+                self.send_json({"error": "bad dir"}, 400)
+                return
+            d = PRODUCE_DIR / dname
+            with _lock:
+                if self.path.endswith("clear"):
+                    for f in d.glob("*.mp4"):
+                        f.unlink()
+                elif self.path.endswith("remove"):
+                    name = safe_name(str(data.get("name", "")))
+                    target = (d / name) if name else None
+                    if target and target.is_file():
+                        target.unlink()
+                    renumber(d)
+                else:  # swap
+                    a, b = safe_name(str(data.get("a", ""))), safe_name(str(data.get("b", "")))
+                    fa, fb = (d / a) if a else None, (d / b) if b else None
+                    if fa and fb and fa.is_file() and fb.is_file():
+                        tmp = d / "zzswap.mp4"
+                        fa.rename(tmp)
+                        fb.rename(d / a)
+                        tmp.rename(d / b)
+            self.send_json({"ok": True, "staged": staged_list(d)})
+            return
+
+        if self.path == "/api/produce/render":
+            try:
+                queue = safe_name(str(data.get("queue", "")))
+                slot = int(data.get("slot") or 0)
+                pkg = load_package(queue, slot)
+                d = produce_dir(staging_key(queue, slot, pkg))
+                if not list(d.glob("*.mp4")):
+                    raise RuntimeError("no clips staged - import or drop clips first")
+                start_render(queue, slot, d, data)
+                self.send_json({"ok": True})
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 400)
             return
 
         with _lock:
