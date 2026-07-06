@@ -114,14 +114,27 @@ def openai_key():
     return None
 
 
-def draft_prompt(title, category):
+# Per-beat word budget for each runtime the app offers. The video is exactly
+# as long as the narration, so the writer - not the runtime label - controls
+# length. ~2.6 words/second of comfortable TTS narration.
+RUNTIME_BEAT_WORDS = {
+    30: ("12-20", "Keep it tight - every word earns its place."),
+    60: ("15-30", "Brisk standard pace."),
+    90: ("30-45", "Give each beat one extra concrete detail or example - let the twist breathe."),
+    180: ("55-75", "Expand each beat with an example, a vivid aside, and one number or real fact."),
+}
+
+
+def draft_prompt(title, category, runtime=60):
+    words, pace = RUNTIME_BEAT_WORDS.get(runtime, RUNTIME_BEAT_WORDS[60])
     return (
         'You write scripts for short-form "What if?" videos (TikTok explainer style). '
         f'For the question "{title}" (category: {category}), reply with ONLY minified JSON, '
         'no markdown fences, exactly this shape: '
         '{"premise":"...","beats":["...","...","...","...","..."],"tags":["...","...","..."],"emoji":"..."} '
         "Rules: premise = 2-3 vivid sentences setting up why this is fascinating. "
-        "beats = exactly 5 spoken-narration beats, 15-30 words each, no stage directions: "
+        f"beats = exactly 5 spoken-narration beats, {words} words each, no stage directions: "
+        f"({pace}) "
         "1 the setup, 2 the immediate consequence, 3 the ripple effect nobody predicts, "
         "4 the twist or surprising real fact, 5 a payoff line that reframes the question. "
         "IMPORTANT: write beats as concrete HUMAN scenes someone could reenact on camera - "
@@ -150,14 +163,15 @@ def parse_draft(raw, engine):
     }
 
 
-def ai_draft_openai(title, category, key):
+def ai_draft_openai(title, category, key, runtime=60):
     """Draft via the OpenAI API (fast, no rate-limit queue; needs credits)."""
     body = json.dumps({
         "model": OPENAI_MODEL,
-        "messages": [{"role": "user", "content": draft_prompt(title, category)}],
+        "messages": [{"role": "user", "content": draft_prompt(title, category, runtime)}],
         "response_format": {"type": "json_object"},
         "temperature": 0.9,
-        "max_tokens": 600,
+        # Longer runtimes need room: 5 beats x up to ~75 words plus premise/tags.
+        "max_tokens": 600 if runtime <= 60 else (900 if runtime <= 90 else 1500),
     }).encode("utf-8")
     req = urllib.request.Request(OPENAI_API, data=body, method="POST", headers={
         "Authorization": f"Bearer {key}",
@@ -170,12 +184,12 @@ def ai_draft_openai(title, category, key):
     return parse_draft(raw, "openai")
 
 
-def ai_draft_pollinations(title, category):
+def ai_draft_pollinations(title, category, runtime=60):
     """Draft via the free Pollinations text API. Runs server-side because the
     API blocks direct browser requests (Turnstile) but allows plain server calls."""
     raw = None
     for attempt in range(3):
-        url = TEXT_AI + quote(draft_prompt(title, category)) + f"?seed={int(time.time())}"
+        url = TEXT_AI + quote(draft_prompt(title, category, runtime)) + f"?seed={int(time.time())}"
         req = urllib.request.Request(url, headers={"User-Agent": "WhatIfStudio-review/1.0"})
         try:
             with urllib.request.urlopen(req, timeout=90) as resp:
@@ -192,17 +206,17 @@ def ai_draft_pollinations(title, category):
     return parse_draft(raw, "pollinations")
 
 
-def ai_draft(title, category):
-    """Draft premise/beats/tags/emoji for a scenario title. Prefers the OpenAI
-    API when a key is configured; falls back to the free Pollinations API
-    otherwise (or if the OpenAI call fails, e.g. out of credits)."""
+def ai_draft(title, category, runtime=60):
+    """Draft premise/beats/tags/emoji for a scenario title, scaled to the
+    selected runtime. Prefers the OpenAI API when a key is configured; falls
+    back to the free Pollinations API otherwise (or if the OpenAI call fails)."""
     key = openai_key()
     if key:
         try:
-            return ai_draft_openai(title, category, key)
+            return ai_draft_openai(title, category, key, runtime)
         except Exception as exc:
             print(f"OpenAI draft failed ({exc}); falling back to the free writer")
-    return ai_draft_pollinations(title, category)
+    return ai_draft_pollinations(title, category, runtime)
 
 
 # ---------------- produce (premium clip workflow) ----------------
@@ -443,11 +457,15 @@ class Handler(BaseHTTPRequestHandler):
             q = parse_qs(urlparse(self.path).query)
             title = (q.get("title") or [""])[0].strip()[:200]
             category = (q.get("category") or ["Speculative"])[0].strip()[:40]
+            try:
+                runtime = int((q.get("runtime") or ["60"])[0])
+            except ValueError:
+                runtime = 60
             if not title:
                 self.send_json({"error": "missing title"}, 400)
                 return
             try:
-                self.send_json(ai_draft(title, category))
+                self.send_json(ai_draft(title, category, runtime))
             except Exception as exc:
                 self.send_json({"error": str(exc)}, 502)
             return
