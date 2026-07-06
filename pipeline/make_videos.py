@@ -1077,6 +1077,8 @@ def main():
     parser.add_argument("--el-voice", help="ElevenLabs voice name or id (default: mapped from the package's voice style)")
     parser.add_argument("--el-model", default="eleven_multilingual_v2",
                         help="ElevenLabs model id (default: eleven_multilingual_v2)")
+    parser.add_argument("--prompt-sheet", action="store_true",
+                        help="Write per-beat video prompts (for pasting into tryinfer Studio etc.) instead of rendering")
     parser.add_argument("--hook", type=int, default=1, choices=[1, 2, 3],
                         help="Which of the 3 hooks opens the video (default: 1)")
     parser.add_argument("--voice", help="Override edge-tts voice for all items")
@@ -1102,6 +1104,32 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     hook_index = args.hook - 1
     visuals = list_visuals(args.backgrounds)
+
+    if args.prompt_sheet:
+        for slot, item, pkg in items:
+            segments = narration_segments(pkg, hook_index)
+            slug = f"{slot:02d}-{slugify(pkg.get('title', 'untitled'))}"
+            lines = [
+                f"VIDEO PROMPT SHEET - {pkg.get('title', 'untitled')}",
+                "Paste each prompt into tryinfer Studio (or any AI video tool).",
+                "Settings per clip: 9:16 vertical, 5s (or 10s), Seedance or your favorite model.",
+                "",
+            ]
+            for i, seg in enumerate(segments):
+                prompt = ai_prompt_for_segment(pkg, i, len(segments), VIDEO_MOTION_SUFFIX)
+                lines += [f"=== Clip {i + 1:02d} of {len(segments)} ===", prompt, ""]
+            lines += [
+                "HOW TO ASSEMBLE:",
+                "1. Generate + download each clip; name them 01.mp4, 02.mp4, ... in clip order.",
+                "2. Empty pipeline/backgrounds/ and drop the clips in.",
+                "3. Render (voice, captions, charts, music, cards are added automatically):",
+                f"   python make_videos.py {args.queue} --slots {slot} --elevenlabs --charts",
+                "4. For a different scenario, empty backgrounds/ first - clips map to beats in filename order.",
+            ]
+            sheet = out_dir / f"{slug}-prompts.txt"
+            sheet.write_text("\n".join(lines), encoding="utf-8")
+            print(f"[slot {slot}] prompt sheet -> {sheet}")
+        sys.exit(0)
 
     stock_key = None
     if args.stock:
