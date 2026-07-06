@@ -547,7 +547,8 @@ class Handler(BaseHTTPRequestHandler):
                 slot = int(data.get("slot") or 0)
                 pkg = load_package(queue, slot)
                 d = produce_dir(staging_key(queue, slot, pkg))
-                if not list(d.glob("*.mp4")):
+                # API mode generates its own clips - staged ones aren't needed.
+                if not data.get("infer") and not list(d.glob("*.mp4")):
                     raise RuntimeError("no clips staged - import or drop clips first")
                 start_render(queue, slot, d, data)
                 self.send_json({"ok": True})
