@@ -839,12 +839,22 @@ def chart_overlay_vf(spec, duration, font_ff):
     return ",".join(parts)
 
 
-def render_segment_clip(ffmpeg, visual, duration, out_path, index=0, chart=None, font_ff=None, cwd=None):
+def has_audio(ffprobe, media_path):
+    out = run([ffprobe, "-v", "error", "-select_streams", "a", "-show_entries",
+               "stream=codec_type", "-of", "csv=p=0", str(Path(media_path).resolve())])
+    return "audio" in out.stdout
+
+
+def render_segment_clip(ffmpeg, visual, duration, out_path, index=0, chart=None, font_ff=None, cwd=None,
+                        keep_audio=False, ffprobe=None):
     """Scale/crop one visual to a full-frame vertical clip of the given length.
     Still images get an alternating camera move (in / pan / out / pan back).
     If a chart spec is given, an animated counter/bar is overlaid.
-    `cwd` lets the chart drawtext reference the font by bare filename, avoiding
-    the Windows drive-letter colon that breaks ffmpeg's filtergraph parser."""
+    `keep_audio` preserves the clip's own sound (models like LTX generate
+    ambience) - segments without sound get a silent track so concat stays
+    uniform. `cwd` lets the chart drawtext reference the font by bare
+    filename, avoiding the Windows drive-letter colon that breaks ffmpeg's
+    filtergraph parser."""
     base = (f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
             f"crop={WIDTH}:{HEIGHT},setsar=1,fps={FPS}")
     if visual.suffix.lower() in IMAGE_EXTS:
@@ -863,15 +873,27 @@ def render_segment_clip(ffmpeg, visual, duration, out_path, index=0, chart=None,
         vf = base
     if chart and font_ff:
         vf += "," + chart_overlay_vf(chart, duration, font_ff)
-    run([ffmpeg, "-y", *loop, "-i", str(Path(visual).resolve()), "-t", f"{duration:.2f}", "-vf", vf, "-an",
-         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", str(out_path)], cwd=cwd)
+
+    cmd = [ffmpeg, "-y", *loop, "-i", str(Path(visual).resolve())]
+    audio_args = ["-an"]
+    if keep_audio:
+        if visual.suffix.lower() in VIDEO_EXTS and ffprobe and has_audio(ffprobe, visual):
+            audio_args = ["-map", "0:v", "-map", "0:a", "-af", "apad", "-c:a", "aac", "-b:a", "160k"]
+        else:
+            cmd += ["-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo"]
+            audio_args = ["-map", "0:v", "-map", "1:a", "-c:a", "aac", "-b:a", "160k"]
+    cmd += ["-t", f"{duration:.2f}", "-vf", vf, *audio_args,
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", str(out_path)]
+    run(cmd, cwd=cwd)
 
 
-def build_clip_base(ffmpeg, visuals, spans, tmp, charts=None, font_ff=None):
+def build_clip_base(ffmpeg, visuals, spans, tmp, charts=None, font_ff=None, keep_audio=False, ffprobe=None):
     """One clip per beat with alternating motion, joined by crossfades.
     Segments before the last are rendered XFADE_DUR longer so the fades
     consume the extra tail and the visual timeline stays in sync with audio.
-    `charts` (aligned to spans) overlays an animated number on chart beats."""
+    `charts` (aligned to spans) overlays an animated number on chart beats.
+    With `keep_audio`, each segment's sound is trimmed to its exact span and
+    hard-concatenated, so the ambience track stays aligned with the voice."""
     durs = [round(max(0.4, end - start), 2) for start, end in spans]
     seg_files = []
     for i, dur in enumerate(durs):
@@ -879,7 +901,8 @@ def build_clip_base(ffmpeg, visuals, spans, tmp, charts=None, font_ff=None):
         extra = XFADE_DUR if i < len(durs) - 1 else 0.5
         chart = charts[i] if charts and i < len(charts) else None
         render_segment_clip(ffmpeg, visuals[i % len(visuals)], dur + extra, seg, index=i,
-                            chart=chart, font_ff=font_ff, cwd=tmp)
+                            chart=chart, font_ff=font_ff, cwd=tmp,
+                            keep_audio=keep_audio, ffprobe=ffprobe)
         seg_files.append(seg)
 
     if len(seg_files) == 1:
@@ -896,8 +919,16 @@ def build_clip_base(ffmpeg, visuals, spans, tmp, charts=None, font_ff=None):
         label = f"[x{i}]"
         chain.append(f"{prev}[{i}:v]xfade=transition=fade:duration={XFADE_DUR}:offset={offset:.2f}{label}")
         prev = label
-    run([ffmpeg, "-y", *inputs, "-filter_complex", ";".join(chain), "-map", prev,
-         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "base.mp4"], cwd=tmp)
+    maps = ["-map", prev]
+    codecs = []
+    if keep_audio:
+        for i, d in enumerate(durs):
+            chain.append(f"[{i}:a]atrim=0:{d},asetpts=PTS-STARTPTS[a{i}]")
+        chain.append("".join(f"[a{i}]" for i in range(len(durs))) + f"concat=n={len(durs)}:v=0:a=1[aout]")
+        maps += ["-map", "[aout]"]
+        codecs = ["-c:a", "aac", "-b:a", "160k"]
+    run([ffmpeg, "-y", *inputs, "-filter_complex", ";".join(chain), *maps,
+         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", *codecs, "base.mp4"], cwd=tmp)
     return tmp / "base.mp4"
 
 
@@ -954,8 +985,10 @@ def render_thumbnail(ffmpeg, visual, pkg, out_path, tmp, font_ff):
          str(out_path)], cwd=tmp)
 
 
-def final_render(ffmpeg, base, pkg, total, has_music, out_path, tmp):
-    """Overlay captions and mix audio onto the base video (or a gradient)."""
+def final_render(ffmpeg, base, pkg, total, has_music, out_path, tmp, clip_audio=0.0):
+    """Overlay captions and mix audio onto the base video (or a gradient).
+    `clip_audio` > 0 mixes the base video's own sound (e.g. LTX-generated
+    ambience) under the voice at that volume."""
     if base is not None:
         video_in = ["-i", base.name]
     else:
@@ -966,15 +999,21 @@ def final_render(ffmpeg, base, pkg, total, has_music, out_path, tmp):
                     f"gradients=s={WIDTH}x{HEIGHT}:c0={c0}:c1={c1}:speed=0.012:rate={FPS}"]
 
     inputs = [*video_in, "-i", "voice.mp3"]
-    filters = ["[0:v]ass=subs.ass:fontsdir=.[v]"]
+    filters = ["[0:v]ass=subs.ass:fontsdir=.[v]", "[1:a]apad[va]"]
+    mix = ["[va]"]
+    if clip_audio > 0 and base is not None:
+        filters.append(f"[0:a]volume={clip_audio}[ca]")
+        mix.append("[ca]")
     music_files = list(Path(tmp).glob("music.*"))
     if has_music and music_files:
         inputs += ["-i", music_files[0].name]
         fade_start = max(0.0, total - 1.5)
-        filters.append(f"[1:a]apad[va];[2:a]volume={MUSIC_VOLUME},afade=t=out:st={fade_start:.2f}:d=1.5[m];"
-                       "[va][m]amix=inputs=2:duration=first:normalize=0[a]")
+        filters.append(f"[2:a]volume={MUSIC_VOLUME},afade=t=out:st={fade_start:.2f}:d=1.5[m]")
+        mix.append("[m]")
+    if len(mix) > 1:
+        filters.append("".join(mix) + f"amix=inputs={len(mix)}:duration=first:normalize=0[a]")
     else:
-        filters.append("[1:a]apad[a]")
+        filters[1] = "[1:a]apad[a]"
 
     cmd = [ffmpeg, "-y", *inputs, "-filter_complex", ";".join(filters),
            "-map", "[v]", "-map", "[a]", "-t", f"{total + 0.3:.2f}",
@@ -1079,6 +1118,8 @@ def main():
                         help="ElevenLabs model id (default: eleven_multilingual_v2)")
     parser.add_argument("--prompt-sheet", action="store_true",
                         help="Write per-beat video prompts (for pasting into tryinfer Studio etc.) instead of rendering")
+    parser.add_argument("--clip-audio", type=float, default=0.0, metavar="VOL",
+                        help="Keep the clips' own sound (e.g. LTX ambience) mixed under the voice at this volume (try 0.25)")
     parser.add_argument("--hook", type=int, default=1, choices=[1, 2, 3],
                         help="Which of the 3 hooks opens the video (default: 1)")
     parser.add_argument("--voice", help="Override edge-tts voice for all items")
@@ -1243,14 +1284,18 @@ def main():
                 # colon breaks the ffmpeg filtergraph parser.
                 font_ff = CAPTION_FONT_FILE.name if CAPTION_FONT_FILE.exists() else None
 
+                keep_audio = args.clip_audio > 0
                 base = None
                 if len(item_visuals) > 1:
                     spans = segment_spans(segments, words, total)
-                    base = build_clip_base(ffmpeg, item_visuals, spans, tmp, charts=charts, font_ff=font_ff)
-                    print(f"  visuals: {len(spans)} beat clips from {len(item_visuals)} source file(s)")
+                    base = build_clip_base(ffmpeg, item_visuals, spans, tmp, charts=charts, font_ff=font_ff,
+                                           keep_audio=keep_audio, ffprobe=ffprobe)
+                    print(f"  visuals: {len(spans)} beat clips from {len(item_visuals)} source file(s)"
+                          + (f" (clip audio at {args.clip_audio})" if keep_audio else ""))
                 elif len(item_visuals) == 1:
                     seg = tmp / "base.mp4"
-                    render_segment_clip(ffmpeg, item_visuals[0], total + 0.4, seg)
+                    render_segment_clip(ffmpeg, item_visuals[0], total + 0.4, seg,
+                                        keep_audio=keep_audio, ffprobe=ffprobe)
                     base = seg
                     print(f"  visuals: single background ({item_visuals[0].name})")
                 else:
@@ -1261,7 +1306,8 @@ def main():
                     shutil.copy(music, tmp / ("music" + music.suffix))
                     print(f"  music: {music.parent.name}/{music.name}")
 
-                final_render(ffmpeg, base, pkg, total, bool(music), out_path.resolve(), tmp)
+                final_render(ffmpeg, base, pkg, total, bool(music), out_path.resolve(), tmp,
+                             clip_audio=args.clip_audio if base is not None else 0.0)
 
                 thumb_made = False
                 if font_ff:

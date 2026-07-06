@@ -107,6 +107,12 @@ python make_videos.py queue.json --elevenlabs --el-voice Rachel    # pick any vo
 
 Voice styles map to premade voices (Calm → Adam, High-Energy → Josh, Deadpan → Arnold, with fallbacks based on what your account has). Character usage counts against your ElevenLabs plan (~1,200 characters per 60s video).
 
+**Clip ambience** (`--clip-audio VOL`): some video models (e.g. LTX) generate clips **with sound** — scene ambience and effects. Normally clip audio is stripped (the narration replaces it); `--clip-audio 0.25` keeps it, mixed under the voice at that volume, aligned beat-for-beat. Note: model-generated clip audio is *scene sound*, not narration — it complements a voice track, it can't replace one (no script reading, no consistent voice, no caption timestamps).
+
+```
+python make_videos.py queue.json --backgrounds backgrounds --clip-audio 0.25 --elevenlabs --charts
+```
+
 ## Good to know
 
 - **Internet required** for voice generation (the neural voices are a Microsoft service; no account or API key).
