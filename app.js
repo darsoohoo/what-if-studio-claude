@@ -1915,10 +1915,11 @@ function scaffoldScenario(input) {
 }
 
 /* ---------- Optional AI draft ----------
-   Fires only when the user clicks "Write it for me". The free writing
-   service blocks direct browser calls, so the request goes through the
-   local review dashboard (pipeline/review.bat) which fetches the draft
-   server-side. Everything stays editable; the app works fine without it. */
+   Fires only when the user clicks "Write it for me". The request goes through
+   the local review dashboard (pipeline/review.bat), which writes with the
+   OpenAI API when a key is configured (pipeline/openai_key.txt) and the free
+   Pollinations API otherwise. Everything stays editable; the app works fine
+   without it. */
 
 const DRAFT_SERVICE = "http://127.0.0.1:8765/api/draft";
 
@@ -1943,6 +1944,7 @@ async function draftScenarioWithAI(title, category) {
     return {
       premise: String(data.premise).trim(),
       beats,
+      engine: data.engine === "openai" ? "OpenAI" : "the free AI",
       tags: (Array.isArray(data.tags) ? data.tags : []).map(t => String(t).trim()).filter(Boolean).slice(0, 5),
       emoji: typeof data.emoji === "string" ? data.emoji.trim().slice(0, 4) : ""
     };
@@ -1961,7 +1963,7 @@ function bindBuilder() {
 
   const aiBtn = $("builderAiBtn");
   const aiStatus = $("builderAiStatus");
-  const AI_HINT = "Type a title, and a free AI drafts the rest — you can edit everything.";
+  const AI_HINT = "Type a title, and AI drafts the rest — you can edit everything.";
 
   $("newScenarioBtn").addEventListener("click", () => {
     form.reset();
@@ -1994,8 +1996,8 @@ function bindBuilder() {
       if (!$("bTags").value.trim() && draft.tags.length) $("bTags").value = draft.tags.join(", ");
       if (!$("bGlyph").value.trim() && draft.emoji) $("bGlyph").value = draft.emoji;
       aiStatus.textContent = kept.length
-        ? `Draft filled in (kept your ${kept.slice(0, 3).join(", ")}${kept.length > 3 ? "…" : ""}). Edit anything, then add it.`
-        : "Draft ready — edit anything, then add it to your library.";
+        ? `Draft by ${draft.engine} (kept your ${kept.slice(0, 3).join(", ")}${kept.length > 3 ? "…" : ""}). Edit anything, then add it.`
+        : `Draft by ${draft.engine} — edit anything, then add it to your library.`;
     } catch (err) {
       aiStatus.textContent = err && err.message === "dashboard-offline"
         ? "The AI writer needs the Studio's helper running — double-click “Start-What-If-Studio” in the project folder once, then try again."
