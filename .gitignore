@@ -13,6 +13,7 @@ pipeline/testclips/
 pipeline/ai-visuals/
 pipeline/stock/
 pipeline/infer-videos/
+pipeline/infer-images/
 pipeline/polished-prompts/
 pipeline/__pycache__/
 pipeline/watcher.log

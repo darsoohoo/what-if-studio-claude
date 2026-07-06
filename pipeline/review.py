@@ -288,6 +288,24 @@ def beat_prompts(pkg):
             for i in range(len(segments))]
 
 
+_image_models_cache = {"models": None}
+
+
+def image_models():
+    """tryinfer text-to-image model ids, fetched once per server run."""
+    if _image_models_cache["models"] is None:
+        models = []
+        key = mv.infer_api_key()
+        if key:
+            try:
+                models = sorted(m["model_id"] for m in mv.infer_list_models(key)
+                                if m.get("capability") == "text-to-image")
+            except Exception:
+                models = []
+        _image_models_cache["models"] = models
+    return _image_models_cache["models"]
+
+
 def render_running():
     return _render["proc"] is not None and _render["proc"].poll() is None
 
@@ -299,6 +317,18 @@ def start_render(queue_file, slot, staging, opts):
            "--backgrounds", str(staging), "--out", "output"]
     if opts.get("infer"):
         cmd.append("--infer")
+    elif opts.get("infer_images"):
+        model = re.sub(r"[^a-zA-Z0-9._-]", "", str(opts["infer_images"]))[:60]
+        if model:
+            cmd += ["--infer-images", model]
+        style = str(opts.get("ai_style") or "").strip()
+        if model and style in mv.AI_STYLES:
+            cmd += ["--ai-style", style]
+    elif opts.get("ai_visuals"):
+        cmd.append("--ai-visuals")
+        style = str(opts.get("ai_style") or "").strip()
+        if style in mv.AI_STYLES:
+            cmd += ["--ai-style", style]
     if opts.get("elevenlabs"):
         cmd.append("--elevenlabs")
     if opts.get("charts"):
@@ -420,6 +450,7 @@ class Handler(BaseHTTPRequestHandler):
                     except Exception:
                         voices = []
                 self.send_json({
+                    "image_models": image_models(),
                     "title": pkg.get("title"),
                     "dir": d.name,
                     "prompts": beat_prompts(pkg),
@@ -568,8 +599,9 @@ class Handler(BaseHTTPRequestHandler):
                 slot = int(data.get("slot") or 0)
                 pkg = load_package(queue, slot)
                 d = produce_dir(staging_key(queue, slot, pkg))
-                # API mode generates its own clips - staged ones aren't needed.
-                if not data.get("infer") and not list(d.glob("*.mp4")):
+                # AI modes generate their own visuals - staged clips aren't needed.
+                if (not data.get("infer") and not data.get("ai_visuals")
+                        and not data.get("infer_images") and not list(d.glob("*.mp4"))):
                     raise RuntimeError("no clips staged - import or drop clips first")
                 start_render(queue, slot, d, data)
                 self.send_json({"ok": True})

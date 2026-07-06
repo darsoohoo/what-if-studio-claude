@@ -573,16 +573,19 @@ def generate_ai_visuals(pkg, seg_count, style_key, cache_root):
         dest = folder / f"{i + 1:02d}.jpg"
         if not dest.exists():
             prompt = ai_prompt_for_segment(pkg, i, seg_count, suffix)
-            for attempt in range(3):
+            for attempt in range(4):
                 try:
                     fetch_ai_image(prompt, dest, seed=(i + 1) * 13 + attempt * 101)
                     print(f"    image {i + 1}/{seg_count} generated")
                     break
                 except Exception as exc:
-                    if attempt == 2:
+                    # The free service rate-limits per IP (429) - a render can
+                    # afford to wait out the window; a 3s retry burst can't.
+                    throttled = isinstance(exc, urllib.error.HTTPError) and exc.code == 429
+                    if attempt == 3:
                         print(f"    image {i + 1}/{seg_count} FAILED ({exc}) - neighbors will fill in")
                     else:
-                        time.sleep(3)
+                        time.sleep(25 if throttled else 3)
         if dest.exists():
             files.append(dest)
     if not files:
@@ -794,6 +797,41 @@ def _find_video_url(obj):
     return None
 
 
+_IMAGE_EXT_RE = re.compile(r"\.(jpe?g|png|webp)(\?|$)", re.I)
+
+
+def _find_image_url(obj):
+    """Find the finished image URL anywhere in the poll response."""
+    if isinstance(obj, str):
+        return obj if obj.startswith("http") and _IMAGE_EXT_RE.search(obj) else None
+    if isinstance(obj, dict):
+        for key in ("image_url", "url", "output_url", "download_url", "result_url"):
+            v = obj.get(key)
+            if isinstance(v, str) and v.startswith("http") and (_IMAGE_EXT_RE.search(v) or key != "url"):
+                return v
+        for v in obj.values():
+            found = _find_image_url(v)
+            if found:
+                return found
+    elif isinstance(obj, list):
+        for v in obj:
+            found = _find_image_url(v)
+            if found:
+                return found
+    return None
+
+
+def infer_list_models(key):
+    """The tryinfer catalog: [{model_id, capability, ...}] (discovered live,
+    so new models appear without a code change)."""
+    req = urllib.request.Request(f"{INFER_BASE}/inference/models",
+                                 headers={"Authorization": f"Bearer {key}",
+                                          "User-Agent": "WhatIfStudio-pipeline/1.0"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        data = json.loads(resp.read())
+    return [m for m in data.get("models", []) if m.get("model_id")]
+
+
 def _prewarm_url(url):
     """Fetch a generate-on-demand image once so the provider's fetch is fast."""
     try:
@@ -822,7 +860,7 @@ def _find_price(obj):
     return None
 
 
-def _run_infer_job(model, task, input_obj, key):
+def _run_infer_job(model, task, input_obj, key, find_url=_find_video_url):
     """Submit one job and poll to a terminal state. Returns (url, price, error)."""
     rid = infer_submit(model, task, input_obj, key)
     waited = 0
@@ -832,7 +870,7 @@ def _run_infer_job(model, task, input_obj, key):
         resp = infer_poll(rid, key)
         status = _find_status(resp)
         if status in ("COMPLETED", "SUCCEEDED", "SUCCESS"):
-            url = _find_video_url(resp)
+            url = find_url(resp)
             if not url:
                 return None, None, "completed but no video URL: " + json.dumps(resp)[:400]
             return url, _find_price(resp), None
@@ -896,6 +934,50 @@ def generate_infer_videos(pkg, segments, key, model, task, duration, cache_root)
     print(f"    AI-video spend this run: ${spent:.2f}")
     if not files:
         raise RuntimeError("no AI video clips produced (check key, model name, and credits)")
+    return files
+
+
+def generate_infer_images(pkg, seg_count, key, model, style_key, cache_root):
+    """One paid AI image per beat via tryinfer text-to-image (cheaper than
+    video; Ken Burns motion is added at assembly like any still). Uses the
+    same polished prompts and style suffixes as the free image path. Images
+    cache per scenario+model - re-renders are free."""
+    suffix = AI_STYLES.get(style_key, AI_STYLES["cinematic"])
+    folder = Path(cache_root) / f"{slugify(pkg.get('scenarioId', 'pkg'))}-{slugify(model)}"
+    folder.mkdir(parents=True, exist_ok=True)
+    files, spent = [], 0.0
+    for i in range(seg_count):
+        dest = folder / f"{i + 1:02d}.jpg"
+        if dest.exists():
+            files.append(dest)
+            continue
+        prompt = ai_prompt_for_segment(pkg, i, seg_count, suffix)
+        try:
+            url, price, err = _run_infer_job(model, "text-to-image",
+                                             {"prompt": prompt, "aspect_ratio": "9:16"},
+                                             key, find_url=_find_image_url)
+        except Exception as exc:
+            url, price, err = None, None, str(exc)
+        if not url:
+            print(f"    image {i + 1}/{seg_count} failed: {err} - neighbors will fill in")
+            continue
+        try:
+            dl = urllib.request.Request(url, headers={"User-Agent": "WhatIfStudio-pipeline/1.0"})
+            with urllib.request.urlopen(dl, timeout=180) as resp, open(dest, "wb") as out:
+                shutil.copyfileobj(resp, out)
+            if dest.stat().st_size < 5000:
+                dest.unlink(missing_ok=True)
+                raise RuntimeError("downloaded image too small")
+        except Exception as exc:
+            print(f"    image {i + 1}/{seg_count} download failed: {exc}")
+            continue
+        spent += price or 0.0
+        price_note = f" (${price:.3f})" if price is not None else ""
+        print(f"    image {i + 1}/{seg_count}: done via {model}{price_note}")
+        files.append(dest)
+    print(f"    AI-image spend this run: ${spent:.2f}")
+    if not files:
+        raise RuntimeError("no AI images produced (check key, model name, and credits)")
     return files
 
 
@@ -1169,6 +1251,14 @@ def final_render(ffmpeg, base, pkg, total, has_music, out_path, tmp, clip_audio=
 
 # ---------------------------------------------------------------- post kit
 
+# Mirrors PLATFORMS in app.js - the video is identical across platforms except
+# for these paste-ables (and the spoken outro CTA, which is baked into audio).
+PLATFORM_HASHTAGS = {
+    "TikTok":    "#whatif #storytime #interesting #fyp",
+    "YT Shorts": "#whatif #shorts #storytime",
+    "Reels":     "#whatif #reels #didyouknow",
+}
+
 
 def post_kit_text(pkg, item, hook_index, music_credit=None, has_thumb=False, stock_authors=None):
     lines = [
@@ -1180,6 +1270,16 @@ def post_kit_text(pkg, item, hook_index, music_credit=None, has_thumb=False, sto
     ]
     for i, cap in enumerate(pkg.get("captions", []), 1):
         lines += [f"{i}. {cap}", ""]
+    made_for = pkg.get("platform", "")
+    lines.append("CROSS-POSTING - same video, swap the hashtags:")
+    for name, tags in PLATFORM_HASHTAGS.items():
+        mark = "  (this cut)" if name == made_for else ""
+        lines.append(f"- {name}: {tags}{mark}")
+    lines += [
+        f"Heads-up: the spoken outro was cut for {made_for or 'the selected platform'} - "
+        "re-render with another platform selected if you want its call-to-action in the audio.",
+        "",
+    ]
     lines.append("TITLE / THUMBNAIL TEXT IDEAS:")
     lines += [f'- "{t}"' for t in pkg.get("thumbnails", [])]
     lines.append("")
@@ -1247,6 +1347,11 @@ def main():
                         help="Cache folder for downloaded stock clips (default: stock)")
     parser.add_argument("--infer", action="store_true",
                         help="Generate a paid AI-video clip per beat via tryinfer (needs TRYINFER_API_KEY / pipeline/tryinfer_key.txt)")
+    parser.add_argument("--infer-images", metavar="MODEL",
+                        help="Generate a paid AI IMAGE per beat via tryinfer text-to-image (e.g. nano-banana, flux-2; "
+                             "cheaper than --infer, uses --ai-style for the look)")
+    parser.add_argument("--infer-images-cache", default="infer-images",
+                        help="Cache folder for tryinfer-generated images (default: infer-images)")
     parser.add_argument("--infer-model", default="seedance-2.0-pro",
                         help="tryinfer model id (default: seedance-2.0-pro)")
     parser.add_argument("--infer-task", default="image-to-video",
@@ -1340,14 +1445,15 @@ def main():
                 "     pipeline/pexels_key.txt (one line). Then re-run.")
 
     infer_key = None
-    if args.infer:
+    if args.infer or args.infer_images:
         infer_key = infer_api_key()
         if not infer_key:
             sys.exit(
-                "--infer needs your tryinfer API key.\n"
+                "--infer / --infer-images need your tryinfer API key.\n"
                 "  Set the TRYINFER_API_KEY environment variable, or save the key (one line)\n"
                 "  in pipeline/tryinfer_key.txt. Then re-run.")
-        print("NOTE: --infer uses the PAID tryinfer API - one clip is billed per beat.\n")
+        billed = "one clip" if args.infer else "one image"
+        print(f"NOTE: this run uses the PAID tryinfer API - {billed} is billed per beat.\n")
 
     el_key = None
     if args.elevenlabs:
@@ -1417,6 +1523,10 @@ def main():
                     print(f"  generating AI video with {args.infer_model}...")
                     item_visuals = generate_infer_videos(pkg, segments, infer_key, args.infer_model,
                                                          args.infer_task, args.infer_duration, args.infer_cache)
+                elif args.infer_images:
+                    print(f"  generating AI images with {args.infer_images}...")
+                    item_visuals = generate_infer_images(pkg, len(segments), infer_key, args.infer_images,
+                                                         args.ai_style, args.infer_images_cache)
                 elif args.stock:
                     print("  fetching Pexels stock footage...")
                     item_visuals = fetch_stock_visuals(pkg, segments, stock_key, args.stock_cache, stock_authors)

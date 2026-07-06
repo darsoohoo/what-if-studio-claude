@@ -55,7 +55,8 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
 .status.good { color: var(--good); }
 .status.bad { color: var(--danger); }
 .apibox { background: rgba(139,123,255,0.08); border: 1px solid var(--accent); border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; }
-.apibox label.opt { color: var(--text); }
+.apibox label.opt { color: var(--text); flex-wrap: wrap; }
+.apibox label.opt + label.opt { margin-top: 8px; }
 .skipped { opacity: 0.4; pointer-events: none; }
 :focus-visible { outline: 3px solid var(--accent-strong); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
@@ -93,9 +94,21 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
   <div id="flow" hidden>
     <section>
       <h2><span class="step">2</span>Get the clips</h2>
-      <div class="apibox" id="apiBox" hidden>
-        <label class="opt"><input type="checkbox" id="optInfer"> <strong>⚡ Generate the clips for me (tryinfer API)</strong></label>
-        <p class="hint" id="apiHint"></p>
+      <div class="apibox" id="visualsBox">
+        <label class="opt"><input type="radio" name="visMode" value="manual" checked> 🎬 <strong>My own clips</strong> — tryinfer Studio or drag-drop (steps 2–3 below)</label>
+        <label class="opt" id="modeInfer" hidden><input type="radio" name="visMode" value="infer"> ⚡ <strong>AI video (tryinfer API)</strong> <span class="hint" id="apiHint" style="margin:0"></span></label>
+        <label class="opt"><input type="radio" name="visMode" value="images"> 🖼️ <strong>AI images</strong> — one styled picture per beat with gentle motion. Engine:
+          <select id="imgEngine" style="width:auto">
+            <option value="pollinations">Free — Pollinations</option>
+          </select>
+          Style:
+          <select id="imgStyle" style="width:auto">
+            <option value="cinematic">Cinematic</option>
+            <option value="3d">3D animated</option>
+            <option value="infographic">Infographic</option>
+            <option value="dark">Dark / moody</option>
+          </select>
+        </label>
       </div>
       <div id="manualPrompts">
         <p class="hint">Manual path — in <a href="https://tryinfer.com" target="_blank" rel="noopener" style="color:var(--accent-strong)">tryinfer Studio</a>: <strong>9:16 vertical · 5s</strong> · your chosen model. Copy each prompt, generate, download — in order.</p>
@@ -186,13 +199,23 @@ $id("pkgSelect").addEventListener("change", async (e) => {
   renderPrompts(info.prompts);
   renderClips(info.staged);
   $id("importCount").textContent = info.prompts.length;
-  $id("apiBox").hidden = !info.infer;
-  if (!info.infer) $id("optInfer").checked = false;
+  $id("modeInfer").hidden = !info.infer;
+  if (!info.infer && visMode() === "infer") {
+    document.querySelector('input[name="visMode"][value="manual"]').checked = true;
+  }
   const est = (info.prompts.length * 5 * 0.13).toFixed(2);
   $id("apiHint").textContent =
-    `One 5-second AI clip per beat, straight from the API — no copying, no downloads. ` +
-    `About $${est} for ${info.prompts.length} clips (seedance-2.0-pro; already-generated clips are cached and free).`;
-  applyInferMode();
+    `— one 5s clip per beat, ≈$${est} for ${info.prompts.length} (cached clips are free)`;
+  const eng = $id("imgEngine");
+  const keep = eng.value;
+  eng.innerHTML = "<option value='pollinations'>Free — Pollinations</option>";
+  (info.image_models || []).forEach(m => {
+    const o = document.createElement("option");
+    o.value = m; o.textContent = m + " (paid)";
+    eng.appendChild(o);
+  });
+  if ([...eng.options].some(o => o.value === keep)) eng.value = keep;
+  applyVisMode();
   $id("optEleven").checked = info.elevenlabs;
   $id("optEleven").disabled = !info.elevenlabs;
   const vs = $id("optVoice");
@@ -236,17 +259,24 @@ $id("voicePlayBtn").addEventListener("click", () => {
     .catch(stopVoiceSample);
 });
 
-/* ---------- API mode: skip the manual steps ---------- */
-function inferMode() {
-  return !$id("apiBox").hidden && $id("optInfer").checked;
+/* ---------- visuals mode: manual clips, AI video, or free AI images ---------- */
+function visMode() {
+  const r = document.querySelector('input[name="visMode"]:checked');
+  return r ? r.value : "manual";
 }
-function applyInferMode() {
-  const on = inferMode();
-  $id("manualPrompts").classList.toggle("skipped", on);
-  $id("stepClips").classList.toggle("skipped", on);
-  $id("renderBtn").textContent = on ? "⚡ Generate clips + render" : "🎬 Render video";
+function applyVisMode() {
+  const auto = visMode() !== "manual";
+  $id("manualPrompts").classList.toggle("skipped", auto);
+  $id("stepClips").classList.toggle("skipped", auto);
+  $id("renderBtn").textContent =
+    visMode() === "infer" ? "⚡ Generate clips + render" :
+    visMode() === "images" ? "🖼️ Generate images + render" : "🎬 Render video";
 }
-$id("optInfer").addEventListener("change", applyInferMode);
+document.querySelectorAll('input[name="visMode"]').forEach(r => r.addEventListener("change", applyVisMode));
+["imgStyle", "imgEngine"].forEach(id => $id(id).addEventListener("change", () => {
+  document.querySelector('input[name="visMode"][value="images"]').checked = true;
+  applyVisMode();
+}));
 
 /* ---------- step 2: prompts ---------- */
 function renderPrompts(prompts) {
@@ -339,15 +369,24 @@ dz.addEventListener("drop", async (e) => {
 /* ---------- step 4: render ---------- */
 let pollTimer = null;
 $id("renderBtn").addEventListener("click", async () => {
-  const infer = inferMode();
-  if (infer) {
+  const mode = visMode();
+  const engine = $id("imgEngine").value;
+  const paidImages = mode === "images" && engine !== "pollinations";
+  if (mode === "infer") {
     const est = (S.prompts.length * 5 * 0.13).toFixed(2);
     if (!confirm(`This generates ${S.prompts.length} AI clips via the tryinfer API — about $${est} `
         + `billed to your tryinfer account (cached clips are free). Start?`)) return;
   }
+  if (paidImages) {
+    if (!confirm(`This generates ${S.prompts.length} images with ${engine} via the tryinfer API — `
+        + `billed per image to your credit (the exact price prints in the log; cached images are free). Start?`)) return;
+  }
   const r = await api("/api/produce/render", {
     queue: S.queue, slot: S.slot,
-    infer,
+    infer: mode === "infer",
+    ai_visuals: mode === "images" && !paidImages,
+    infer_images: paidImages ? engine : false,
+    ai_style: $id("imgStyle").value,
     elevenlabs: $id("optEleven").checked,
     charts: $id("optCharts").checked,
     clip_audio: $id("optClipAudio").checked ? 0.25 : 0,
@@ -357,9 +396,11 @@ $id("renderBtn").addEventListener("click", async () => {
   $id("renderBtn").disabled = true;
   $id("openVideosBtn").hidden = true;
   $id("renderLog").hidden = false;
-  setRenderStatus(infer
-    ? "Generating AI clips + rendering… (5–15 minutes — per-clip cost prints in the log)"
-    : "Rendering… (a minute or two)", "");
+  setRenderStatus(
+    mode === "infer" ? "Generating AI clips + rendering… (5–15 minutes — per-clip cost prints in the log)" :
+    paidImages ? `Generating images with ${engine} + rendering… (a few minutes — per-image cost prints in the log)` :
+    mode === "images" ? "Generating free AI images + rendering… (2–5 minutes; images cache per scenario + style)" :
+    "Rendering… (a minute or two)", "");
   pollTimer = setInterval(pollRender, 3000);
 });
 async function pollRender() {
