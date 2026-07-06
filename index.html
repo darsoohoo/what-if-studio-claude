@@ -10,11 +10,15 @@
 
 <a class="skip-link" href="#library">Skip to scenario library</a>
 
-<nav class="global-nav" aria-label="Studio pages">
-  <span class="global-nav-brand" aria-hidden="true">?</span>
-  <span class="global-nav-current" aria-current="page">Studio</span>
-  <button type="button" id="navVideosBtn" class="global-nav-link">🎬 Videos</button>
-  <span id="navStatus" class="global-nav-status" role="status" aria-live="polite"></span>
+<nav class="side-nav" aria-label="Studio pages">
+  <button type="button" id="navToggle" class="side-nav-toggle" aria-label="Collapse menu" aria-expanded="true">☰</button>
+  <span class="side-nav-item current" aria-current="page">
+    <span class="side-nav-icon" aria-hidden="true">✦</span><span class="side-nav-label">Studio</span>
+  </span>
+  <button type="button" id="navVideosBtn" class="side-nav-item side-nav-link">
+    <span class="side-nav-icon" aria-hidden="true">🎬</span><span class="side-nav-label">Videos</span>
+  </button>
+  <span id="navStatus" class="side-nav-status" role="status" aria-live="polite"></span>
 </nav>
 
 <header class="app-header">

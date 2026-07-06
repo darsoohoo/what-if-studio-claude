@@ -1288,6 +1288,19 @@ function el(tag, attrs = {}, children = []) {
   return node;
 }
 
+/* Collapsible sidebar state (plain localStorage: UI pref, not app data). */
+function setNavCollapsed(collapsed, persist = true) {
+  document.body.classList.toggle("nav-collapsed", collapsed);
+  const toggle = $("navToggle");
+  if (toggle) {
+    toggle.setAttribute("aria-expanded", String(!collapsed));
+    toggle.setAttribute("aria-label", collapsed ? "Expand menu" : "Collapse menu");
+  }
+  if (persist) {
+    try { window.localStorage.setItem("wis.navCollapsed", collapsed ? "1" : "0"); } catch (err) { /* ignore */ }
+  }
+}
+
 let statusTimer = null;
 function announce(message) {
   const box = $("actionStatus");
@@ -2119,6 +2132,10 @@ function bindGlobalActions() {
 
   $("resetAllBtn").addEventListener("click", resetAll);
 
+  $("navToggle").addEventListener("click", () => {
+    setNavCollapsed(!document.body.classList.contains("nav-collapsed"));
+  });
+
   $("navVideosBtn").addEventListener("click", async () => {
     const DASHBOARD = "http://127.0.0.1:8765/";
     const status = $("navStatus");
@@ -2130,6 +2147,7 @@ function bindGlobalActions() {
       clearTimeout(timer);
       window.location.href = DASHBOARD;   // same tab - the dashboard's "Studio" goes back
     } catch (err) {
+      setNavCollapsed(false, false);      // make sure the hint is visible
       status.textContent = "Dashboard offline — double-click pipeline\\review.bat, then click 🎬 Videos again.";
       setTimeout(() => { status.textContent = ""; }, 8000);
     }
@@ -2159,6 +2177,11 @@ function bindGlobalActions() {
    ============================================================ */
 
 function init() {
+  let savedNav = null;
+  try { savedNav = window.localStorage.getItem("wis.navCollapsed"); } catch (err) { /* ignore */ }
+  setNavCollapsed(savedNav === null
+    ? window.matchMedia("(max-width: 700px)").matches   // start collapsed on phones
+    : savedNav === "1", false);
   restore();
   renderStorageBadge();
   renderCategoryChips();
