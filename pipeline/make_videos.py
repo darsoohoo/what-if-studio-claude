@@ -404,11 +404,24 @@ _PERSON_RE = re.compile(
 HUMAN_HINT = "a real person on camera acting out the moment, natural expression"
 
 
+def _shot_for_segment(seg_index, seg_count, shot_count):
+    return min(round(seg_index * (shot_count - 1) / max(1, seg_count - 1)), shot_count - 1)
+
+
 def ai_prompt_for_segment(pkg, seg_index, seg_count, style_suffix):
-    """Build an image/video prompt for one narration segment from the shot list."""
+    """Build an image/video prompt for one narration segment from the shot list.
+    When there are fewer shots than segments, only the FIRST segment mapped to
+    a shot uses it - later ones fall back to their own narration beat, so
+    every prompt is unique and matched to what's being said."""
     shots = pkg.get("shotList") or [pkg.get("premise", pkg.get("title", "abstract scene"))]
-    pick = min(round(seg_index * (len(shots) - 1) / max(1, seg_count - 1)), len(shots) - 1)
-    src = shots[pick]
+    pick = _shot_for_segment(seg_index, seg_count, len(shots))
+    first_claimant = next(j for j in range(seg_count)
+                          if _shot_for_segment(j, seg_count, len(shots)) == pick)
+    if seg_index == first_claimant:
+        src = shots[pick]
+    else:
+        beats = pkg.get("beats") or []
+        src = beats[seg_index - 1] if 1 <= seg_index <= len(beats) else shots[pick]
     src = re.sub(r"^[A-Za-z /-]{2,20}:", "", src)                      # "Hook:" style prefixes
     src = re.sub(r"[\"“”‘’']", "", src)
     # Drop instructions about on-screen text - generated text comes out garbled.
