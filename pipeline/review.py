@@ -113,6 +113,9 @@ def ai_draft(title, category):
         "beats = exactly 5 spoken-narration beats, 15-30 words each, no stage directions: "
         "1 the setup, 2 the immediate consequence, 3 the ripple effect nobody predicts, "
         "4 the twist or surprising real fact, 5 a payoff line that reframes the question. "
+        "IMPORTANT: write beats as concrete HUMAN scenes someone could reenact on camera - "
+        "show a specific person doing, holding, or reacting to something ('you reach for...', "
+        "'a commuter drags...', 'a kid stares at...') in at least 4 of the 5 beats. "
         "Anchor in real facts where possible, clearly speculative in tone, punchy. "
         "tags = 3-5 lowercase topic words. emoji = one fitting emoji."
     )

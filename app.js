@@ -1898,8 +1898,8 @@ function scaffoldScenario(input) {
     ],
     beats: input.beats,
     shotList: [
-      "Hook shot: " + firstSentence(premise),
-      ...input.beats.map(b => "Visual: " + firstSentence(b))
+      "Hook shot: a person face to camera, wide-eyed, teasing the question — " + firstSentence(premise),
+      ...input.beats.map(b => "Reenactment: a person acting out this moment — " + firstSentence(b))
     ],
     captions: [
       title,

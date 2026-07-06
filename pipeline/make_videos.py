@@ -393,8 +393,19 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 # ---------------------------------------------------------------- AI visuals
 
 
+# Most short-form content works better with humans in frame ("reenactments").
+# When a shot description has no people, one is added - disable with --no-people.
+PEOPLE_BIAS = True
+_PERSON_RE = re.compile(
+    r"\b(person|people|man|men|woman|women|human|humans|hand|hands|face|faces|figure|silhouette|"
+    r"crowd|narrator|kid|kids|child|children|family|friend|someone|somebody|guy|girl|boy|"
+    r"commuter|farmer|scientist|worker|villager|audience|viewer|couple|stranger|player|character|"
+    r"you|body|eyes|portrait)\b", re.I)
+HUMAN_HINT = "a real person on camera acting out the moment, natural expression"
+
+
 def ai_prompt_for_segment(pkg, seg_index, seg_count, style_suffix):
-    """Build an image prompt for one narration segment from the shot list."""
+    """Build an image/video prompt for one narration segment from the shot list."""
     shots = pkg.get("shotList") or [pkg.get("premise", pkg.get("title", "abstract scene"))]
     pick = min(round(seg_index * (len(shots) - 1) / max(1, seg_count - 1)), len(shots) - 1)
     src = shots[pick]
@@ -404,6 +415,8 @@ def ai_prompt_for_segment(pkg, seg_index, seg_count, style_suffix):
     src = re.sub(r"\b(labeled|labelled|stamped|caption|chyron|lower.third|overlay|typed|on.screen text)\b[^,.;]*",
                  "", src, flags=re.I)
     src = re.sub(r"\s+", " ", src).strip(" ,.;-")
+    if PEOPLE_BIAS and not _PERSON_RE.search(src):
+        src = f"{src}, {HUMAN_HINT}"
     return f"{src}, {style_suffix}"
 
 
@@ -1120,6 +1133,8 @@ def main():
                         help="Write per-beat video prompts (for pasting into tryinfer Studio etc.) instead of rendering")
     parser.add_argument("--clip-audio", type=float, default=0.0, metavar="VOL",
                         help="Keep the clips' own sound (e.g. LTX ambience) mixed under the voice at this volume (try 0.25)")
+    parser.add_argument("--no-people", action="store_true",
+                        help="Don't add a person to visual prompts for shots that lack one (people are added by default)")
     parser.add_argument("--hook", type=int, default=1, choices=[1, 2, 3],
                         help="Which of the 3 hooks opens the video (default: 1)")
     parser.add_argument("--voice", help="Override edge-tts voice for all items")
@@ -1127,6 +1142,10 @@ def main():
     parser.add_argument("--pitch", help="Override speech pitch, e.g. -2Hz")
     parser.add_argument("--slots", help="Only render these queue slots, e.g. 1,3,4")
     args = parser.parse_args()
+
+    global PEOPLE_BIAS
+    if args.no_people:
+        PEOPLE_BIAS = False
 
     if not CAPTION_FONT_FILE.exists():
         print(f"Note: caption font missing at {CAPTION_FONT_FILE}; captions may fall back to a default font.")
