@@ -408,8 +408,8 @@ def _shot_for_segment(seg_index, seg_count, shot_count):
     return min(round(seg_index * (shot_count - 1) / max(1, seg_count - 1)), shot_count - 1)
 
 
-def ai_prompt_for_segment(pkg, seg_index, seg_count, style_suffix):
-    """Build an image/video prompt for one narration segment from the shot list.
+def _raw_shot_text(pkg, seg_index, seg_count):
+    """The cleaned shot/beat description for one narration segment.
     When there are fewer shots than segments, only the FIRST segment mapped to
     a shot uses it - later ones fall back to their own narration beat, so
     every prompt is unique and matched to what's being said."""
@@ -427,7 +427,109 @@ def ai_prompt_for_segment(pkg, seg_index, seg_count, style_suffix):
     # Drop instructions about on-screen text - generated text comes out garbled.
     src = re.sub(r"\b(labeled|labelled|stamped|caption|chyron|lower.third|overlay|typed|on.screen text)\b[^,.;]*",
                  "", src, flags=re.I)
-    src = re.sub(r"\s+", " ", src).strip(" ,.;-")
+    return re.sub(r"\s+", " ", src).strip(" ,.;-")
+
+
+# ------------------------------------------------- prompt polish (OpenAI)
+# With an OpenAI key configured, every scenario's per-beat visual prompts are
+# rewritten ONCE into richer cinematic directions (subject + action, setting,
+# camera, mood) and cached on disk - so re-renders cost nothing and the
+# Produce page's copy-paste prompts match what a render would generate.
+# No key = raw shot prompts, exactly as before. Disable with --no-polish.
+
+OPENAI_API = "https://api.openai.com/v1/chat/completions"
+OPENAI_MODEL = "gpt-4o-mini"
+POLISH_PROMPTS = True
+POLISH_CACHE = Path(__file__).resolve().parent / "polished-prompts"
+_polish_memo = {}
+
+
+def openai_key():
+    key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if key:
+        return key
+    f = Path(__file__).resolve().parent / "openai_key.txt"
+    if f.exists():
+        return f.read_text(encoding="utf-8").strip()
+    return None
+
+
+def _polish_via_openai(pkg, seg_count, key):
+    title = pkg.get("title", "a what-if scenario")
+    notes = "\n".join(f"Clip {i + 1}: {_raw_shot_text(pkg, i, seg_count)}"
+                      for i in range(seg_count))
+    people_rule = (
+        "Put a specific relatable person doing something concrete in nearly every "
+        "prompt (reenactment style)." if PEOPLE_BIAS else
+        "Include people only where a clip note calls for them.")
+    prompt = (
+        "You write prompts for AI image/video generators. "
+        f'The clips below form one vertical 9:16 short answering: "{title}". '
+        "Rewrite each clip note into ONE vivid visual prompt of 15-35 words: a concrete "
+        "subject and action, the setting, a camera angle or movement, and lighting/mood. "
+        "Stay true to the moment each note describes - same scene, richer picture - and "
+        "keep a consistent visual world across all clips. " + people_rule + " "
+        "Never mention on-screen text, captions, words, letters, numbers, signs, logos or "
+        "watermarks. Reply with ONLY minified JSON, no markdown fences: "
+        f'{{"prompts":["...", ...]}} with exactly {seg_count} strings in clip order.\n'
+        + notes)
+    body = json.dumps({
+        "model": OPENAI_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "response_format": {"type": "json_object"},
+        "temperature": 0.8,
+        "max_tokens": 120 * seg_count + 100,
+    }).encode("utf-8")
+    req = urllib.request.Request(OPENAI_API, data=body, method="POST", headers={
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "User-Agent": "WhatIfStudio-pipeline/1.0",
+    })
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        reply = json.loads(resp.read().decode("utf-8", "replace"))
+    data = json.loads(reply["choices"][0]["message"]["content"])
+    prompts = [re.sub(r"\s+", " ", str(p)).strip(" ,.;") for p in (data.get("prompts") or [])]
+    if len(prompts) != seg_count or not all(prompts):
+        raise RuntimeError(f"expected {seg_count} prompts, got {len(prompts)}")
+    return prompts
+
+
+def polished_shot_texts(pkg, seg_count):
+    """Polished per-beat prompts for a scenario, or None (no key / disabled /
+    call failed) - callers then fall back to the raw shot text."""
+    if not POLISH_PROMPTS:
+        return None
+    memo_key = (pkg.get("scenarioId", "pkg"), seg_count, PEOPLE_BIAS)
+    if memo_key in _polish_memo:
+        return _polish_memo[memo_key]
+    result = None
+    cache = POLISH_CACHE / (f"{slugify(str(memo_key[0]))}-{seg_count}seg"
+                            f"{'' if PEOPLE_BIAS else '-nopeople'}.json")
+    try:
+        cached = json.loads(cache.read_text(encoding="utf-8"))
+        if isinstance(cached, list) and len(cached) == seg_count:
+            result = [str(p) for p in cached]
+    except Exception:
+        pass
+    if result is None and openai_key():
+        try:
+            result = _polish_via_openai(pkg, seg_count, openai_key())
+            POLISH_CACHE.mkdir(parents=True, exist_ok=True)
+            cache.write_text(json.dumps(result, indent=1), encoding="utf-8")
+            print(f"    prompts polished by OpenAI -> {cache.name}")
+        except Exception as exc:
+            print(f"    prompt polish failed ({exc}) - using raw shot prompts")
+    _polish_memo[memo_key] = result
+    return result
+
+
+def ai_prompt_for_segment(pkg, seg_index, seg_count, style_suffix):
+    """Build an image/video prompt for one narration segment: the OpenAI-polished
+    version when available, otherwise the raw shot/beat text (+ people bias)."""
+    polished = polished_shot_texts(pkg, seg_count)
+    if polished:
+        return f"{polished[seg_index]}, {style_suffix}"
+    src = _raw_shot_text(pkg, seg_index, seg_count)
     if PEOPLE_BIAS and not _PERSON_RE.search(src):
         src = f"{src}, {HUMAN_HINT}"
     return f"{src}, {style_suffix}"
@@ -1148,6 +1250,8 @@ def main():
                         help="Keep the clips' own sound (e.g. LTX ambience) mixed under the voice at this volume (try 0.25)")
     parser.add_argument("--no-people", action="store_true",
                         help="Don't add a person to visual prompts for shots that lack one (people are added by default)")
+    parser.add_argument("--no-polish", action="store_true",
+                        help="Skip the OpenAI prompt polish (it runs automatically when an OpenAI key is configured)")
     parser.add_argument("--hook", type=int, default=1, choices=[1, 2, 3],
                         help="Which of the 3 hooks opens the video (default: 1)")
     parser.add_argument("--voice", help="Override edge-tts voice for all items")
@@ -1156,9 +1260,13 @@ def main():
     parser.add_argument("--slots", help="Only render these queue slots, e.g. 1,3,4")
     args = parser.parse_args()
 
-    global PEOPLE_BIAS
+    global PEOPLE_BIAS, POLISH_PROMPTS
     if args.no_people:
         PEOPLE_BIAS = False
+    if args.no_polish:
+        POLISH_PROMPTS = False
+    elif openai_key():
+        print("Prompt polish ON - OpenAI rewrites each scenario's visual prompts once (cached).")
 
     if not CAPTION_FONT_FILE.exists():
         print(f"Note: caption font missing at {CAPTION_FONT_FILE}; captions may fall back to a default font.")
