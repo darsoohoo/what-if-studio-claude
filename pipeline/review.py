@@ -16,6 +16,7 @@ Notes and ordering persist in review-notes.json next to this script.
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -98,13 +99,23 @@ def list_videos():
 
 
 TEXT_AI = "https://text.pollinations.ai/"
+OPENAI_API = "https://api.openai.com/v1/chat/completions"
+OPENAI_MODEL = "gpt-4o-mini"
 
 
-def ai_draft(title, category):
-    """Draft premise/beats/tags/emoji for a scenario title via the free
-    Pollinations text API. Runs server-side because the API blocks direct
-    browser requests (Turnstile) but allows plain server calls."""
-    prompt = (
+def openai_key():
+    """Read the OpenAI key from OPENAI_API_KEY or pipeline/openai_key.txt."""
+    key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if key:
+        return key
+    f = HERE / "openai_key.txt"
+    if f.exists():
+        return f.read_text(encoding="utf-8").strip()
+    return None
+
+
+def draft_prompt(title, category):
+    return (
         'You write scripts for short-form "What if?" videos (TikTok explainer style). '
         f'For the question "{title}" (category: {category}), reply with ONLY minified JSON, '
         'no markdown fences, exactly this shape: '
@@ -119,9 +130,52 @@ def ai_draft(title, category):
         "Anchor in real facts where possible, clearly speculative in tone, punchy. "
         "tags = 3-5 lowercase topic words. emoji = one fitting emoji."
     )
+
+
+def parse_draft(raw, engine):
+    """Validate a raw model reply into the {premise, beats, tags, emoji} contract."""
+    start, end = raw.find("{"), raw.rfind("}")
+    if start < 0 or end <= start:
+        raise RuntimeError("no JSON in AI response")
+    data = json.loads(raw[start:end + 1])
+    beats = [str(b).strip() for b in (data.get("beats") or []) if str(b).strip()][:5]
+    if not data.get("premise") or len(beats) < 3:
+        raise RuntimeError("AI draft was incomplete - try again")
+    return {
+        "premise": str(data["premise"]).strip(),
+        "beats": beats,
+        "tags": [str(t).strip() for t in (data.get("tags") or []) if str(t).strip()][:5],
+        "emoji": str(data.get("emoji") or "").strip()[:4],
+        "engine": engine,
+    }
+
+
+def ai_draft_openai(title, category, key):
+    """Draft via the OpenAI API (fast, no rate-limit queue; needs credits)."""
+    body = json.dumps({
+        "model": OPENAI_MODEL,
+        "messages": [{"role": "user", "content": draft_prompt(title, category)}],
+        "response_format": {"type": "json_object"},
+        "temperature": 0.9,
+        "max_tokens": 600,
+    }).encode("utf-8")
+    req = urllib.request.Request(OPENAI_API, data=body, method="POST", headers={
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "User-Agent": "WhatIfStudio-review/1.0",
+    })
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        reply = json.loads(resp.read().decode("utf-8", "replace"))
+    raw = reply["choices"][0]["message"]["content"]
+    return parse_draft(raw, "openai")
+
+
+def ai_draft_pollinations(title, category):
+    """Draft via the free Pollinations text API. Runs server-side because the
+    API blocks direct browser requests (Turnstile) but allows plain server calls."""
     raw = None
     for attempt in range(3):
-        url = TEXT_AI + quote(prompt) + f"?seed={int(time.time())}"
+        url = TEXT_AI + quote(draft_prompt(title, category)) + f"?seed={int(time.time())}"
         req = urllib.request.Request(url, headers={"User-Agent": "WhatIfStudio-review/1.0"})
         try:
             with urllib.request.urlopen(req, timeout=90) as resp:
@@ -135,19 +189,20 @@ def ai_draft(title, category):
             raise
     if raw is None:
         raise RuntimeError("the free writing service is busy - try again in a minute")
-    start, end = raw.find("{"), raw.rfind("}")
-    if start < 0 or end <= start:
-        raise RuntimeError("no JSON in AI response")
-    data = json.loads(raw[start:end + 1])
-    beats = [str(b).strip() for b in (data.get("beats") or []) if str(b).strip()][:5]
-    if not data.get("premise") or len(beats) < 3:
-        raise RuntimeError("AI draft was incomplete - try again")
-    return {
-        "premise": str(data["premise"]).strip(),
-        "beats": beats,
-        "tags": [str(t).strip() for t in (data.get("tags") or []) if str(t).strip()][:5],
-        "emoji": str(data.get("emoji") or "").strip()[:4],
-    }
+    return parse_draft(raw, "pollinations")
+
+
+def ai_draft(title, category):
+    """Draft premise/beats/tags/emoji for a scenario title. Prefers the OpenAI
+    API when a key is configured; falls back to the free Pollinations API
+    otherwise (or if the OpenAI call fails, e.g. out of credits)."""
+    key = openai_key()
+    if key:
+        try:
+            return ai_draft_openai(title, category, key)
+        except Exception as exc:
+            print(f"OpenAI draft failed ({exc}); falling back to the free writer")
+    return ai_draft_pollinations(title, category)
 
 
 # ---------------- produce (premium clip workflow) ----------------

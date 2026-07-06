@@ -13,11 +13,13 @@ pipeline/testclips/
 pipeline/ai-visuals/
 pipeline/stock/
 pipeline/infer-videos/
+pipeline/polished-prompts/
 pipeline/__pycache__/
 pipeline/watcher.log
 pipeline/pexels_key.txt
 pipeline/tryinfer_key.txt
 pipeline/elevenlabs_key.txt
+pipeline/openai_key.txt
 pipeline/review-notes.json
 pipeline/produce/
 pipeline/produce-render.log

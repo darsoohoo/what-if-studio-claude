@@ -176,7 +176,7 @@ details p { color: var(--text-dim); font-size: 13px; margin: 8px 0 2px; }
     <p class="caption">Every scenario becomes a complete production package: hooks, script beats, shot list, captions, thumbnail text.</p>
     <ul class="steps">
       <li>Click any <b>scenario card</b> in the library (search or filter by category).</li>
-      <li>Your own idea? <b>+ Create your own scenario</b> → type just the title → <b>✨ Write it for me</b> drafts the premise and beats (everything stays editable).</li>
+      <li>Your own idea? <b>+ Create your own scenario</b> → type just the title → <b>✨ Write it for me</b> drafts the premise and beats (everything stays editable). With an OpenAI key in <b>pipeline\openai_key.txt</b> the draft comes from OpenAI in a couple of seconds; without one it uses the free writer.</li>
       <li>Choose <b>platform</b>, <b>runtime</b>, and <b>voice style</b> — the voice style picks the narrator (Calm=Adam, High-Energy=Callum, Deadpan=George with ElevenLabs).</li>
       <li>Click <b>Generate Package</b>, skim the <b>Script Beats</b> tab — that's exactly what the voice will say.</li>
     </ul>
@@ -209,7 +209,7 @@ details p { color: var(--text-dim); font-size: 13px; margin: 8px 0 2px; }
       <span class="bar"><i></i></span>
       <span class="tick">✓ Done</span>
     </div>
-    <p class="caption">Real AI motion video per beat, using your unlimited tryinfer Studio subscription — no renaming, no folder hunting.</p>
+    <p class="caption">Real AI motion video per beat, using your unlimited tryinfer Studio subscription — no renaming, no folder hunting. With an OpenAI key in <b>pipeline\openai_key.txt</b>, every prompt is automatically rewritten into a richer cinematic direction (once per scenario, then cached).</p>
     <ul class="steps">
       <li>Sidebar → <b>🎞️ Produce</b> → pick your package from the dropdown.</li>
       <li><b>Copy</b> each numbered prompt → paste into <b>tryinfer Studio</b> (9:16 · 5s · your model) → generate → download. In order.</li>
@@ -260,11 +260,11 @@ details p { color: var(--text-dim); font-size: 13px; margin: 8px 0 2px; }
     </details>
     <details>
       <summary>"The writing service hiccuped"</summary>
-      <p>The free AI writer handles one request at a time. Wait a minute and click <b>✨ Write it for me</b> again.</p>
+      <p>The free AI writer handles one request at a time — wait a minute and click <b>✨ Write it for me</b> again. To skip the line, paste an OpenAI API key into <b>pipeline\openai_key.txt</b> (it works on the very next click — no restart): drafts then come from OpenAI (a fraction of a cent each) and automatically fall back to the free writer if the key stops working.</p>
     </details>
     <details>
       <summary>I want different images for a video</summary>
-      <p>Delete that scenario's folder inside <b>pipeline\ai-visuals</b> — the next render generates a fresh set (now with people in frame by default).</p>
+      <p>Delete that scenario's folder inside <b>pipeline\ai-visuals</b> — the next render generates a fresh set (now with people in frame by default). For fresh prompt <em>wording</em> too, also delete the scenario's file in <b>pipeline\polished-prompts</b>.</p>
     </details>
     <details>
       <summary>My queue disappeared / "Memory only" badge</summary>
