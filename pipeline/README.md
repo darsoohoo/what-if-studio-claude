@@ -72,7 +72,7 @@ The dashboard also powers the app's **"✨ Write it for me"** button (in the Cre
 
 ## Daily workflow (zero-click)
 
-1. Double-click **`start-watcher.bat`** once when you sit down to create (it quietly watches your Downloads folder until you log off; nothing is installed).
+1. Double-click **`Start-What-If-Studio.bat`** (in the project root) once when you sit down — it starts the dashboard, the watcher, and opens the Studio in one click. (`start-watcher.bat` / `review.bat` here remain as granular alternatives.)
 2. In the app: build your queue, then click **Export queue (.json) for video pipeline**.
 3. That's it. The watcher picks the export up from Downloads, renders every package with free AI visuals, and pops the `output/` folder open when done. Progress is logged to `watcher.log`.
 4. Watch each video, copy a caption from its `-post.txt` post kit, and upload.

@@ -1998,7 +1998,7 @@ function bindBuilder() {
         : "Draft ready — edit anything, then add it to your library.";
     } catch (err) {
       aiStatus.textContent = err && err.message === "dashboard-offline"
-        ? "The AI writer runs through the review dashboard — double-click pipeline\\review.bat, then try again."
+        ? "The AI writer needs the Studio's helper running — double-click “Start-What-If-Studio” in the project folder once, then try again."
         : "The writing service hiccuped — try again in a moment, or fill it in yourself.";
     } finally {
       aiBtn.disabled = false;
@@ -2148,7 +2148,7 @@ function bindGlobalActions() {
       window.location.href = DASHBOARD;   // same tab - the dashboard's "Studio" goes back
     } catch (err) {
       setNavCollapsed(false, false);      // make sure the hint is visible
-      status.textContent = "Dashboard offline — double-click pipeline\\review.bat, then click 🎬 Videos again.";
+      status.textContent = "Dashboard offline — double-click “Start-What-If-Studio” in the project folder, then click 🎬 Videos again.";
       setTimeout(() => { status.textContent = ""; }, 8000);
     }
   });

@@ -9,6 +9,8 @@ Pick a scenario, generate a complete production package (hooks, script beats, sh
 1. Download or clone this repository.
 2. Double-click `index.html`. That's it — no install, no server, no account, no internet.
 
+**Using the video pipeline too?** Double-click **`Start-What-If-Studio.bat`** instead — one click starts the review dashboard (Videos page + AI writer), the auto-render watcher, and opens the Studio. Safe to click again anytime; running services are detected and skipped.
+
 ## What it does
 
 - **Scenario Library** — 27 starter scenarios across 8 categories (Speculative, Science, History, Pop Culture, Internet Mystery, Alternate Reality, Unsettling Everyday, Scary/Weird), searchable and filterable. Each one is a complete content package, not just an idea.
