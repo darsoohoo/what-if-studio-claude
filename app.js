@@ -1516,7 +1516,7 @@ function buildPackage(scenario, options) {
 
 function packageToText(pkg) {
   const lines = [];
-  lines.push("WHAT IF STUDIO — CONTENT PACKAGE");
+  lines.push("WHAT IF STUDEOS — CONTENT PACKAGE");
   lines.push("=".repeat(40));
   lines.push(`Title:     ${pkg.title}`);
   lines.push(`Category:  ${pkg.category}`);
@@ -1552,7 +1552,7 @@ function packageToText(pkg) {
   pkg.thumbnails.forEach((t, i) => lines.push(`${i + 1}. "${t}"`));
   lines.push("");
   lines.push("-".repeat(40));
-  lines.push("Made with What If Studio (local, offline). Content is speculative fiction / thought experiment.");
+  lines.push("Made with What If Studeos (local, offline). Content is speculative fiction / thought experiment.");
   return lines.join("\n");
 }
 

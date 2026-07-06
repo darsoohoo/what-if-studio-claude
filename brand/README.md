@@ -1,6 +1,6 @@
 # Brand kit
 
-Cosmic purple identity matching the app's look and the caption style (Poppins ExtraBold).
+Cosmic purple identity for the **What If Studeos** channel ("Studios" was taken), matching the app's look and the caption style (Poppins ExtraBold).
 
 | File | Size | Use it for |
 |------|------|-----------|
