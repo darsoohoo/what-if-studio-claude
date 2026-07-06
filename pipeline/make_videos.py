@@ -581,8 +581,17 @@ def infer_submit(model, task, input_obj, key):
         "Content-Type": "application/json",
         "User-Agent": "WhatIfStudio-pipeline/1.0",
     })
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        data = json.loads(resp.read())
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.loads(resp.read())
+    except urllib.error.HTTPError as exc:
+        # Surface the provider's error body - "403 Forbidden" alone is undiagnosable.
+        detail = ""
+        try:
+            detail = exc.read().decode("utf-8", "replace")[:300]
+        except Exception:
+            pass
+        raise RuntimeError(f"HTTP {exc.code}: {detail or exc.reason}") from None
     rid = data.get("request_id") or data.get("id") or data.get("requestId")
     if not rid:
         raise RuntimeError(f"submit returned no request_id: {json.dumps(data)[:400]}")
