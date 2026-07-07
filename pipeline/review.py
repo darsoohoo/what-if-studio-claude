@@ -36,6 +36,7 @@ TRASH = OUTPUT / "trash"
 STATE_FILE = HERE / "review-notes.json"
 PAGE_FILE = HERE / "review.html"
 PRODUCE_PAGE = HERE / "produce.html"
+SPEND_PAGE = HERE / "spend.html"
 PRODUCE_DIR = HERE / "produce"
 DOWNLOADS = Path.home() / "Downloads"
 PORT = 8765
@@ -180,6 +181,8 @@ def ai_draft_openai(title, category, key, runtime=60):
     })
     with urllib.request.urlopen(req, timeout=60) as resp:
         reply = json.loads(resp.read().decode("utf-8", "replace"))
+    mv.record_spend("openai", "AI draft", mv.openai_usage_cost(reply),
+                    OPENAI_MODEL, title[:60], estimated=True)
     raw = reply["choices"][0]["message"]["content"]
     return parse_draft(raw, "openai")
 
@@ -286,6 +289,45 @@ def beat_prompts(pkg):
     segments = mv.narration_segments(pkg, 0)
     return [mv.ai_prompt_for_segment(pkg, i, len(segments), mv.VIDEO_MOTION_SUFFIX)
             for i in range(len(segments))]
+
+
+def spend_summary():
+    """Totals + breakdowns from the pipeline's spend ledger."""
+    try:
+        entries = json.loads(mv.SPEND_LEDGER.read_text(encoding="utf-8"))
+        if not isinstance(entries, list):
+            entries = []
+    except Exception:
+        entries = []
+    today = time.strftime("%Y-%m-%d")
+    month = time.strftime("%Y-%m")
+    total = today_sum = month_sum = est_sum = 0.0
+    by_service, by_scenario = {}, {}
+    for e in entries:
+        p = float(e.get("price_usd") or 0)
+        ts = str(e.get("ts", ""))
+        total += p
+        if ts.startswith(today):
+            today_sum += p
+        if ts.startswith(month):
+            month_sum += p
+        if e.get("estimated"):
+            est_sum += p
+        svc = e.get("service", "?")
+        by_service[svc] = by_service.get(svc, 0.0) + p
+        sc = e.get("scenario") or "(none)"
+        by_scenario[sc] = by_scenario.get(sc, 0.0) + p
+    top_scenarios = sorted(by_scenario.items(), key=lambda kv: -kv[1])[:12]
+    return {
+        "total": round(total, 4),
+        "today": round(today_sum, 4),
+        "month": round(month_sum, 4),
+        "estimated_portion": round(est_sum, 4),
+        "by_service": {k: round(v, 4) for k, v in sorted(by_service.items(), key=lambda kv: -kv[1])},
+        "by_scenario": [{"scenario": k, "usd": round(v, 4)} for k, v in top_scenarios],
+        "entries": list(reversed(entries[-80:])),
+        "count": len(entries),
+    }
 
 
 _catalog_cache = {"models": None}
@@ -431,6 +473,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path.split("?")[0] == "/produce":
             self.send_page(PRODUCE_PAGE)
+            return
+        if self.path.split("?")[0] == "/spend":
+            self.send_page(SPEND_PAGE)
+            return
+        if self.path == "/api/spend":
+            self.send_json(spend_summary())
             return
         if self.path.split("?")[0] in ("/help", "/help.html"):
             help_page = HERE.parent / "help.html"

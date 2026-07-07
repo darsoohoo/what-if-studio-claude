@@ -504,6 +504,8 @@ def _polish_via_openai(pkg, seg_count, key):
     })
     with urllib.request.urlopen(req, timeout=60) as resp:
         reply = json.loads(resp.read().decode("utf-8", "replace"))
+    record_spend("openai", "prompt polish", openai_usage_cost(reply),
+                 OPENAI_MODEL, pkg.get("scenarioId", ""), estimated=True)
     data = json.loads(reply["choices"][0]["message"]["content"])
     prompts = [re.sub(r"\s+", " ", str(p)).strip(" ,.;") for p in (data.get("prompts") or [])]
     if len(prompts) != seg_count or not all(prompts):
@@ -797,6 +799,52 @@ def _find_video_url(obj):
     return None
 
 
+# ------------------------------------------------- spend ledger
+# Every metered API call appends one entry so the Spend page can total real
+# money: tryinfer prices come straight from the provider's usage block;
+# OpenAI entries are estimates computed from token counts.
+
+SPEND_LEDGER = Path(__file__).resolve().parent / "spend-ledger.json"
+
+
+def record_spend(service, kind, price_usd, model="", scenario="", estimated=False):
+    """Append one paid event to the ledger. Never raises - a bookkeeping
+    failure must not break a render."""
+    try:
+        if price_usd is None:
+            return
+        entries = []
+        try:
+            entries = json.loads(SPEND_LEDGER.read_text(encoding="utf-8"))
+            if not isinstance(entries, list):
+                entries = []
+        except Exception:
+            pass
+        entries.append({
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "service": service, "kind": kind, "model": model,
+            "scenario": scenario, "price_usd": round(float(price_usd), 6),
+            "estimated": bool(estimated),
+        })
+        SPEND_LEDGER.write_text(json.dumps(entries, indent=1), encoding="utf-8")
+    except Exception:
+        pass
+
+
+# OpenAI gpt-4o-mini list prices per 1M tokens (for spend *estimates* only).
+OPENAI_PRICE_IN = 0.15 / 1e6
+OPENAI_PRICE_OUT = 0.60 / 1e6
+
+
+def openai_usage_cost(reply):
+    """Estimated dollars for one chat-completions reply, from its usage block."""
+    u = (reply or {}).get("usage") or {}
+    try:
+        return u.get("prompt_tokens", 0) * OPENAI_PRICE_IN + u.get("completion_tokens", 0) * OPENAI_PRICE_OUT
+    except TypeError:
+        return None
+
+
 _IMAGE_EXT_RE = re.compile(r"\.(jpe?g|png|webp)(\?|$)", re.I)
 
 
@@ -914,6 +962,7 @@ def generate_infer_videos(pkg, segments, key, model, task, duration, cache_root)
                 url, price, err = None, None, str(exc)
             if url:
                 spent += price or 0.0
+                record_spend("tryinfer", "video clip", price, model, pkg.get("scenarioId", ""))
                 price_note = f" (${price:.2f})" if price is not None else ""
                 print(f"    beat {i + 1}/{len(segments)}: done via {attempt_task}{price_note}")
                 break
@@ -972,6 +1021,7 @@ def generate_infer_images(pkg, seg_count, key, model, style_key, cache_root):
             print(f"    image {i + 1}/{seg_count} download failed: {exc}")
             continue
         spent += price or 0.0
+        record_spend("tryinfer", "image", price, model, pkg.get("scenarioId", ""))
         price_note = f" (${price:.3f})" if price is not None else ""
         print(f"    image {i + 1}/{seg_count}: done via {model}{price_note}")
         files.append(dest)

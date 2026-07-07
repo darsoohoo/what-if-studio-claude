@@ -136,6 +136,9 @@ details p { color: var(--text-dim); font-size: 13px; margin: 8px 0 2px; }
   <button type="button" id="navProduceBtn" class="side-nav-item side-nav-link">
     <span class="side-nav-icon" aria-hidden="true">🎞️</span><span class="side-nav-label">Produce</span>
   </button>
+  <button type="button" id="navSpendBtn" class="side-nav-item side-nav-link">
+    <span class="side-nav-icon" aria-hidden="true">💰</span><span class="side-nav-label">Spend</span>
+  </button>
   <span class="side-nav-item current" aria-current="page">
     <span class="side-nav-icon" aria-hidden="true">❓</span><span class="side-nav-label">How to</span>
   </span>
@@ -231,6 +234,7 @@ details p { color: var(--text-dim); font-size: 13px; margin: 8px 0 2px; }
       <li><b>↑ ↓</b> set your posting order (it's saved). <b>#1 = post next.</b></li>
       <li>Write <b>notes</b> per video (hook ideas, when to post) — they autosave.</li>
       <li><b>Remove</b> moves a video to <b>output/trash</b> — recoverable, never deleted.</li>
+      <li>Sidebar → <b>💰 Spend</b> tracks every metered API charge: tryinfer clip/image prices are the provider's exact billed amounts; OpenAI drafts and prompt polish are token-count estimates (fractions of a cent). Flat subs (ElevenLabs, tryinfer Studio) aren't metered.</li>
     </ul>
   </section>
 
@@ -316,6 +320,7 @@ async function goDashboard(path) {
 }
 document.getElementById("navVideosBtn").addEventListener("click", () => goDashboard(""));
 document.getElementById("navProduceBtn").addEventListener("click", () => goDashboard("produce"));
+document.getElementById("navSpendBtn").addEventListener("click", () => goDashboard("spend"));
 function showStatus(msg) {
   const el = document.getElementById("navStatus");
   el.textContent = msg;

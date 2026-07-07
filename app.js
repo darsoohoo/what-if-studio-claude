@@ -2180,6 +2180,7 @@ function bindGlobalActions() {
   };
   $("navVideosBtn").addEventListener("click", () => goToDashboard(""));
   $("navProduceBtn").addEventListener("click", () => goToDashboard("produce"));
+  $("navSpendBtn").addEventListener("click", () => goToDashboard("spend"));
   $("navHelpBtn").addEventListener("click", () => { window.location.href = "help.html"; });
 
   $("exportQueueBtn").addEventListener("click", () => {
