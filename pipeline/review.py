@@ -330,6 +330,30 @@ def spend_summary():
     }
 
 
+def observed_prices():
+    """Average billed price per tryinfer job, learned from the spend ledger:
+    {"video": {model: usd_per_clip}, "image": {model: usd_per_image}}. The API
+    publishes no rates, so the user's own renders are the source of truth."""
+    try:
+        entries = json.loads(mv.SPEND_LEDGER.read_text(encoding="utf-8"))
+        if not isinstance(entries, list):
+            entries = []
+    except Exception:
+        entries = []
+    sums, counts = {"video": {}, "image": {}}, {"video": {}, "image": {}}
+    for e in entries:
+        if e.get("service") != "tryinfer":
+            continue
+        kind = {"video clip": "video", "image": "image"}.get(e.get("kind"))
+        model = e.get("model")
+        price = float(e.get("price_usd") or 0)
+        if not kind or not model or price <= 0:
+            continue
+        sums[kind][model] = sums[kind].get(model, 0.0) + price
+        counts[kind][model] = counts[kind].get(model, 0) + 1
+    return {k: {m: round(sums[k][m] / counts[k][m], 4) for m in sums[k]} for k in sums}
+
+
 _catalog_cache = {"models": None}
 
 
@@ -512,6 +536,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({
                     "image_models": image_models(),
                     "video_models": video_models(),
+                    "observed_prices": observed_prices(),
                     "title": pkg.get("title"),
                     "dir": d.name,
                     "prompts": beat_prompts(pkg),

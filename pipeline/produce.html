@@ -209,13 +209,15 @@ $id("pkgSelect").addEventListener("change", async (e) => {
   if (!info.infer && visMode() === "infer") {
     document.querySelector('input[name="visMode"][value="manual"]').checked = true;
   }
+  S.obsPrices = info.observed_prices || { video: {}, image: {} };
   const vm = $id("vidModel");
   const keepModel = vm.value;
   vm.innerHTML = "";
   const vmodels = (info.video_models && info.video_models.length) ? info.video_models : ["seedance-2.0-pro"];
   vmodels.forEach(m => {
     const o = document.createElement("option");
-    o.value = m; o.textContent = m;
+    const p = clipPrice(m);
+    o.value = m; o.textContent = p ? `${m} — $${p.toFixed(2)}/clip` : m;
     vm.appendChild(o);
   });
   vm.value = [...vm.options].some(o => o.value === keepModel) ? keepModel
@@ -226,7 +228,8 @@ $id("pkgSelect").addEventListener("change", async (e) => {
   eng.innerHTML = "<option value='pollinations'>Free — Pollinations</option>";
   (info.image_models || []).forEach(m => {
     const o = document.createElement("option");
-    o.value = m; o.textContent = m + " (paid)";
+    const p = (S.obsPrices.image || {})[m];
+    o.value = m; o.textContent = m + (p ? ` — $${p.toFixed(3)}/img` : " (paid)");
     eng.appendChild(o);
   });
   if ([...eng.options].some(o => o.value === keep)) eng.value = keep;
@@ -293,14 +296,21 @@ document.querySelectorAll('input[name="visMode"]').forEach(r => r.addEventListen
   applyVisMode();
 }));
 
-/* Exact pricing is only known for the pro default; other models print their
-   real per-clip price in the render log (fast/flash tiers cost far less). */
+/* Per-clip price for a video model: seedance-2.0-pro's rate we know exactly;
+   everything else is learned from the spend ledger the first time it's used
+   (the API publishes no rates). Returns null when still unknown. */
+function clipPrice(m) {
+  if (m === "seedance-2.0-pro") return 0.65;
+  const p = ((S.obsPrices || {}).video || {})[m];
+  return p || null;
+}
 function updateVidHint() {
   const n = S.prompts.length;
   const m = $id("vidModel").value;
-  $id("apiHint").textContent = m === "seedance-2.0-pro"
-    ? `— one 5s clip per beat, ≈$${(n * 5 * 0.13).toFixed(2)} for ${n} (cached clips are free)`
-    : `— one 5s clip per beat; ${m} bills per clip (price prints in the log — fast/flash models cost far less than pro; cached clips are free)`;
+  const p = clipPrice(m);
+  $id("apiHint").textContent = p
+    ? `— one 5s clip per beat, ≈$${(n * p).toFixed(2)} for ${n}${m === "seedance-2.0-pro" ? "" : " (learned from your past renders)"} (cached clips are free)`
+    : `— one 5s clip per beat; ${m} bills per clip — its price is unknown until your first render with it (then it shows here; fast/flash models cost far less than pro; cached clips are free)`;
 }
 $id("vidModel").addEventListener("change", () => {
   document.querySelector('input[name="visMode"][value="infer"]').checked = true;
@@ -447,8 +457,9 @@ $id("renderBtn").addEventListener("click", async () => {
   const vidModel = $id("vidModel").value;
   const paidImages = mode === "images" && engine !== "pollinations";
   if (mode === "infer") {
-    const cost = vidModel === "seedance-2.0-pro"
-      ? `about $${(S.prompts.length * 5 * 0.13).toFixed(2)}`
+    const p = clipPrice(vidModel);
+    const cost = p
+      ? `about $${(S.prompts.length * p).toFixed(2)}`
       : `billed per clip at ${vidModel}'s rate (the exact price prints in the log)`;
     if (!confirm(`This generates ${S.prompts.length} AI clips with ${vidModel} via the tryinfer API — ${cost} `
         + `on your tryinfer account (cached clips are free). Start?`)) return;
