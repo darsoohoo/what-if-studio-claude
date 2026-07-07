@@ -288,22 +288,31 @@ def beat_prompts(pkg):
             for i in range(len(segments))]
 
 
-_image_models_cache = {"models": None}
+_catalog_cache = {"models": None}
 
 
-def image_models():
-    """tryinfer text-to-image model ids, fetched once per server run."""
-    if _image_models_cache["models"] is None:
+def infer_catalog():
+    """The tryinfer model catalog, fetched once per server run."""
+    if _catalog_cache["models"] is None:
         models = []
         key = mv.infer_api_key()
         if key:
             try:
-                models = sorted(m["model_id"] for m in mv.infer_list_models(key)
-                                if m.get("capability") == "text-to-image")
+                models = mv.infer_list_models(key)
             except Exception:
                 models = []
-        _image_models_cache["models"] = models
-    return _image_models_cache["models"]
+        _catalog_cache["models"] = models
+    return _catalog_cache["models"]
+
+
+def image_models():
+    return sorted(m["model_id"] for m in infer_catalog()
+                  if m.get("capability") == "text-to-image")
+
+
+def video_models():
+    return sorted(m["model_id"] for m in infer_catalog()
+                  if m.get("capability") == "image-to-video")
 
 
 def render_running():
@@ -317,6 +326,9 @@ def start_render(queue_file, slot, staging, opts):
            "--backgrounds", str(staging), "--out", "output"]
     if opts.get("infer"):
         cmd.append("--infer")
+        model = re.sub(r"[^a-zA-Z0-9._-]", "", str(opts.get("infer_model") or ""))[:60]
+        if model:
+            cmd += ["--infer-model", model]
     elif opts.get("infer_images"):
         model = re.sub(r"[^a-zA-Z0-9._-]", "", str(opts["infer_images"]))[:60]
         if model:
@@ -451,6 +463,7 @@ class Handler(BaseHTTPRequestHandler):
                         voices = []
                 self.send_json({
                     "image_models": image_models(),
+                    "video_models": video_models(),
                     "title": pkg.get("title"),
                     "dir": d.name,
                     "prompts": beat_prompts(pkg),

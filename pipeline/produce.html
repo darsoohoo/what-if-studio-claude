@@ -96,7 +96,9 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
       <h2><span class="step">2</span>Get the clips</h2>
       <div class="apibox" id="visualsBox">
         <label class="opt"><input type="radio" name="visMode" value="manual" checked> 🎬 <strong>My own clips</strong> — tryinfer Studio or drag-drop (steps 2–3 below)</label>
-        <label class="opt" id="modeInfer" hidden><input type="radio" name="visMode" value="infer"> ⚡ <strong>AI video (tryinfer API)</strong> <span class="hint" id="apiHint" style="margin:0"></span></label>
+        <label class="opt" id="modeInfer" hidden><input type="radio" name="visMode" value="infer"> ⚡ <strong>AI video (tryinfer API)</strong> Model:
+          <select id="vidModel" style="width:auto"></select>
+          <span class="hint" id="apiHint" style="margin:0"></span></label>
         <label class="opt"><input type="radio" name="visMode" value="images"> 🖼️ <strong>AI images</strong> — one styled picture per beat with gentle motion. Engine:
           <select id="imgEngine" style="width:auto">
             <option value="pollinations">Free — Pollinations</option>
@@ -203,9 +205,18 @@ $id("pkgSelect").addEventListener("change", async (e) => {
   if (!info.infer && visMode() === "infer") {
     document.querySelector('input[name="visMode"][value="manual"]').checked = true;
   }
-  const est = (info.prompts.length * 5 * 0.13).toFixed(2);
-  $id("apiHint").textContent =
-    `— one 5s clip per beat, ≈$${est} for ${info.prompts.length} (cached clips are free)`;
+  const vm = $id("vidModel");
+  const keepModel = vm.value;
+  vm.innerHTML = "";
+  const vmodels = (info.video_models && info.video_models.length) ? info.video_models : ["seedance-2.0-pro"];
+  vmodels.forEach(m => {
+    const o = document.createElement("option");
+    o.value = m; o.textContent = m;
+    vm.appendChild(o);
+  });
+  vm.value = [...vm.options].some(o => o.value === keepModel) ? keepModel
+    : ([...vm.options].some(o => o.value === "seedance-2.0-pro") ? "seedance-2.0-pro" : vmodels[0]);
+  updateVidHint();
   const eng = $id("imgEngine");
   const keep = eng.value;
   eng.innerHTML = "<option value='pollinations'>Free — Pollinations</option>";
@@ -277,6 +288,21 @@ document.querySelectorAll('input[name="visMode"]').forEach(r => r.addEventListen
   document.querySelector('input[name="visMode"][value="images"]').checked = true;
   applyVisMode();
 }));
+
+/* Exact pricing is only known for the pro default; other models print their
+   real per-clip price in the render log (fast/flash tiers cost far less). */
+function updateVidHint() {
+  const n = S.prompts.length;
+  const m = $id("vidModel").value;
+  $id("apiHint").textContent = m === "seedance-2.0-pro"
+    ? `— one 5s clip per beat, ≈$${(n * 5 * 0.13).toFixed(2)} for ${n} (cached clips are free)`
+    : `— one 5s clip per beat; ${m} bills per clip (price prints in the log — fast/flash models cost far less than pro; cached clips are free)`;
+}
+$id("vidModel").addEventListener("change", () => {
+  document.querySelector('input[name="visMode"][value="infer"]').checked = true;
+  updateVidHint();
+  applyVisMode();
+});
 
 /* ---------- step 2: prompts ---------- */
 function renderPrompts(prompts) {
@@ -414,11 +440,14 @@ $id("renderBtn").addEventListener("click", async () => {
   } catch (e) {}
   const mode = visMode();
   const engine = $id("imgEngine").value;
+  const vidModel = $id("vidModel").value;
   const paidImages = mode === "images" && engine !== "pollinations";
   if (mode === "infer") {
-    const est = (S.prompts.length * 5 * 0.13).toFixed(2);
-    if (!confirm(`This generates ${S.prompts.length} AI clips via the tryinfer API — about $${est} `
-        + `billed to your tryinfer account (cached clips are free). Start?`)) return;
+    const cost = vidModel === "seedance-2.0-pro"
+      ? `about $${(S.prompts.length * 5 * 0.13).toFixed(2)}`
+      : `billed per clip at ${vidModel}'s rate (the exact price prints in the log)`;
+    if (!confirm(`This generates ${S.prompts.length} AI clips with ${vidModel} via the tryinfer API — ${cost} `
+        + `on your tryinfer account (cached clips are free). Start?`)) return;
   }
   if (paidImages) {
     if (!confirm(`This generates ${S.prompts.length} images with ${engine} via the tryinfer API — `
@@ -427,6 +456,7 @@ $id("renderBtn").addEventListener("click", async () => {
   const r = await api("/api/produce/render", {
     queue: S.queue, slot: S.slot,
     infer: mode === "infer",
+    infer_model: vidModel,
     ai_visuals: mode === "images" && !paidImages,
     infer_images: paidImages ? engine : false,
     ai_style: $id("imgStyle").value,
