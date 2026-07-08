@@ -35,11 +35,10 @@ const CATEGORY_COLORS = {
   "Scary/Weird": ["#151a30", "#b83a6e"]
 };
 
-const PLATFORMS = [
-  { id: "tiktok", label: "TikTok", aspect: "9:16 vertical", hashtags: "#whatif #storytime #interesting #fyp", cta: "Follow for tomorrow's what-if." },
-  { id: "shorts", label: "YT Shorts", aspect: "9:16 vertical", hashtags: "#whatif #shorts #storytime", cta: "Subscribe — a new what-if drops next." },
-  { id: "reels", label: "Reels", aspect: "9:16 vertical", hashtags: "#whatif #reels #didyouknow", cta: "Follow for the next scenario." }
-];
+/* One package works everywhere: the spoken outro uses a platform-neutral CTA,
+   and per-platform hashtags come from the render's post kit, not the package. */
+const NEUTRAL_CTA = "Follow for the next what-if.";
+const ASPECT = "9:16 vertical";
 
 const RUNTIMES = [
   { id: 30, label: "30s", beats: 3, note: "Tight cut: hook, three fast beats, out. Every word earns its place." },
@@ -54,9 +53,6 @@ const VOICES = [
   { id: "deadpan", label: "Deadpan Documentarian", direction: "Flat, dry, matter-of-fact. Deliver the wildest lines like a weather report. Comedy lives in the contrast." }
 ];
 
-const QUEUE_SIZE = 7;
-
-const SLOT_STATUSES = ["Planned", "Scripted", "Recorded", "Edited", "Posted"];
 
 const STORAGE_KEY = "whatIfStudio.v1";
 
@@ -1228,18 +1224,16 @@ const state = {
   search: "",
   category: "All",
   selectedId: null,
-  options: { platform: "tiktok", runtime: 60, voice: "calm" },
+  options: { runtime: 60, voice: "calm" },
   pkg: null,
   activeTab: 0,
   seed: null,
   seedRotation: { catIndex: 0, perCat: {} },
-  customScenarios: [],
-  queue: Array.from({ length: QUEUE_SIZE }, () => ({ pkg: null, status: SLOT_STATUSES[0], notes: "" }))
+  customScenarios: []
 };
 
 function persist() {
   storage.write({
-    queue: state.queue,
     seedRotation: state.seedRotation,
     customScenarios: state.customScenarios
   });
@@ -1248,13 +1242,6 @@ function persist() {
 function restore() {
   const saved = storage.read();
   if (!saved) return;
-  if (Array.isArray(saved.queue) && saved.queue.length === QUEUE_SIZE) {
-    state.queue = saved.queue.map(slot => ({
-      pkg: slot && slot.pkg ? slot.pkg : null,
-      status: slot && SLOT_STATUSES.includes(slot.status) ? slot.status : SLOT_STATUSES[0],
-      notes: slot && typeof slot.notes === "string" ? slot.notes : ""
-    }));
-  }
   if (saved.seedRotation && typeof saved.seedRotation.catIndex === "number") {
     state.seedRotation = {
       catIndex: saved.seedRotation.catIndex % CATEGORIES.length,
@@ -1429,7 +1416,6 @@ function renderWorkspace() {
   tagRow.innerHTML = "";
   scenario.tags.forEach(t => tagRow.appendChild(el("span", { class: "tag", text: t })));
 
-  renderSegmented($("platformGroup"), PLATFORMS.map(p => ({ value: p.id, label: p.label })), state.options.platform, v => { state.options.platform = v; });
   renderRuntimeControl();
 
   const voiceSelect = $("voiceSelect");
@@ -1477,26 +1463,26 @@ function renderSegmented(container, items, activeValue, onPick) {
    ============================================================ */
 
 function buildPackage(scenario, options) {
-  const platform = PLATFORMS.find(p => p.id === options.platform) || PLATFORMS[0];
   const runtime = RUNTIMES.find(r => r.id === options.runtime) || RUNTIMES[1];
   const voice = VOICES.find(v => v.id === options.voice) || VOICES[0];
 
   const beats = scenario.beats.slice(0, runtime.beats);
   const outro = voice.id === "hype"
-    ? `That's the timeline — tell me where it breaks. ${platform.cta}`
+    ? `That's the timeline — tell me where it breaks. ${NEUTRAL_CTA}`
     : voice.id === "deadpan"
-      ? `Anyway. ${platform.cta}`
-      : `Sit with that one for a second. ${platform.cta}`;
+      ? `Anyway. ${NEUTRAL_CTA}`
+      : `Sit with that one for a second. ${NEUTRAL_CTA}`;
 
-  const captions = scenario.captions.map(c => `${c}\n${platform.hashtags}`);
+  // Captions stay clean; the render's post kit adds hashtags per platform.
+  const captions = scenario.captions.slice();
 
   return {
     scenarioId: scenario.id,
     title: scenario.title,
     category: scenario.category,
     colors: { from: scenario.image.from, to: scenario.image.to },
-    platform: platform.label,
-    aspect: platform.aspect,
+    platform: "Any",
+    aspect: ASPECT,
     runtime: runtime.id,
     runtimeLabel: runtime.label,
     pacingNote: runtime.note,
@@ -1520,7 +1506,7 @@ function packageToText(pkg) {
   lines.push("=".repeat(40));
   lines.push(`Title:     ${pkg.title}`);
   lines.push(`Category:  ${pkg.category}`);
-  lines.push(`Platform:  ${pkg.platform} (${pkg.aspect})`);
+  lines.push(`Format:    ${pkg.aspect} — works on TikTok, YT Shorts, and Reels`);
   lines.push(`Runtime:   ${pkg.runtimeLabel}`);
   lines.push(`Voice:     ${pkg.voice}`);
   lines.push(`Generated: ${pkg.generatedAt}`);
@@ -1624,12 +1610,12 @@ function tabContent(pkg, tabId) {
       };
     case "shots":
       return {
-        html: `<h5>Shot list — ${escapeHtml(pkg.aspect)}, ${escapeHtml(pkg.platform)}</h5><ol>${pkg.shotList.map(s => `<li>${escapeHtml(s)}</li>`).join("")}</ol>`,
+        html: `<h5>Shot list — ${escapeHtml(pkg.aspect)}</h5><ol>${pkg.shotList.map(s => `<li>${escapeHtml(s)}</li>`).join("")}</ol>`,
         text: pkg.shotList.map((s, i) => `${i + 1}. ${s}`).join("\n")
       };
     case "captions":
       return {
-        html: `<h5>Caption options — ${escapeHtml(pkg.platform)}</h5><ol>${pkg.captions.map(c => `<li>${escapeHtml(c).replace(/\n/g, "<br>")}</li>`).join("")}</ol>`,
+        html: `<h5>Caption options</h5><p>Per-platform hashtags are added in the rendered video's post kit.</p><ol>${pkg.captions.map(c => `<li>${escapeHtml(c).replace(/\n/g, "<br>")}</li>`).join("")}</ol>`,
         text: pkg.captions.map((c, i) => `${i + 1}. ${c}`).join("\n\n")
       };
     case "thumbs":
@@ -1662,7 +1648,7 @@ function renderPackage() {
   section.hidden = false;
 
   $("packageTitle").textContent = "Package: " + pkg.title;
-  $("packageMeta").textContent = `${pkg.platform} · ${pkg.runtimeLabel} · ${pkg.voice}`;
+  $("packageMeta").textContent = `${pkg.aspect} · ${pkg.runtimeLabel} · ${pkg.voice}`;
 
   const tabsWrap = $("packageTabs");
   tabsWrap.innerHTML = "";
@@ -1685,93 +1671,20 @@ function renderPackage() {
   const active = TAB_DEFS[state.activeTab];
   panel.setAttribute("aria-labelledby", `tab-${active.id}`);
   panel.innerHTML = tabContent(pkg, active.id).html;
-
-  const slotSelect = $("slotSelect");
-  slotSelect.innerHTML = "";
-  state.queue.forEach((slot, i) => {
-    const label = slot.pkg ? `Slot ${i + 1} — ${slot.pkg.title}` : `Slot ${i + 1} — empty`;
-    slotSelect.appendChild(el("option", { value: String(i), text: label }));
-  });
 }
 
 /* ============================================================
-   11. QUEUE
+   11. EXPORT FOR RENDER (one-item queue format - the watcher,
+   Produce page, and pipeline all consume this shape unchanged)
    ============================================================ */
 
-function renderQueue() {
-  const list = $("queueList");
-  list.innerHTML = "";
-
-  state.queue.forEach((slot, i) => {
-    const card = el("div", { class: "queue-slot" + (slot.pkg ? " filled" : "") });
-    const head = el("div", { class: "slot-head" }, [
-      el("span", { class: "slot-name", text: `SLOT ${i + 1}` })
-    ]);
-
-    if (slot.pkg) {
-      head.appendChild(el("button", {
-        type: "button",
-        class: "btn btn-ghost btn-small btn-danger-text",
-        text: "Clear",
-        "aria-label": `Clear slot ${i + 1}`,
-        onclick: () => {
-          if (!window.confirm(`Clear slot ${i + 1} (“${slot.pkg.title}”)? This removes the saved package and notes.`)) return;
-          state.queue[i] = { pkg: null, status: SLOT_STATUSES[0], notes: "" };
-          persist();
-          renderQueue();
-          renderPackage();
-          announce(`Slot ${i + 1} cleared.`);
-        }
-      }));
-    }
-    card.appendChild(head);
-
-    if (slot.pkg) {
-      card.appendChild(el("p", { class: "slot-title", text: slot.pkg.title }));
-      card.appendChild(el("p", { class: "slot-meta", text: `${slot.pkg.platform} · ${slot.pkg.runtimeLabel} · ${slot.pkg.voice}` }));
-
-      const statusId = `slotStatus${i}`;
-      const statusRow = el("div", { class: "slot-status-row" });
-      statusRow.appendChild(el("label", { class: "field-label", for: statusId, text: "Status" }));
-      const statusSelect = el("select", { id: statusId });
-      SLOT_STATUSES.forEach(s => statusSelect.appendChild(el("option", { value: s, text: s })));
-      statusSelect.value = slot.status;
-      statusSelect.addEventListener("change", () => {
-        state.queue[i].status = statusSelect.value;
-        persist();
-      });
-      statusRow.appendChild(statusSelect);
-      card.appendChild(statusRow);
-
-      const exportBtn = el("button", {
-        type: "button",
-        class: "btn btn-ghost btn-small",
-        text: "Export package",
-        "aria-label": `Export package in slot ${i + 1}`,
-        onclick: () => {
-          downloadFile(slugify(slot.pkg.title) + ".txt", packageToText(slot.pkg));
-          announce(`Slot ${i + 1} package exported.`);
-        }
-      });
-      card.appendChild(exportBtn);
-    } else {
-      card.appendChild(el("p", { class: "slot-empty-text", text: "Empty — generate a package and save it here." }));
-    }
-
-    const notesId = `slotNotes${i}`;
-    const notesLabel = el("label", { class: "field-label", for: notesId, text: "Tracker notes" });
-    notesLabel.style.marginTop = "8px";
-    const notes = el("textarea", { id: notesId, placeholder: "Recording notes, edits, posting plan…" });
-    notes.value = slot.notes;
-    notes.addEventListener("input", () => {
-      state.queue[i].notes = notes.value;
-      persist();
-    });
-    card.appendChild(notesLabel);
-    card.appendChild(notes);
-
-    list.appendChild(card);
-  });
+function exportForRender(pkg) {
+  const payload = {
+    app: "what-if-studio", format: 1, exportedAt: new Date().toISOString(),
+    items: [{ slot: 1, status: "planned", notes: "", package: pkg }]
+  };
+  // "whatifstudio-" prefix is what the Downloads watcher looks for.
+  downloadFile("whatifstudio-queue-" + slugify(pkg.title) + ".json", JSON.stringify(payload, null, 2));
 }
 
 /* ============================================================
@@ -1857,10 +1770,9 @@ function renderStorageBadge() {
 }
 
 function resetAll() {
-  const ok = window.confirm("Reset ALL local data? This clears every queue slot, all tracker notes, seed rotation, and your custom scenarios. Exported files are not affected.");
+  const ok = window.confirm("Reset ALL local data? This clears seed rotation and your custom scenarios. Exported files are not affected.");
   if (!ok) return;
   storage.clear();
-  state.queue = Array.from({ length: QUEUE_SIZE }, () => ({ pkg: null, status: SLOT_STATUSES[0], notes: "" }));
   state.seedRotation = { catIndex: 0, perCat: {} };
   state.customScenarios = [];
   state.seed = null;
@@ -1871,7 +1783,6 @@ function resetAll() {
   $("packageSection").hidden = true;
   renderLibrary();
   renderWorkspace();
-  renderQueue();
   announce("All local data reset.");
 }
 
@@ -2088,7 +1999,8 @@ function bindWorkspaceActions() {
     state.pkg = buildPackage(scenario, state.options);
     state.activeTab = 0;
     renderPackage();
-    announce("Package generated.");
+    exportForRender(state.pkg);
+    announce("Package generated and exported — the watcher renders it from Downloads. Edit anything and hit Export .json to send a new cut.");
     const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     $("packageSection").scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "nearest" });
   });
@@ -2122,24 +2034,8 @@ function bindWorkspaceActions() {
 
   $("exportJsonBtn").addEventListener("click", () => {
     if (!state.pkg) return;
-    // "whatifstudio-" prefix lets the pipeline watcher recognize the file.
-    downloadFile("whatifstudio-package-" + slugify(state.pkg.title) + ".json", JSON.stringify(state.pkg, null, 2));
-    announce("Package exported as .json.");
-  });
-
-  $("saveSlotBtn").addEventListener("click", () => {
-    if (!state.pkg) return;
-    const index = Number($("slotSelect").value);
-    const slot = state.queue[index];
-    if (slot.pkg) {
-      const ok = window.confirm(`Slot ${index + 1} already holds “${slot.pkg.title}”. Overwrite it?`);
-      if (!ok) return;
-    }
-    state.queue[index] = { pkg: state.pkg, status: SLOT_STATUSES[0], notes: slot.notes || "" };
-    persist();
-    renderQueue();
-    renderPackage();
-    announce(`Saved to slot ${index + 1}.`);
+    exportForRender(state.pkg);
+    announce("Package exported for render.");
   });
 }
 
@@ -2183,21 +2079,7 @@ function bindGlobalActions() {
   $("navSpendBtn").addEventListener("click", () => goToDashboard("spend"));
   $("navHelpBtn").addEventListener("click", () => { window.location.href = "help.html"; });
 
-  $("exportQueueBtn").addEventListener("click", () => {
-    const items = state.queue
-      .map((slot, i) => slot.pkg ? { slot: i + 1, status: slot.status, notes: slot.notes, package: slot.pkg } : null)
-      .filter(Boolean);
-    if (!items.length) {
-      announce("Queue is empty — save a package to a slot first.");
-      return;
-    }
-    const payload = { app: "what-if-studio", format: 1, exportedAt: new Date().toISOString(), items };
-    downloadFile("whatifstudio-queue.json", JSON.stringify(payload, null, 2));
-    announce(`Queue exported — ${items.length} package${items.length === 1 ? "" : "s"}.`);
-  });
-
   bindArrowNav($("categoryChips"), ".chip", (item) => item.click());
-  bindArrowNav($("platformGroup"), ".segment", (item) => item.click());
   bindArrowNav($("runtimeGroup"), ".segment", (item) => item.click());
   bindArrowNav($("packageTabs"), ".tab", (item) => item.click());
 }
@@ -2217,7 +2099,6 @@ function init() {
   renderCategoryChips();
   renderLibrary();
   renderWorkspace();
-  renderQueue();
   bindWorkspaceActions();
   bindGlobalActions();
   bindBuilder();

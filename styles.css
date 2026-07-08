@@ -235,7 +235,7 @@ body.nav-collapsed .side-nav-item.current { padding-left: 0; border-left-width: 
 
 .layout {
   display: grid;
-  grid-template-columns: 1.25fr 1.15fr 0.9fr;
+  grid-template-columns: 1.1fr 1fr;
   gap: 16px;
   padding: 0 24px 24px;
   align-items: start;
@@ -585,48 +585,9 @@ input[type="search"]::placeholder, input[type="text"]::placeholder, textarea::pl
 
 .package-toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
 
-.save-row { margin-top: 6px; }
-.save-controls { display: flex; gap: 8px; }
-.save-controls select { flex: 1; }
+.hint-under-btn { font-size: 12px; color: var(--text-faint); margin: 8px 2px 0; line-height: 1.45; }
 
 .action-status { min-height: 20px; margin: 10px 0 0; font-size: 13px; color: var(--good); }
-
-/* ---------- Queue ---------- */
-
-.queue-hint { font-size: 12.5px; color: var(--text-faint); margin: 0 0 12px; }
-
-.queue-export { width: 100%; margin-bottom: 12px; }
-
-.queue-list { display: flex; flex-direction: column; gap: 10px; }
-
-.queue-slot {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-inset);
-  padding: 11px 12px;
-}
-.queue-slot.filled { border-color: var(--border-strong); }
-
-.slot-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-.slot-name { font-size: 12px; font-weight: 700; color: var(--text-faint); letter-spacing: 0.5px; }
-.slot-title { margin: 6px 0 2px; font-size: 13.5px; font-weight: 650; }
-.slot-meta { font-size: 11.5px; color: var(--text-faint); margin: 0 0 8px; }
-.slot-empty-text { font-size: 12.5px; color: var(--text-faint); margin: 6px 0 0; }
-
-.slot-status-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.slot-status-row select { flex: 1; font-size: 12.5px; padding: 6px 8px; }
-.slot-status-row .field-label { margin: 0; flex: none; }
-
-.queue-slot textarea {
-  min-height: 52px;
-  resize: vertical;
-  font-size: 12.5px;
-}
 
 /* ---------- Footer ---------- */
 
@@ -644,7 +605,6 @@ input[type="search"]::placeholder, input[type="text"]::placeholder, textarea::pl
 
 @media (max-width: 1100px) {
   .layout { grid-template-columns: 1fr 1fr; }
-  .queue-panel { grid-column: 1 / -1; }
   .scenario-grid { max-height: 48vh; }
 }
 
@@ -659,7 +619,6 @@ input[type="search"]::placeholder, input[type="text"]::placeholder, textarea::pl
   .seed-bar { flex-direction: column; align-items: stretch; }
   .seed-actions .btn { flex: 1; }
   .segmented { flex-direction: column; }
-  .save-controls { flex-direction: column; }
   .package-toolbar .btn { flex: 1 1 45%; }
   .btn { padding: 11px 16px; } /* larger touch targets */
 }

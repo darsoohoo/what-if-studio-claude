@@ -172,7 +172,7 @@ details p { color: var(--text-dim); font-size: 13px; margin: 8px 0 2px; }
     <h2><span class="n">2</span>Pick an idea — or write your own</h2>
     <div class="demo d-create" role="img" aria-label="Animation: clicking a scenario card, then Generate Package, and script lines appearing.">
       <span class="card c1"></span><span class="card c2"></span>
-      <span class="chip primary gen">Generate Package</span>
+      <span class="chip primary gen">🎬 Generate + Export</span>
       <span class="line l1"></span><span class="line l2"></span>
       <span class="cursor"></span>
     </div>
@@ -180,24 +180,23 @@ details p { color: var(--text-dim); font-size: 13px; margin: 8px 0 2px; }
     <ul class="steps">
       <li>Click any <b>scenario card</b> in the library (search or filter by category).</li>
       <li>Your own idea? <b>+ Create your own scenario</b> → type just the title → <b>✨ Write it for me</b> drafts the premise and beats (everything stays editable). Pick the video length right next to the button ("for a <b>90s</b> video") — longer runtimes get longer beats, which means more narration and a longer video. The choice syncs with <b>Package Settings</b> both ways. With an OpenAI key in <b>pipeline\openai_key.txt</b> the draft comes from OpenAI in a couple of seconds; without one it uses the free writer.</li>
-      <li>Choose <b>platform</b>, <b>runtime</b>, and <b>voice style</b> — the voice style picks the narrator (Calm=Adam, High-Energy=Callum, Deadpan=George with ElevenLabs).</li>
-      <li>Click <b>Generate Package</b>, skim the <b>Script Beats</b> tab — that's exactly what the voice will say.</li>
+      <li>Choose <b>runtime</b> and <b>voice style</b> — the voice style picks the narrator (Calm=Adam, High-Energy=Callum, Deadpan=George with ElevenLabs). No platform toggle: one cut works on TikTok, Shorts, and Reels, and each finished video's post kit carries the right hashtags for all three.</li>
     </ul>
   </section>
 
   <section>
-    <h2><span class="n">3</span>Save it, export it — videos make themselves</h2>
-    <div class="demo d-export" role="img" aria-label="Animation: clicking Export queue, a file flying into a folder, and a rendering notification appearing.">
-      <span class="chip primary">Export queue (.json)</span>
+    <h2><span class="n">3</span>One click — the video makes itself</h2>
+    <div class="demo d-export" role="img" aria-label="Animation: clicking Generate + Export, a file flying into a folder, and a rendering notification appearing.">
+      <span class="chip primary">🎬 Generate + Export</span>
       <span class="file">📄</span>
       <span class="folder">📁</span>
       <span class="toast">Rendering 1 video…</span>
     </div>
     <p class="caption">The watcher spots your export and renders it automatically — free AI images, voice, captions, music, covers.</p>
     <ul class="steps">
-      <li>Under the package, pick an <b>empty queue slot</b> → <b>Save to slot</b>. Queue up several for a week of content.</li>
-      <li>Click <b>Export queue (.json) for video pipeline</b> in the queue panel.</li>
-      <li>That's it — a notification appears, and a few minutes later the output folder opens with finished videos. New scenarios take 2–5 minutes each (AI images generate once, then they're cached).</li>
+      <li>Click <b>🎬 Generate + Export for render</b> — it builds the package <em>and</em> downloads the render .json in one step. The watcher takes it from there.</li>
+      <li>Skim the <b>Script Beats</b> tab while it renders — that's exactly what the voice says. Edited something? <b>Export .json (render again)</b> sends a new cut.</li>
+      <li>A few minutes later the output folder opens with the finished video. New scenarios take 2–5 minutes each (AI images generate once, then they're cached).</li>
     </ul>
   </section>
 
@@ -271,8 +270,8 @@ details p { color: var(--text-dim); font-size: 13px; margin: 8px 0 2px; }
       <p>Delete that scenario's folder inside <b>pipeline\ai-visuals</b> — the next render generates a fresh set (now with people in frame by default). For fresh prompt <em>wording</em> too, also delete the scenario's file in <b>pipeline\polished-prompts</b>.</p>
     </details>
     <details>
-      <summary>My queue disappeared / "Memory only" badge</summary>
-      <p>Your work saves in this browser on this device. If the badge says <b>Memory only</b>, the browser is blocking storage for local files — export anything you want to keep, and use the same browser each time.</p>
+      <summary>My custom scenarios disappeared / "Memory only" badge</summary>
+      <p>Custom scenarios save in this browser on this device. If the badge says <b>Memory only</b>, the browser is blocking storage for local files — export anything you want to keep, and use the same browser each time. (Your videos and exports are files on disk and are never affected.)</p>
     </details>
     <details>
       <summary>Where do my videos live on disk?</summary>

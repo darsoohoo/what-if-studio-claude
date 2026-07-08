@@ -1367,11 +1367,13 @@ def post_kit_text(pkg, item, hook_index, music_credit=None, has_thumb=False, sto
     for name in PLATFORM_TAGS:
         mark = "  (this cut)" if name == made_for else ""
         lines.append(f"- {name}: {hashtags_for(name, pkg)}{mark}")
-    lines += [
-        f"Heads-up: the spoken outro was cut for {made_for or 'the selected platform'} - "
-        "re-render with another platform selected if you want its call-to-action in the audio.",
-        "",
-    ]
+    if made_for in PLATFORM_TAGS:
+        # Legacy per-platform package: its outro CTA was written for one platform.
+        lines.append(f"Heads-up: the spoken outro was cut for {made_for} - "
+                     "re-render with another platform selected if you want its call-to-action in the audio.")
+    else:
+        lines.append("The spoken outro is platform-neutral - the same audio works everywhere.")
+    lines.append("")
     lines.append("TITLE / THUMBNAIL TEXT IDEAS:")
     lines += [f'- "{t}"' for t in pkg.get("thumbnails", [])]
     lines.append("")
