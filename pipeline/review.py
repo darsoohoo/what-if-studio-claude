@@ -422,7 +422,9 @@ def render_running():
 def start_render(queue_file, slot, staging, opts):
     if render_running():
         raise RuntimeError("a render is already running - wait for it to finish")
-    cmd = [sys.executable, "make_videos.py", queue_file, "--slots", str(slot),
+    # -u: unbuffered, so the live log streams line-by-line and crash output
+    # always reaches the file even if the process dies mid-write.
+    cmd = [sys.executable, "-u", "make_videos.py", queue_file, "--slots", str(slot),
            "--backgrounds", str(staging), "--out", "output"]
     if opts.get("infer"):
         cmd.append("--infer")

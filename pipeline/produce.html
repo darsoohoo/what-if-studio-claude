@@ -508,7 +508,9 @@ async function pollRender() {
       btn.classList.add("primary");
       notifyDone(true);
     } else {
-      setRenderStatus("Render failed — details in the log below.", "bad");
+      setRenderStatus((s.log || "").trim()
+        ? "Render failed — details in the log below."
+        : "Render failed before it could write a log — it was likely interrupted (e.g. the dashboard restarted). Your caches and credits are untouched; just render again.", "bad");
       notifyDone(false);
     }
   }
