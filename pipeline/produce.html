@@ -191,7 +191,10 @@ async function loadQueues() {
     for (const it of q.items) {
       const opt = document.createElement("option");
       opt.value = q.file + "|" + it.slot;
-      opt.textContent = it.title + "  (" + q.file + ", slot " + it.slot + ")";
+      const extras = [q.date];
+      if (q.items.length > 1) extras.push("slot " + it.slot);
+      if (it.staged) extras.push(it.staged + " clip" + (it.staged === 1 ? "" : "s") + " staged");
+      opt.textContent = `${it.title}  —  ${extras.join(" · ")}`;
       sel.appendChild(opt);
     }
   }

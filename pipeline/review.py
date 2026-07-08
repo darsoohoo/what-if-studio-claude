@@ -225,19 +225,40 @@ def ai_draft(title, category, runtime=60):
 # ---------------- produce (premium clip workflow) ----------------
 
 
-def produce_dir(key):
+def staging_dir(key):
+    """Where a package's staged clips live (no side effects)."""
     safe = re.sub(r"[^a-zA-Z0-9_-]", "-", str(key))[:80] or "clips"
-    d = PRODUCE_DIR / safe
+    return PRODUCE_DIR / safe
+
+
+def produce_dir(key):
+    d = staging_dir(key)
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
+EXPORTS_DIR = HERE / "exports"
+
+
+def queue_path(queue_file):
+    """Resolve a queue identifier to a real file. Accepts a bare pipeline
+    filename or one under exports/ (the watcher's permanent archive) - and
+    nothing else, so path tricks still can't escape."""
+    name = unquote(str(queue_file))
+    folder = HERE
+    if name.startswith("exports/"):
+        folder, name = EXPORTS_DIR, name[len("exports/"):]
+    name = safe_name(name)
+    return (folder / name) if name else None
+
+
 def list_queues():
-    """Queue exports in the pipeline folder, newest first."""
+    """Every queue export - the watcher's exports/ archive plus any loose
+    files in pipeline/ - newest first, with staged-clip counts."""
+    files = list(EXPORTS_DIR.glob("*.json")) if EXPORTS_DIR.is_dir() else []
+    files += [f for f in HERE.glob("*.json") if f.name != "review-notes.json"]
     out = []
-    for f in sorted(HERE.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
-        if f.name == "review-notes.json":
-            continue
+    for f in sorted(files, key=lambda p: p.stat().st_mtime, reverse=True):
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
         except Exception:
@@ -245,27 +266,37 @@ def list_queues():
         items = data.get("items") if isinstance(data, dict) else None
         if not items:
             continue
+        rel = f"exports/{f.name}" if f.parent == EXPORTS_DIR else f.name
+        entry_items = []
+        for it in items:
+            pkg = it.get("package")
+            if not pkg:
+                continue
+            slot = it.get("slot")
+            clips_dir = staging_dir(staging_key(rel, slot or 0, pkg))
+            entry_items.append({
+                "slot": slot,
+                "title": pkg.get("title", "untitled"),
+                "scenarioId": pkg.get("scenarioId", ""),
+                "staged": len(list(clips_dir.glob("*.mp4"))) if clips_dir.is_dir() else 0,
+            })
         out.append({
-            "file": f.name,
-            "items": [{
-                "slot": it.get("slot"),
-                "title": (it.get("package") or {}).get("title", "untitled"),
-                "scenarioId": (it.get("package") or {}).get("scenarioId", ""),
-            } for it in items if it.get("package")],
+            "file": rel,
+            "date": time.strftime("%b %d %H:%M", time.localtime(f.stat().st_mtime)),
+            "items": entry_items,
         })
     return out
 
 
 def load_package(queue_file, slot):
-    name = safe_name(queue_file)
-    path = (HERE / name) if name else None
+    path = queue_path(queue_file)
     if not path or not path.is_file():
         raise RuntimeError("queue file not found")
     data = json.loads(path.read_text(encoding="utf-8"))
     for it in data.get("items", []):
         if it.get("slot") == slot and it.get("package"):
             return it["package"]
-    raise RuntimeError(f"slot {slot} not in {name}")
+    raise RuntimeError(f"slot {slot} not in {path.name}")
 
 
 def staging_key(queue_file, slot, pkg):
@@ -684,7 +715,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if self.path == "/api/produce/render":
             try:
-                queue = safe_name(str(data.get("queue", "")))
+                qpath = queue_path(str(data.get("queue", "")))
+                if not qpath or not qpath.is_file():
+                    raise RuntimeError("queue file not found")
+                queue = f"exports/{qpath.name}" if qpath.parent == EXPORTS_DIR else qpath.name
                 slot = int(data.get("slot") or 0)
                 pkg = load_package(queue, slot)
                 d = produce_dir(staging_key(queue, slot, pkg))
