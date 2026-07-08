@@ -273,7 +273,10 @@ def staging_key(queue_file, slot, pkg):
 
 
 def staged_list(d):
-    return [{"name": f.name, "size_mb": round(f.stat().st_size / 1e6, 2)}
+    # mtime rides along as a cache-buster: swapping clips renames files, so a
+    # position's URL keeps serving the browser's cached video without it.
+    return [{"name": f.name, "size_mb": round(f.stat().st_size / 1e6, 2),
+             "mtime": int(f.stat().st_mtime * 1000)}
             for f in sorted(d.glob("*.mp4"))]
 
 
@@ -561,7 +564,7 @@ class Handler(BaseHTTPRequestHandler):
                             "ok": done_ok, "log": log_tail})
             return
         if self.path.startswith("/produce-files/"):
-            parts = self.path[len("/produce-files/"):].split("/")
+            parts = self.path.split("?")[0][len("/produce-files/"):].split("/")
             if len(parts) == 2:
                 dname, fname = safe_name(parts[0]), safe_name(parts[1])
                 path = (PRODUCE_DIR / dname / fname) if dname and fname else None

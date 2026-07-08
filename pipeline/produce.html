@@ -347,7 +347,7 @@ function renderClips(staged) {
     const div = document.createElement("div");
     div.className = "clip";
     const vid = document.createElement("video");
-    vid.src = `/produce-files/${S.dir}/${c.name}`;
+    vid.src = `/produce-files/${S.dir}/${c.name}?v=${c.mtime || 0}`;
     vid.preload = "metadata"; vid.muted = true;
     vid.addEventListener("mouseenter", () => vid.play().catch(() => {}));
     vid.addEventListener("mouseleave", () => { vid.pause(); vid.currentTime = 0; });
