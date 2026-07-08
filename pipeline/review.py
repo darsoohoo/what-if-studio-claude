@@ -570,6 +570,12 @@ class Handler(BaseHTTPRequestHandler):
                     except Exception:
                         voices = []
                 self.send_json({
+                    "script": {
+                        "title": pkg.get("title", ""),
+                        "hook": (pkg.get("hooks") or [""])[0],
+                        "beats": pkg.get("beats") or [],
+                        "outro": pkg.get("outro", ""),
+                    },
                     "image_models": image_models(),
                     "video_models": video_models(),
                     "observed_prices": observed_prices(),
@@ -713,6 +719,49 @@ class Handler(BaseHTTPRequestHandler):
                         fb.rename(d / a)
                         tmp.rename(d / b)
             self.send_json({"ok": True, "staged": staged_list(d)})
+            return
+
+        if self.path == "/api/produce/edit":
+            # Edit the script inside an archived export - narration, captions,
+            # and the render all pick the change up; the scenario id (and with
+            # it every cache and staged clip) stays put.
+            try:
+                qpath = queue_path(str(data.get("queue", "")))
+                if not qpath or not qpath.is_file():
+                    raise RuntimeError("queue file not found")
+                slot = int(data.get("slot") or 0)
+                qdata = json.loads(qpath.read_text(encoding="utf-8"))
+                pkg = next((it["package"] for it in qdata.get("items", [])
+                            if it.get("slot") == slot and it.get("package")), None)
+                if not pkg:
+                    raise RuntimeError(f"slot {slot} not in {qpath.name}")
+
+                def clean(v, cap):
+                    return re.sub(r"\s+", " ", str(v)).strip()[:cap]
+
+                if str(data.get("title", "")).strip():
+                    pkg["title"] = clean(data["title"], 300)
+                if str(data.get("hook", "")).strip():
+                    hooks = list(pkg.get("hooks") or [""])
+                    hooks[0] = clean(data["hook"], 600)
+                    pkg["hooks"] = hooks
+                if isinstance(data.get("beats"), list):
+                    beats = [clean(b, 900) for b in data["beats"] if clean(b, 900)]
+                    if len(beats) < 3:
+                        raise RuntimeError("need at least 3 beats")
+                    pkg["beats"] = beats
+                if str(data.get("outro", "")).strip():
+                    pkg["outro"] = clean(data["outro"], 600)
+                qpath.write_text(json.dumps(qdata, indent=2), encoding="utf-8")
+                # Narration changed -> the polished visual prompts are stale.
+                slug = mv.slugify(str(pkg.get("scenarioId", "pkg")))
+                if mv.POLISH_CACHE.is_dir():
+                    for f in mv.POLISH_CACHE.glob(f"{slug}-*.json"):
+                        f.unlink()
+                mv._polish_memo.clear()
+                self.send_json({"ok": True})
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 400)
             return
 
         if self.path == "/api/produce/render":

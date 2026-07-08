@@ -96,6 +96,25 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
 
   <div id="flow" hidden>
     <section>
+      <h2>✏️ Script <span class="hint" style="margin:0;display:inline">— fix a typo or tweak pacing right here; the voice, captions, and post kit all follow. A "—" or "…" makes the narrator pause.</span></h2>
+      <details id="scriptBox">
+        <summary style="cursor:pointer;color:var(--text-dim);font-size:13px">Show the script</summary>
+        <label class="field-label" for="scTitle" style="display:block;margin-top:10px;font-size:12px;color:var(--text-faint)">Title (also the cover text)</label>
+        <input type="text" id="scTitle" style="width:100%;font:inherit;color:var(--text);background:var(--bg-inset);border:1px solid var(--border-strong);border-radius:8px;padding:8px 10px">
+        <label class="field-label" for="scHook" style="display:block;margin-top:10px;font-size:12px;color:var(--text-faint)">Spoken hook (opens the video)</label>
+        <textarea id="scHook" rows="2" style="width:100%;font:inherit;color:var(--text);background:var(--bg-inset);border:1px solid var(--border-strong);border-radius:8px;padding:8px 10px;resize:vertical"></textarea>
+        <label class="field-label" for="scBeats" style="display:block;margin-top:10px;font-size:12px;color:var(--text-faint)">Beats — one per line</label>
+        <textarea id="scBeats" rows="8" style="width:100%;font:inherit;font-size:13px;color:var(--text);background:var(--bg-inset);border:1px solid var(--border-strong);border-radius:8px;padding:8px 10px;resize:vertical"></textarea>
+        <label class="field-label" for="scOutro" style="display:block;margin-top:10px;font-size:12px;color:var(--text-faint)">Outro</label>
+        <textarea id="scOutro" rows="2" style="width:100%;font:inherit;color:var(--text);background:var(--bg-inset);border:1px solid var(--border-strong);border-radius:8px;padding:8px 10px;resize:vertical"></textarea>
+        <div class="row">
+          <button type="button" id="scSaveBtn" class="primary">Save script</button>
+          <span class="status" id="scStatus" style="margin:0" role="status" aria-live="polite"></span>
+        </div>
+      </details>
+    </section>
+
+    <section>
       <h2><span class="step">2</span>Get the clips</h2>
       <div class="apibox" id="visualsBox">
         <label class="opt"><input type="radio" name="visMode" value="manual" checked> 🎬 <strong>My own clips</strong> — tryinfer Studio or drag-drop (steps 2–3 below)</label>
@@ -255,7 +274,37 @@ $id("pkgSelect").addEventListener("change", async (e) => {
     vs.appendChild(o);
   });
   updateVoicePlayBtn();
+  fillScript(info.script);
   $id("flow").hidden = false;
+});
+
+/* ---------- script editing (writes back into the archived export) ---------- */
+function fillScript(s) {
+  s = s || {};
+  $id("scTitle").value = s.title || "";
+  $id("scHook").value = s.hook || "";
+  $id("scBeats").value = (s.beats || []).join("\n");
+  $id("scOutro").value = s.outro || "";
+  $id("scStatus").textContent = "";
+  $id("scriptBox").open = false;
+}
+$id("scSaveBtn").addEventListener("click", async () => {
+  const beats = $id("scBeats").value.split("\n").map(b => b.trim()).filter(Boolean);
+  if (beats.length < 3) { $id("scStatus").className = "status bad"; $id("scStatus").textContent = "Need at least 3 beats (one per line)."; return; }
+  $id("scSaveBtn").disabled = true;
+  $id("scStatus").className = "status"; $id("scStatus").textContent = "Saving…";
+  const r = await api("/api/produce/edit", {
+    queue: S.queue, slot: S.slot,
+    title: $id("scTitle").value, hook: $id("scHook").value,
+    beats, outro: $id("scOutro").value,
+  });
+  $id("scSaveBtn").disabled = false;
+  if (r.error) { $id("scStatus").className = "status bad"; $id("scStatus").textContent = r.error; return; }
+  $id("scStatus").className = "status good";
+  $id("scStatus").textContent = "✓ Saved — the next render speaks and captions this version.";
+  // Prompts derive from the beats - refresh them (keeps the script box open).
+  const info = await api(`/api/produce/info?queue=${encodeURIComponent(S.queue)}&slot=${S.slot}`);
+  if (!info.error) { S.prompts = info.prompts; renderPrompts(info.prompts); updateVidHint(); }
 });
 
 /* ---------- voice sample preview (free - ElevenLabs hosts one per voice) ---------- */
