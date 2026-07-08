@@ -36,6 +36,7 @@ TRASH = OUTPUT / "trash"
 STATE_FILE = HERE / "review-notes.json"
 PAGE_FILE = HERE / "review.html"
 PRODUCE_PAGE = HERE / "produce.html"
+SPEND_PAGE = HERE / "spend.html"
 PRODUCE_DIR = HERE / "produce"
 DOWNLOADS = Path.home() / "Downloads"
 PORT = 8765
@@ -180,6 +181,8 @@ def ai_draft_openai(title, category, key, runtime=60):
     })
     with urllib.request.urlopen(req, timeout=60) as resp:
         reply = json.loads(resp.read().decode("utf-8", "replace"))
+    mv.record_spend("openai", "AI draft", mv.openai_usage_cost(reply),
+                    OPENAI_MODEL, title[:60], estimated=True)
     raw = reply["choices"][0]["message"]["content"]
     return parse_draft(raw, "openai")
 
@@ -222,19 +225,40 @@ def ai_draft(title, category, runtime=60):
 # ---------------- produce (premium clip workflow) ----------------
 
 
-def produce_dir(key):
+def staging_dir(key):
+    """Where a package's staged clips live (no side effects)."""
     safe = re.sub(r"[^a-zA-Z0-9_-]", "-", str(key))[:80] or "clips"
-    d = PRODUCE_DIR / safe
+    return PRODUCE_DIR / safe
+
+
+def produce_dir(key):
+    d = staging_dir(key)
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
+EXPORTS_DIR = HERE / "exports"
+
+
+def queue_path(queue_file):
+    """Resolve a queue identifier to a real file. Accepts a bare pipeline
+    filename or one under exports/ (the watcher's permanent archive) - and
+    nothing else, so path tricks still can't escape."""
+    name = unquote(str(queue_file))
+    folder = HERE
+    if name.startswith("exports/"):
+        folder, name = EXPORTS_DIR, name[len("exports/"):]
+    name = safe_name(name)
+    return (folder / name) if name else None
+
+
 def list_queues():
-    """Queue exports in the pipeline folder, newest first."""
+    """Every queue export - the watcher's exports/ archive plus any loose
+    files in pipeline/ - newest first, with staged-clip counts."""
+    files = list(EXPORTS_DIR.glob("*.json")) if EXPORTS_DIR.is_dir() else []
+    files += [f for f in HERE.glob("*.json") if f.name != "review-notes.json"]
     out = []
-    for f in sorted(HERE.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
-        if f.name == "review-notes.json":
-            continue
+    for f in sorted(files, key=lambda p: p.stat().st_mtime, reverse=True):
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
         except Exception:
@@ -242,27 +266,37 @@ def list_queues():
         items = data.get("items") if isinstance(data, dict) else None
         if not items:
             continue
+        rel = f"exports/{f.name}" if f.parent == EXPORTS_DIR else f.name
+        entry_items = []
+        for it in items:
+            pkg = it.get("package")
+            if not pkg:
+                continue
+            slot = it.get("slot")
+            clips_dir = staging_dir(staging_key(rel, slot or 0, pkg))
+            entry_items.append({
+                "slot": slot,
+                "title": pkg.get("title", "untitled"),
+                "scenarioId": pkg.get("scenarioId", ""),
+                "staged": len(list(clips_dir.glob("*.mp4"))) if clips_dir.is_dir() else 0,
+            })
         out.append({
-            "file": f.name,
-            "items": [{
-                "slot": it.get("slot"),
-                "title": (it.get("package") or {}).get("title", "untitled"),
-                "scenarioId": (it.get("package") or {}).get("scenarioId", ""),
-            } for it in items if it.get("package")],
+            "file": rel,
+            "date": time.strftime("%b %d %H:%M", time.localtime(f.stat().st_mtime)),
+            "items": entry_items,
         })
     return out
 
 
 def load_package(queue_file, slot):
-    name = safe_name(queue_file)
-    path = (HERE / name) if name else None
+    path = queue_path(queue_file)
     if not path or not path.is_file():
         raise RuntimeError("queue file not found")
     data = json.loads(path.read_text(encoding="utf-8"))
     for it in data.get("items", []):
         if it.get("slot") == slot and it.get("package"):
             return it["package"]
-    raise RuntimeError(f"slot {slot} not in {name}")
+    raise RuntimeError(f"slot {slot} not in {path.name}")
 
 
 def staging_key(queue_file, slot, pkg):
@@ -270,7 +304,10 @@ def staging_key(queue_file, slot, pkg):
 
 
 def staged_list(d):
-    return [{"name": f.name, "size_mb": round(f.stat().st_size / 1e6, 2)}
+    # mtime rides along as a cache-buster: swapping clips renames files, so a
+    # position's URL keeps serving the browser's cached video without it.
+    return [{"name": f.name, "size_mb": round(f.stat().st_size / 1e6, 2),
+             "mtime": int(f.stat().st_mtime * 1000)}
             for f in sorted(d.glob("*.mp4"))]
 
 
@@ -288,22 +325,94 @@ def beat_prompts(pkg):
             for i in range(len(segments))]
 
 
-_image_models_cache = {"models": None}
+def spend_summary():
+    """Totals + breakdowns from the pipeline's spend ledger."""
+    try:
+        entries = json.loads(mv.SPEND_LEDGER.read_text(encoding="utf-8"))
+        if not isinstance(entries, list):
+            entries = []
+    except Exception:
+        entries = []
+    today = time.strftime("%Y-%m-%d")
+    month = time.strftime("%Y-%m")
+    total = today_sum = month_sum = est_sum = 0.0
+    by_service, by_scenario = {}, {}
+    for e in entries:
+        p = float(e.get("price_usd") or 0)
+        ts = str(e.get("ts", ""))
+        total += p
+        if ts.startswith(today):
+            today_sum += p
+        if ts.startswith(month):
+            month_sum += p
+        if e.get("estimated"):
+            est_sum += p
+        svc = e.get("service", "?")
+        by_service[svc] = by_service.get(svc, 0.0) + p
+        sc = e.get("scenario") or "(none)"
+        by_scenario[sc] = by_scenario.get(sc, 0.0) + p
+    top_scenarios = sorted(by_scenario.items(), key=lambda kv: -kv[1])[:12]
+    return {
+        "total": round(total, 4),
+        "today": round(today_sum, 4),
+        "month": round(month_sum, 4),
+        "estimated_portion": round(est_sum, 4),
+        "by_service": {k: round(v, 4) for k, v in sorted(by_service.items(), key=lambda kv: -kv[1])},
+        "by_scenario": [{"scenario": k, "usd": round(v, 4)} for k, v in top_scenarios],
+        "entries": list(reversed(entries[-80:])),
+        "count": len(entries),
+    }
 
 
-def image_models():
-    """tryinfer text-to-image model ids, fetched once per server run."""
-    if _image_models_cache["models"] is None:
+def observed_prices():
+    """Average billed price per tryinfer job, learned from the spend ledger:
+    {"video": {model: usd_per_clip}, "image": {model: usd_per_image}}. The API
+    publishes no rates, so the user's own renders are the source of truth."""
+    try:
+        entries = json.loads(mv.SPEND_LEDGER.read_text(encoding="utf-8"))
+        if not isinstance(entries, list):
+            entries = []
+    except Exception:
+        entries = []
+    sums, counts = {"video": {}, "image": {}}, {"video": {}, "image": {}}
+    for e in entries:
+        if e.get("service") != "tryinfer":
+            continue
+        kind = {"video clip": "video", "image": "image"}.get(e.get("kind"))
+        model = e.get("model")
+        price = float(e.get("price_usd") or 0)
+        if not kind or not model or price <= 0:
+            continue
+        sums[kind][model] = sums[kind].get(model, 0.0) + price
+        counts[kind][model] = counts[kind].get(model, 0) + 1
+    return {k: {m: round(sums[k][m] / counts[k][m], 4) for m in sums[k]} for k in sums}
+
+
+_catalog_cache = {"models": None}
+
+
+def infer_catalog():
+    """The tryinfer model catalog, fetched once per server run."""
+    if _catalog_cache["models"] is None:
         models = []
         key = mv.infer_api_key()
         if key:
             try:
-                models = sorted(m["model_id"] for m in mv.infer_list_models(key)
-                                if m.get("capability") == "text-to-image")
+                models = mv.infer_list_models(key)
             except Exception:
                 models = []
-        _image_models_cache["models"] = models
-    return _image_models_cache["models"]
+        _catalog_cache["models"] = models
+    return _catalog_cache["models"]
+
+
+def image_models():
+    return sorted(m["model_id"] for m in infer_catalog()
+                  if m.get("capability") == "text-to-image")
+
+
+def video_models():
+    return sorted(m["model_id"] for m in infer_catalog()
+                  if m.get("capability") == "image-to-video")
 
 
 def render_running():
@@ -313,10 +422,15 @@ def render_running():
 def start_render(queue_file, slot, staging, opts):
     if render_running():
         raise RuntimeError("a render is already running - wait for it to finish")
-    cmd = [sys.executable, "make_videos.py", queue_file, "--slots", str(slot),
+    # -u: unbuffered, so the live log streams line-by-line and crash output
+    # always reaches the file even if the process dies mid-write.
+    cmd = [sys.executable, "-u", "make_videos.py", queue_file, "--slots", str(slot),
            "--backgrounds", str(staging), "--out", "output"]
     if opts.get("infer"):
         cmd.append("--infer")
+        model = re.sub(r"[^a-zA-Z0-9._-]", "", str(opts.get("infer_model") or ""))[:60]
+        if model:
+            cmd += ["--infer-model", model]
     elif opts.get("infer_images"):
         model = re.sub(r"[^a-zA-Z0-9._-]", "", str(opts["infer_images"]))[:60]
         if model:
@@ -420,6 +534,12 @@ class Handler(BaseHTTPRequestHandler):
         if self.path.split("?")[0] == "/produce":
             self.send_page(PRODUCE_PAGE)
             return
+        if self.path.split("?")[0] == "/spend":
+            self.send_page(SPEND_PAGE)
+            return
+        if self.path == "/api/spend":
+            self.send_json(spend_summary())
+            return
         if self.path.split("?")[0] in ("/help", "/help.html"):
             help_page = HERE.parent / "help.html"
             if help_page.is_file():
@@ -450,7 +570,15 @@ class Handler(BaseHTTPRequestHandler):
                     except Exception:
                         voices = []
                 self.send_json({
+                    "script": {
+                        "title": pkg.get("title", ""),
+                        "hook": (pkg.get("hooks") or [""])[0],
+                        "beats": pkg.get("beats") or [],
+                        "outro": pkg.get("outro", ""),
+                    },
                     "image_models": image_models(),
+                    "video_models": video_models(),
+                    "observed_prices": observed_prices(),
                     "title": pkg.get("title"),
                     "dir": d.name,
                     "prompts": beat_prompts(pkg),
@@ -475,7 +603,7 @@ class Handler(BaseHTTPRequestHandler):
                             "ok": done_ok, "log": log_tail})
             return
         if self.path.startswith("/produce-files/"):
-            parts = self.path[len("/produce-files/"):].split("/")
+            parts = self.path.split("?")[0][len("/produce-files/"):].split("/")
             if len(parts) == 2:
                 dname, fname = safe_name(parts[0]), safe_name(parts[1])
                 path = (PRODUCE_DIR / dname / fname) if dname and fname else None
@@ -593,9 +721,55 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"ok": True, "staged": staged_list(d)})
             return
 
+        if self.path == "/api/produce/edit":
+            # Edit the script inside an archived export - narration, captions,
+            # and the render all pick the change up; the scenario id (and with
+            # it every cache and staged clip) stays put.
+            try:
+                qpath = queue_path(str(data.get("queue", "")))
+                if not qpath or not qpath.is_file():
+                    raise RuntimeError("queue file not found")
+                slot = int(data.get("slot") or 0)
+                qdata = json.loads(qpath.read_text(encoding="utf-8"))
+                pkg = next((it["package"] for it in qdata.get("items", [])
+                            if it.get("slot") == slot and it.get("package")), None)
+                if not pkg:
+                    raise RuntimeError(f"slot {slot} not in {qpath.name}")
+
+                def clean(v, cap):
+                    return re.sub(r"\s+", " ", str(v)).strip()[:cap]
+
+                if str(data.get("title", "")).strip():
+                    pkg["title"] = clean(data["title"], 300)
+                if str(data.get("hook", "")).strip():
+                    hooks = list(pkg.get("hooks") or [""])
+                    hooks[0] = clean(data["hook"], 600)
+                    pkg["hooks"] = hooks
+                if isinstance(data.get("beats"), list):
+                    beats = [clean(b, 900) for b in data["beats"] if clean(b, 900)]
+                    if len(beats) < 3:
+                        raise RuntimeError("need at least 3 beats")
+                    pkg["beats"] = beats
+                if str(data.get("outro", "")).strip():
+                    pkg["outro"] = clean(data["outro"], 600)
+                qpath.write_text(json.dumps(qdata, indent=2), encoding="utf-8")
+                # Narration changed -> the polished visual prompts are stale.
+                slug = mv.slugify(str(pkg.get("scenarioId", "pkg")))
+                if mv.POLISH_CACHE.is_dir():
+                    for f in mv.POLISH_CACHE.glob(f"{slug}-*.json"):
+                        f.unlink()
+                mv._polish_memo.clear()
+                self.send_json({"ok": True})
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 400)
+            return
+
         if self.path == "/api/produce/render":
             try:
-                queue = safe_name(str(data.get("queue", "")))
+                qpath = queue_path(str(data.get("queue", "")))
+                if not qpath or not qpath.is_file():
+                    raise RuntimeError("queue file not found")
+                queue = f"exports/{qpath.name}" if qpath.parent == EXPORTS_DIR else qpath.name
                 slot = int(data.get("slot") or 0)
                 pkg = load_package(queue, slot)
                 d = produce_dir(staging_key(queue, slot, pkg))

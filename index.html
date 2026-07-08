@@ -21,6 +21,9 @@
   <button type="button" id="navProduceBtn" class="side-nav-item side-nav-link">
     <span class="side-nav-icon" aria-hidden="true">🎞️</span><span class="side-nav-label">Produce</span>
   </button>
+  <button type="button" id="navSpendBtn" class="side-nav-item side-nav-link">
+    <span class="side-nav-icon" aria-hidden="true">💰</span><span class="side-nav-label">Spend</span>
+  </button>
   <button type="button" id="navHelpBtn" class="side-nav-item side-nav-link">
     <span class="side-nav-icon" aria-hidden="true">❓</span><span class="side-nav-label">How to</span>
   </button>
@@ -105,11 +108,6 @@
       <h4 class="control-heading">Package settings</h4>
 
       <fieldset class="control-block">
-        <legend class="field-label">Platform</legend>
-        <div id="platformGroup" class="segmented" role="radiogroup" aria-label="Target platform"></div>
-      </fieldset>
-
-      <fieldset class="control-block">
         <legend class="field-label">Runtime</legend>
         <div id="runtimeGroup" class="segmented" role="radiogroup" aria-label="Video runtime"></div>
       </fieldset>
@@ -119,7 +117,8 @@
         <select id="voiceSelect"></select>
       </div>
 
-      <button type="button" id="generateBtn" class="btn btn-primary btn-wide">Generate Package</button>
+      <button type="button" id="generateBtn" class="btn btn-primary btn-wide">🎬 Generate + Export for render</button>
+      <p class="hint-under-btn">One click: builds the package and downloads the render .json — the watcher picks it up and makes the video. One cut works on TikTok, Shorts, and Reels (hashtags per platform come with the finished video's post kit).</p>
     </div>
 
     <!-- ============ PACKAGE OUTPUT ============ -->
@@ -137,30 +136,11 @@
         <button type="button" id="copyAllBtn" class="btn btn-ghost">Copy full package</button>
         <button type="button" id="exportTxtBtn" class="btn btn-ghost">Export .txt</button>
         <button type="button" id="exportSrtBtn" class="btn btn-ghost">Export .srt</button>
-        <button type="button" id="exportJsonBtn" class="btn btn-ghost">Export .json</button>
-      </div>
-
-      <div class="save-row">
-        <label class="field-label" for="slotSelect">Save to queue slot</label>
-        <div class="save-controls">
-          <select id="slotSelect"></select>
-          <button type="button" id="saveSlotBtn" class="btn btn-primary">Save to slot</button>
-        </div>
+        <button type="button" id="exportJsonBtn" class="btn btn-ghost">Export .json (render again)</button>
       </div>
 
       <p id="actionStatus" class="action-status" role="status" aria-live="polite"></p>
     </div>
-  </section>
-
-  <!-- ============ QUEUE ============ -->
-  <section class="panel queue-panel" aria-labelledby="queueHeading">
-    <div class="panel-head">
-      <h2 id="queueHeading">Content Queue</h2>
-      <span class="panel-meta">7 slots — plan a week</span>
-    </div>
-    <p class="queue-hint">Saved packages live in your browser’s local storage on this device. Export anything you can’t afford to lose.</p>
-    <button type="button" id="exportQueueBtn" class="btn btn-ghost queue-export">Export queue (.json) for video pipeline</button>
-    <div id="queueList" class="queue-list"></div>
   </section>
 
 </main>

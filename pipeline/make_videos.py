@@ -504,6 +504,8 @@ def _polish_via_openai(pkg, seg_count, key):
     })
     with urllib.request.urlopen(req, timeout=60) as resp:
         reply = json.loads(resp.read().decode("utf-8", "replace"))
+    record_spend("openai", "prompt polish", openai_usage_cost(reply),
+                 OPENAI_MODEL, pkg.get("scenarioId", ""), estimated=True)
     data = json.loads(reply["choices"][0]["message"]["content"])
     prompts = [re.sub(r"\s+", " ", str(p)).strip(" ,.;") for p in (data.get("prompts") or [])]
     if len(prompts) != seg_count or not all(prompts):
@@ -797,6 +799,52 @@ def _find_video_url(obj):
     return None
 
 
+# ------------------------------------------------- spend ledger
+# Every metered API call appends one entry so the Spend page can total real
+# money: tryinfer prices come straight from the provider's usage block;
+# OpenAI entries are estimates computed from token counts.
+
+SPEND_LEDGER = Path(__file__).resolve().parent / "spend-ledger.json"
+
+
+def record_spend(service, kind, price_usd, model="", scenario="", estimated=False):
+    """Append one paid event to the ledger. Never raises - a bookkeeping
+    failure must not break a render."""
+    try:
+        if price_usd is None:
+            return
+        entries = []
+        try:
+            entries = json.loads(SPEND_LEDGER.read_text(encoding="utf-8"))
+            if not isinstance(entries, list):
+                entries = []
+        except Exception:
+            pass
+        entries.append({
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "service": service, "kind": kind, "model": model,
+            "scenario": scenario, "price_usd": round(float(price_usd), 6),
+            "estimated": bool(estimated),
+        })
+        SPEND_LEDGER.write_text(json.dumps(entries, indent=1), encoding="utf-8")
+    except Exception:
+        pass
+
+
+# OpenAI gpt-4o-mini list prices per 1M tokens (for spend *estimates* only).
+OPENAI_PRICE_IN = 0.15 / 1e6
+OPENAI_PRICE_OUT = 0.60 / 1e6
+
+
+def openai_usage_cost(reply):
+    """Estimated dollars for one chat-completions reply, from its usage block."""
+    u = (reply or {}).get("usage") or {}
+    try:
+        return u.get("prompt_tokens", 0) * OPENAI_PRICE_IN + u.get("completion_tokens", 0) * OPENAI_PRICE_OUT
+    except TypeError:
+        return None
+
+
 _IMAGE_EXT_RE = re.compile(r"\.(jpe?g|png|webp)(\?|$)", re.I)
 
 
@@ -914,6 +962,7 @@ def generate_infer_videos(pkg, segments, key, model, task, duration, cache_root)
                 url, price, err = None, None, str(exc)
             if url:
                 spent += price or 0.0
+                record_spend("tryinfer", "video clip", price, model, pkg.get("scenarioId", ""))
                 price_note = f" (${price:.2f})" if price is not None else ""
                 print(f"    beat {i + 1}/{len(segments)}: done via {attempt_task}{price_note}")
                 break
@@ -972,6 +1021,7 @@ def generate_infer_images(pkg, seg_count, key, model, style_key, cache_root):
             print(f"    image {i + 1}/{seg_count} download failed: {exc}")
             continue
         spent += price or 0.0
+        record_spend("tryinfer", "image", price, model, pkg.get("scenarioId", ""))
         price_note = f" (${price:.3f})" if price is not None else ""
         print(f"    image {i + 1}/{seg_count}: done via {model}{price_note}")
         files.append(dest)
@@ -1251,13 +1301,53 @@ def final_render(ffmpeg, base, pkg, total, has_music, out_path, tmp, clip_audio=
 
 # ---------------------------------------------------------------- post kit
 
-# Mirrors PLATFORMS in app.js - the video is identical across platforms except
-# for these paste-ables (and the spoken outro CTA, which is baked into audio).
-PLATFORM_HASHTAGS = {
-    "TikTok":    "#whatif #storytime #interesting #fyp",
-    "YT Shorts": "#whatif #shorts #storytime",
-    "Reels":     "#whatif #reels #didyouknow",
+# Per-platform anchor tags + how many total to suggest. Mirrors PLATFORMS in
+# app.js. TikTok/YT lean on caption + title, so they stay tight; Reels leans on
+# hashtags for discovery, so it gets a roomier cap.
+PLATFORM_TAGS = {
+    "TikTok":    {"format": "#fyp",    "community": "#storytime",  "cap": 5},
+    "YT Shorts": {"format": "#shorts", "community": "#storytime",  "cap": 4},
+    "Reels":     {"format": "#reels",  "community": "#didyouknow", "cap": 8},
 }
+
+# Topic ("niche") tags per scenario category - these steer the video toward the
+# right feed. Keys mirror CATEGORIES in app.js.
+CATEGORY_HASHTAGS = {
+    "Speculative":         ["#thoughtexperiment", "#hypothetical"],
+    "Science":             ["#science", "#sciencetok", "#space"],
+    "History":             ["#history", "#historytok"],
+    "Pop Culture":         ["#popculture", "#entertainment"],
+    "Internet Mystery":    ["#internetmystery", "#unsolved", "#mystery"],
+    "Alternate Reality":   ["#alternatehistory", "#multiverse"],
+    "Unsettling Everyday": ["#creepy", "#unsettling", "#liminal"],
+    "Scary/Weird":         ["#creepy", "#scary", "#creepytok"],
+}
+
+
+def _scenario_hashtags(pkg):
+    """The package's own topic words as clean hashtags (may be empty)."""
+    out = []
+    for t in (pkg.get("tags") or []):
+        slug = re.sub(r"[^a-z0-9]", "", str(t).lower())
+        if slug:
+            out.append("#" + slug)
+    return out
+
+
+def hashtags_for(platform, pkg):
+    """A tiered tag set for one platform: broad + format + community anchors,
+    then category-niche and scenario-specific topic tags, deduped and capped."""
+    conf = PLATFORM_TAGS.get(platform, {"format": "", "community": "", "cap": 6})
+    ordered = ["#whatif", conf["format"], conf["community"]]
+    ordered += CATEGORY_HASHTAGS.get(pkg.get("category", ""), [])
+    ordered += _scenario_hashtags(pkg)
+    seen, tags = set(), []
+    for t in ordered:
+        key = t.lower()
+        if t and key not in seen:
+            seen.add(key)
+            tags.append(t)
+    return " ".join(tags[:conf["cap"]])
 
 
 def post_kit_text(pkg, item, hook_index, music_credit=None, has_thumb=False, stock_authors=None):
@@ -1271,15 +1361,19 @@ def post_kit_text(pkg, item, hook_index, music_credit=None, has_thumb=False, sto
     for i, cap in enumerate(pkg.get("captions", []), 1):
         lines += [f"{i}. {cap}", ""]
     made_for = pkg.get("platform", "")
-    lines.append("CROSS-POSTING - same video, swap the hashtags:")
-    for name, tags in PLATFORM_HASHTAGS.items():
+    cat = pkg.get("category", "")
+    header = f"CROSS-POSTING - same video, hashtags tuned for {cat or 'this'} content:"
+    lines.append(header)
+    for name in PLATFORM_TAGS:
         mark = "  (this cut)" if name == made_for else ""
-        lines.append(f"- {name}: {tags}{mark}")
-    lines += [
-        f"Heads-up: the spoken outro was cut for {made_for or 'the selected platform'} - "
-        "re-render with another platform selected if you want its call-to-action in the audio.",
-        "",
-    ]
+        lines.append(f"- {name}: {hashtags_for(name, pkg)}{mark}")
+    if made_for in PLATFORM_TAGS:
+        # Legacy per-platform package: its outro CTA was written for one platform.
+        lines.append(f"Heads-up: the spoken outro was cut for {made_for} - "
+                     "re-render with another platform selected if you want its call-to-action in the audio.")
+    else:
+        lines.append("The spoken outro is platform-neutral - the same audio works everywhere.")
+    lines.append("")
     lines.append("TITLE / THUMBNAIL TEXT IDEAS:")
     lines += [f'- "{t}"' for t in pkg.get("thumbnails", [])]
     lines.append("")

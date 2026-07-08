@@ -2,7 +2,7 @@
 
 A two-part product for making short-form "What if?" videos (TikTok/YouTube Shorts):
 
-1. **The app** — `index.html` + `app.js` + `styles.css` (+ `help.html`). Static HTML/CSS/vanilla JS only; must run from `file://`; **no server, login, npm deps, tracking, remote content, or automated posting** — these are hard product constraints, do not violate them. Scenario library (27+), package generator, builder with AI draft, 7-slot queue, JSON export.
+1. **The app** — `index.html` + `app.js` + `styles.css` (+ `help.html`). Static HTML/CSS/vanilla JS only; must run from `file://`; **no server, login, npm deps, tracking, remote content, or automated posting** — these are hard product constraints, do not violate them. Scenario library (27+), builder with AI draft, one-click "Generate + Export for render" (downloads a one-item queue .json the watcher picks up; packages are platform-neutral — hashtags come from the post kit).
 2. **The pipeline** — `pipeline/` (Python stdlib + ffmpeg + edge-tts, explicitly outside the app's constraints). `make_videos.py` renders queue exports into 1080×1920 videos: TTS voiceover, word-synced captions, per-beat visuals, music, thumbnails, post kits. `review.py` is a local-only dashboard (127.0.0.1:8765) serving the Videos/Produce/help pages plus `/api/draft` for the app's "Write it for me". Start everything with `Start-What-If-Studio.bat`.
 
 ## Commands

@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>What If Studeos — Spend</title>
+<style>
+:root {
+  --bg: #0b0d14; --bg-raised: #131624; --bg-inset: #0e1120;
+  --border: #262b40; --border-strong: #3a4160;
+  --text: #e8eaf2; --text-dim: #9aa1b9; --text-faint: #7d87a3;
+  --accent: #8b7bff; --accent-strong: #a99bff; --good: #4cd6a4; --danger: #ff7a8a;
+  --sidenav-w: 190px;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding-left: var(--sidenav-w); background: var(--bg); color: var(--text); font: 15px/1.5 "Segoe UI", system-ui, sans-serif; }
+body.nav-collapsed { --sidenav-w: 54px; }
+.side-nav { position: fixed; top: 0; left: 0; bottom: 0; width: var(--sidenav-w); display: flex; flex-direction: column; gap: 4px; padding: 10px 8px; background: var(--bg-inset); border-right: 1px solid var(--border); z-index: 40; transition: width 150ms ease; overflow: hidden; }
+.side-nav-toggle { font: inherit; font-size: 17px; width: 38px; height: 38px; margin-bottom: 8px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--bg-raised); color: var(--text-dim); cursor: pointer; flex: none; }
+.side-nav-toggle:hover { color: var(--accent-strong); border-color: var(--accent); }
+.side-nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 8px; font-size: 13.5px; font-weight: 600; color: var(--text-dim); white-space: nowrap; }
+.side-nav-item.current { color: var(--text); background: rgba(139,123,255,0.14); border-left: 3px solid var(--accent); padding-left: 7px; }
+.side-nav-link { font: inherit; border: none; background: none; cursor: pointer; text-align: left; width: 100%; }
+.side-nav-link:hover { color: var(--accent-strong); background: var(--bg-raised); }
+.side-nav-icon { flex: none; width: 20px; text-align: center; }
+body.nav-collapsed .side-nav-label { display: none; }
+body.nav-collapsed .side-nav-item { justify-content: center; padding: 9px 0; }
+body.nav-collapsed .side-nav-item.current { padding-left: 0; border-left-width: 0; border-bottom: 3px solid var(--accent); }
+header { padding: 20px 24px 4px; }
+h1 { margin: 0; font-size: 20px; }
+.sub { color: var(--text-dim); font-size: 13px; margin: 4px 0 0; }
+main { padding: 8px 24px 48px; max-width: 900px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-top: 16px; }
+.card { background: var(--bg-raised); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+.card .label { color: var(--text-faint); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+.card .value { font-size: 26px; font-weight: 700; margin-top: 4px; }
+.card .note { color: var(--text-faint); font-size: 11.5px; margin-top: 2px; }
+section { background: var(--bg-raised); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-top: 16px; }
+h2 { margin: 0 0 10px; font-size: 15px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; color: var(--text-faint); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.05em; padding: 4px 8px; border-bottom: 1px solid var(--border); }
+td { padding: 6px 8px; border-bottom: 1px solid var(--border); color: var(--text-dim); }
+td.usd, th.usd { text-align: right; white-space: nowrap; color: var(--text); }
+.est { color: var(--text-faint); font-size: 11px; }
+.hint { color: var(--text-faint); font-size: 12.5px; margin: 10px 0 0; }
+.empty { color: var(--text-faint); padding: 12px 0; }
+:focus-visible { outline: 3px solid var(--accent-strong); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<nav class="side-nav" aria-label="Studio pages">
+  <button type="button" id="navToggle" class="side-nav-toggle" aria-label="Collapse menu" aria-expanded="true">☰</button>
+  <button type="button" id="navStudioBtn" class="side-nav-item side-nav-link">
+    <span class="side-nav-icon" aria-hidden="true">✦</span><span class="side-nav-label">Studio</span>
+  </button>
+  <button type="button" id="navVideosBtn" class="side-nav-item side-nav-link">
+    <span class="side-nav-icon" aria-hidden="true">🎬</span><span class="side-nav-label">Videos</span>
+  </button>
+  <button type="button" id="navProduceBtn" class="side-nav-item side-nav-link">
+    <span class="side-nav-icon" aria-hidden="true">🎞️</span><span class="side-nav-label">Produce</span>
+  </button>
+  <span class="side-nav-item current" aria-current="page">
+    <span class="side-nav-icon" aria-hidden="true">💰</span><span class="side-nav-label">Spend</span>
+  </span>
+  <button type="button" id="navHelpBtn" class="side-nav-item side-nav-link">
+    <span class="side-nav-icon" aria-hidden="true">❓</span><span class="side-nav-label">How to</span>
+  </button>
+</nav>
+
+<header>
+  <h1>Spend</h1>
+  <p class="sub">Every metered API call the pipeline makes, in dollars. Flat-rate subscriptions (ElevenLabs, tryinfer Studio) aren't metered here.</p>
+</header>
+
+<main>
+  <div class="cards">
+    <div class="card"><div class="label">All time</div><div class="value" id="cTotal">$0.00</div><div class="note" id="cCount"></div></div>
+    <div class="card"><div class="label">This month</div><div class="value" id="cMonth">$0.00</div></div>
+    <div class="card"><div class="label">Today</div><div class="value" id="cToday">$0.00</div></div>
+  </div>
+
+  <section>
+    <h2>By service</h2>
+    <table><thead><tr><th>Service</th><th class="usd">Spent</th></tr></thead><tbody id="svcRows"></tbody></table>
+    <p class="empty" id="svcEmpty" hidden>Nothing recorded yet — spend appears here as soon as a paid render or AI draft runs.</p>
+  </section>
+
+  <section>
+    <h2>By scenario</h2>
+    <table><thead><tr><th>Scenario</th><th class="usd">Spent</th></tr></thead><tbody id="scRows"></tbody></table>
+    <p class="empty" id="scEmpty" hidden>No per-scenario spend yet.</p>
+  </section>
+
+  <section>
+    <h2>Recent charges</h2>
+    <table><thead><tr><th>When</th><th>Service</th><th>What</th><th>Model</th><th>Scenario</th><th class="usd">USD</th></tr></thead><tbody id="entryRows"></tbody></table>
+    <p class="empty" id="entryEmpty" hidden>No charges recorded yet.</p>
+    <p class="hint">tryinfer amounts are the provider's exact billed price per job. OpenAI amounts (marked ~) are estimates from token counts at gpt-4o-mini list prices — typically fractions of a cent. Tracking started when this page shipped; earlier spend isn't backfilled.</p>
+  </section>
+</main>
+
+<script>
+const $id = (x) => document.getElementById(x);
+const usd = (v) => "$" + Number(v || 0).toFixed(v >= 1 ? 2 : 4).replace(/0+$/, "").replace(/\.$/, ".00");
+
+/* ---------- sidebar (same behavior as the other pages) ---------- */
+function setNavCollapsed(c, persist = true) {
+  document.body.classList.toggle("nav-collapsed", c);
+  const t = $id("navToggle");
+  t.setAttribute("aria-expanded", String(!c));
+  t.setAttribute("aria-label", c ? "Expand menu" : "Collapse menu");
+  if (persist) { try { localStorage.setItem("wis.navCollapsed", c ? "1" : "0"); } catch (e) {} }
+}
+$id("navToggle").addEventListener("click", () => setNavCollapsed(!document.body.classList.contains("nav-collapsed")));
+let sn = null; try { sn = localStorage.getItem("wis.navCollapsed"); } catch (e) {}
+setNavCollapsed(sn === null ? matchMedia("(max-width: 700px)").matches : sn === "1", false);
+$id("navVideosBtn").addEventListener("click", () => { location.href = "/"; });
+$id("navProduceBtn").addEventListener("click", () => { location.href = "/produce"; });
+$id("navHelpBtn").addEventListener("click", () => { location.href = "/help"; });
+$id("navStudioBtn").addEventListener("click", () => {
+  if (history.length > 1) history.back();
+  else alert("Your Studio is index.html — open it from the project folder (or Start-What-If-Studio.bat).");
+});
+
+/* ---------- data ---------- */
+async function load() {
+  const s = await (await fetch("/api/spend")).json();
+  $id("cTotal").textContent = usd(s.total);
+  $id("cMonth").textContent = usd(s.month);
+  $id("cToday").textContent = usd(s.today);
+  $id("cCount").textContent = s.count
+    ? `${s.count} charge${s.count === 1 ? "" : "s"}${s.estimated_portion ? ` · ~${usd(s.estimated_portion)} estimated` : ""}`
+    : "";
+
+  const svc = Object.entries(s.by_service || {});
+  $id("svcRows").innerHTML = svc.map(([k, v]) =>
+    `<tr><td>${esc(k)}</td><td class="usd">${usd(v)}</td></tr>`).join("");
+  $id("svcEmpty").hidden = svc.length > 0;
+
+  const sc = s.by_scenario || [];
+  $id("scRows").innerHTML = sc.map(r =>
+    `<tr><td>${esc(r.scenario)}</td><td class="usd">${usd(r.usd)}</td></tr>`).join("");
+  $id("scEmpty").hidden = sc.length > 0;
+
+  const rows = s.entries || [];
+  $id("entryRows").innerHTML = rows.map(e =>
+    `<tr><td>${esc(String(e.ts || "").replace("T", " "))}</td><td>${esc(e.service)}</td>` +
+    `<td>${esc(e.kind)}</td><td>${esc(e.model || "")}</td><td>${esc(e.scenario || "")}</td>` +
+    `<td class="usd">${e.estimated ? '<span class="est">~</span>' : ""}${usd(e.price_usd)}</td></tr>`).join("");
+  $id("entryEmpty").hidden = rows.length > 0;
+}
+function esc(t) { const d = document.createElement("div"); d.textContent = t == null ? "" : String(t); return d.innerHTML; }
+load();
+setInterval(load, 15000);   // live-ish while a render runs
+</script>
+</body>
+</html>

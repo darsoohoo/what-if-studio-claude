@@ -22,6 +22,9 @@ pipeline/tryinfer_key.txt
 pipeline/elevenlabs_key.txt
 pipeline/openai_key.txt
 pipeline/review-notes.json
+pipeline/spend-ledger.json
+pipeline/exports/
+pipeline/old-queues/
 pipeline/produce/
 pipeline/produce-render.log
 

@@ -74,6 +74,9 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
   <span class="side-nav-item current" aria-current="page">
     <span class="side-nav-icon" aria-hidden="true">🎞️</span><span class="side-nav-label">Produce</span>
   </span>
+  <button type="button" id="navSpendBtn" class="side-nav-item side-nav-link">
+    <span class="side-nav-icon" aria-hidden="true">💰</span><span class="side-nav-label">Spend</span>
+  </button>
   <button type="button" id="navHelpBtn" class="side-nav-item side-nav-link">
     <span class="side-nav-icon" aria-hidden="true">❓</span><span class="side-nav-label">How to</span>
   </button>
@@ -93,10 +96,31 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
 
   <div id="flow" hidden>
     <section>
+      <h2>✏️ Script <span class="hint" style="margin:0;display:inline">— fix a typo or tweak pacing right here; the voice, captions, and post kit all follow. A "—" or "…" makes the narrator pause.</span></h2>
+      <details id="scriptBox">
+        <summary style="cursor:pointer;color:var(--text-dim);font-size:13px">Show the script</summary>
+        <label class="field-label" for="scTitle" style="display:block;margin-top:10px;font-size:12px;color:var(--text-faint)">Title (also the cover text)</label>
+        <input type="text" id="scTitle" style="width:100%;font:inherit;color:var(--text);background:var(--bg-inset);border:1px solid var(--border-strong);border-radius:8px;padding:8px 10px">
+        <label class="field-label" for="scHook" style="display:block;margin-top:10px;font-size:12px;color:var(--text-faint)">Spoken hook (opens the video)</label>
+        <textarea id="scHook" rows="2" style="width:100%;font:inherit;color:var(--text);background:var(--bg-inset);border:1px solid var(--border-strong);border-radius:8px;padding:8px 10px;resize:vertical"></textarea>
+        <label class="field-label" for="scBeats" style="display:block;margin-top:10px;font-size:12px;color:var(--text-faint)">Beats — one per line</label>
+        <textarea id="scBeats" rows="8" style="width:100%;font:inherit;font-size:13px;color:var(--text);background:var(--bg-inset);border:1px solid var(--border-strong);border-radius:8px;padding:8px 10px;resize:vertical"></textarea>
+        <label class="field-label" for="scOutro" style="display:block;margin-top:10px;font-size:12px;color:var(--text-faint)">Outro</label>
+        <textarea id="scOutro" rows="2" style="width:100%;font:inherit;color:var(--text);background:var(--bg-inset);border:1px solid var(--border-strong);border-radius:8px;padding:8px 10px;resize:vertical"></textarea>
+        <div class="row">
+          <button type="button" id="scSaveBtn" class="primary">Save script</button>
+          <span class="status" id="scStatus" style="margin:0" role="status" aria-live="polite"></span>
+        </div>
+      </details>
+    </section>
+
+    <section>
       <h2><span class="step">2</span>Get the clips</h2>
       <div class="apibox" id="visualsBox">
         <label class="opt"><input type="radio" name="visMode" value="manual" checked> 🎬 <strong>My own clips</strong> — tryinfer Studio or drag-drop (steps 2–3 below)</label>
-        <label class="opt" id="modeInfer" hidden><input type="radio" name="visMode" value="infer"> ⚡ <strong>AI video (tryinfer API)</strong> <span class="hint" id="apiHint" style="margin:0"></span></label>
+        <label class="opt" id="modeInfer" hidden><input type="radio" name="visMode" value="infer"> ⚡ <strong>AI video (tryinfer API)</strong> Model:
+          <select id="vidModel" style="width:auto"></select>
+          <span class="hint" id="apiHint" style="margin:0"></span></label>
         <label class="opt"><input type="radio" name="visMode" value="images"> 🖼️ <strong>AI images</strong> — one styled picture per beat with gentle motion. Engine:
           <select id="imgEngine" style="width:auto">
             <option value="pollinations">Free — Pollinations</option>
@@ -170,6 +194,7 @@ $id("navToggle").addEventListener("click", () => setNavCollapsed(!document.body.
 let sn = null; try { sn = localStorage.getItem("wis.navCollapsed"); } catch (e) {}
 setNavCollapsed(sn === null ? matchMedia("(max-width: 700px)").matches : sn === "1", false);
 $id("navVideosBtn").addEventListener("click", () => { location.href = "/"; });
+$id("navSpendBtn").addEventListener("click", () => { location.href = "/spend"; });
 $id("navHelpBtn").addEventListener("click", () => { location.href = "/help"; });
 $id("navStudioBtn").addEventListener("click", () => {
   if (history.length > 1) history.back();
@@ -185,7 +210,10 @@ async function loadQueues() {
     for (const it of q.items) {
       const opt = document.createElement("option");
       opt.value = q.file + "|" + it.slot;
-      opt.textContent = it.title + "  (" + q.file + ", slot " + it.slot + ")";
+      const extras = [q.date];
+      if (q.items.length > 1) extras.push("slot " + it.slot);
+      if (it.staged) extras.push(it.staged + " clip" + (it.staged === 1 ? "" : "s") + " staged");
+      opt.textContent = `${it.title}  —  ${extras.join(" · ")}`;
       sel.appendChild(opt);
     }
   }
@@ -203,15 +231,27 @@ $id("pkgSelect").addEventListener("change", async (e) => {
   if (!info.infer && visMode() === "infer") {
     document.querySelector('input[name="visMode"][value="manual"]').checked = true;
   }
-  const est = (info.prompts.length * 5 * 0.13).toFixed(2);
-  $id("apiHint").textContent =
-    `— one 5s clip per beat, ≈$${est} for ${info.prompts.length} (cached clips are free)`;
+  S.obsPrices = info.observed_prices || { video: {}, image: {} };
+  const vm = $id("vidModel");
+  const keepModel = vm.value;
+  vm.innerHTML = "";
+  const vmodels = (info.video_models && info.video_models.length) ? info.video_models : ["seedance-2.0-pro"];
+  vmodels.forEach(m => {
+    const o = document.createElement("option");
+    const p = clipPrice(m);
+    o.value = m; o.textContent = p ? `${m} — $${p.toFixed(2)}/clip` : m;
+    vm.appendChild(o);
+  });
+  vm.value = [...vm.options].some(o => o.value === keepModel) ? keepModel
+    : ([...vm.options].some(o => o.value === "seedance-2.0-pro") ? "seedance-2.0-pro" : vmodels[0]);
+  updateVidHint();
   const eng = $id("imgEngine");
   const keep = eng.value;
   eng.innerHTML = "<option value='pollinations'>Free — Pollinations</option>";
   (info.image_models || []).forEach(m => {
     const o = document.createElement("option");
-    o.value = m; o.textContent = m + " (paid)";
+    const p = (S.obsPrices.image || {})[m];
+    o.value = m; o.textContent = m + (p ? ` — $${p.toFixed(3)}/img` : " (paid)");
     eng.appendChild(o);
   });
   if ([...eng.options].some(o => o.value === keep)) eng.value = keep;
@@ -234,7 +274,37 @@ $id("pkgSelect").addEventListener("change", async (e) => {
     vs.appendChild(o);
   });
   updateVoicePlayBtn();
+  fillScript(info.script);
   $id("flow").hidden = false;
+});
+
+/* ---------- script editing (writes back into the archived export) ---------- */
+function fillScript(s) {
+  s = s || {};
+  $id("scTitle").value = s.title || "";
+  $id("scHook").value = s.hook || "";
+  $id("scBeats").value = (s.beats || []).join("\n");
+  $id("scOutro").value = s.outro || "";
+  $id("scStatus").textContent = "";
+  $id("scriptBox").open = false;
+}
+$id("scSaveBtn").addEventListener("click", async () => {
+  const beats = $id("scBeats").value.split("\n").map(b => b.trim()).filter(Boolean);
+  if (beats.length < 3) { $id("scStatus").className = "status bad"; $id("scStatus").textContent = "Need at least 3 beats (one per line)."; return; }
+  $id("scSaveBtn").disabled = true;
+  $id("scStatus").className = "status"; $id("scStatus").textContent = "Saving…";
+  const r = await api("/api/produce/edit", {
+    queue: S.queue, slot: S.slot,
+    title: $id("scTitle").value, hook: $id("scHook").value,
+    beats, outro: $id("scOutro").value,
+  });
+  $id("scSaveBtn").disabled = false;
+  if (r.error) { $id("scStatus").className = "status bad"; $id("scStatus").textContent = r.error; return; }
+  $id("scStatus").className = "status good";
+  $id("scStatus").textContent = "✓ Saved — the next render speaks and captions this version.";
+  // Prompts derive from the beats - refresh them (keeps the script box open).
+  const info = await api(`/api/produce/info?queue=${encodeURIComponent(S.queue)}&slot=${S.slot}`);
+  if (!info.error) { S.prompts = info.prompts; renderPrompts(info.prompts); updateVidHint(); }
 });
 
 /* ---------- voice sample preview (free - ElevenLabs hosts one per voice) ---------- */
@@ -278,6 +348,28 @@ document.querySelectorAll('input[name="visMode"]').forEach(r => r.addEventListen
   applyVisMode();
 }));
 
+/* Per-clip price for a video model: seedance-2.0-pro's rate we know exactly;
+   everything else is learned from the spend ledger the first time it's used
+   (the API publishes no rates). Returns null when still unknown. */
+function clipPrice(m) {
+  if (m === "seedance-2.0-pro") return 0.65;
+  const p = ((S.obsPrices || {}).video || {})[m];
+  return p || null;
+}
+function updateVidHint() {
+  const n = S.prompts.length;
+  const m = $id("vidModel").value;
+  const p = clipPrice(m);
+  $id("apiHint").textContent = p
+    ? `— one 5s clip per beat, ≈$${(n * p).toFixed(2)} for ${n}${m === "seedance-2.0-pro" ? "" : " (learned from your past renders)"} (cached clips are free)`
+    : `— one 5s clip per beat; ${m} bills per clip — its price is unknown until your first render with it (then it shows here; fast/flash models cost far less than pro; cached clips are free)`;
+}
+$id("vidModel").addEventListener("change", () => {
+  document.querySelector('input[name="visMode"][value="infer"]').checked = true;
+  updateVidHint();
+  applyVisMode();
+});
+
 /* ---------- step 2: prompts ---------- */
 function renderPrompts(prompts) {
   const box = $id("prompts");
@@ -307,7 +399,7 @@ function renderClips(staged) {
     const div = document.createElement("div");
     div.className = "clip";
     const vid = document.createElement("video");
-    vid.src = `/produce-files/${S.dir}/${c.name}`;
+    vid.src = `/produce-files/${S.dir}/${c.name}?v=${c.mtime || 0}`;
     vid.preload = "metadata"; vid.muted = true;
     vid.addEventListener("mouseenter", () => vid.play().catch(() => {}));
     vid.addEventListener("mouseleave", () => { vid.pause(); vid.currentTime = 0; });
@@ -366,16 +458,63 @@ dz.addEventListener("drop", async (e) => {
   $id("clipStatus").textContent = "";
 });
 
+/* ---------- render-done announcement: system toast + chime + title flash ----------
+   Renders take minutes and the user tabs away - make the finish unmissable.
+   Notification permission is requested on the render click (a user gesture);
+   the AudioContext is created there too so the chime survives autoplay policy. */
+let audioCtx = null;
+const baseTitle = document.title;
+
+function chime(ok) {
+  if (!audioCtx) return;
+  audioCtx.resume().catch(() => {});
+  const notes = ok ? [523.25, 659.25, 783.99] : [330, 262];   // rising triad vs. sad two-tone
+  notes.forEach((f, i) => {
+    const t = audioCtx.currentTime + i * 0.18;
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = "sine"; o.frequency.value = f;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.25, t + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(t); o.stop(t + 0.5);
+  });
+}
+
+function notifyDone(ok) {
+  const msg = ok ? "✅ Your video is ready — see it in Videos" : "❌ Render failed — check the log";
+  try {
+    if ("Notification" in window && Notification.permission === "granted") {
+      const n = new Notification("What If Studeos", { body: msg, tag: "wis-render" });
+      n.onclick = () => { window.focus(); n.close(); };
+    }
+  } catch (e) {}
+  try { chime(ok); } catch (e) {}
+  document.title = (ok ? "✅ DONE — " : "❌ FAILED — ") + baseTitle;
+  const restore = () => { document.title = baseTitle; document.removeEventListener("visibilitychange", restore); };
+  if (document.hidden) document.addEventListener("visibilitychange", restore);
+  else setTimeout(restore, 10000);
+}
+
 /* ---------- step 4: render ---------- */
 let pollTimer = null;
 $id("renderBtn").addEventListener("click", async () => {
+  // User gesture: unlock the two announcement channels for later.
+  try {
+    if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+  } catch (e) {}
   const mode = visMode();
   const engine = $id("imgEngine").value;
+  const vidModel = $id("vidModel").value;
   const paidImages = mode === "images" && engine !== "pollinations";
   if (mode === "infer") {
-    const est = (S.prompts.length * 5 * 0.13).toFixed(2);
-    if (!confirm(`This generates ${S.prompts.length} AI clips via the tryinfer API — about $${est} `
-        + `billed to your tryinfer account (cached clips are free). Start?`)) return;
+    const p = clipPrice(vidModel);
+    const cost = p
+      ? `about $${(S.prompts.length * p).toFixed(2)}`
+      : `billed per clip at ${vidModel}'s rate (the exact price prints in the log)`;
+    if (!confirm(`This generates ${S.prompts.length} AI clips with ${vidModel} via the tryinfer API — ${cost} `
+        + `on your tryinfer account (cached clips are free). Start?`)) return;
   }
   if (paidImages) {
     if (!confirm(`This generates ${S.prompts.length} images with ${engine} via the tryinfer API — `
@@ -384,6 +523,7 @@ $id("renderBtn").addEventListener("click", async () => {
   const r = await api("/api/produce/render", {
     queue: S.queue, slot: S.slot,
     infer: mode === "infer",
+    infer_model: vidModel,
     ai_visuals: mode === "images" && !paidImages,
     infer_images: paidImages ? engine : false,
     ai_style: $id("imgStyle").value,
@@ -410,8 +550,18 @@ async function pollRender() {
   if (!s.running) {
     clearInterval(pollTimer);
     $id("renderBtn").disabled = false;
-    if (s.ok) { setRenderStatus("✓ Done! Your video is ready.", "good"); $id("openVideosBtn").hidden = false; }
-    else setRenderStatus("Render failed — details in the log below.", "bad");
+    if (s.ok) {
+      setRenderStatus("✓ Done! Your video is ready.", "good");
+      const btn = $id("openVideosBtn");
+      btn.hidden = false;
+      btn.classList.add("primary");
+      notifyDone(true);
+    } else {
+      setRenderStatus((s.log || "").trim()
+        ? "Render failed — details in the log below."
+        : "Render failed before it could write a log — it was likely interrupted (e.g. the dashboard restarted). Your caches and credits are untouched; just render again.", "bad");
+      notifyDone(false);
+    }
   }
 }
 function setRenderStatus(msg, cls) {

@@ -42,7 +42,13 @@ while ($true) {
         Sort-Object LastWriteTime
     foreach ($f in $exports) {
         Start-Sleep -Seconds 1   # let the browser finish writing
-        $dest = Join-Path $pipeline "whatifstudio-queue.json"
+        # Archive every export under a unique dated name - the Produce page
+        # lists this folder as the permanent history, nothing is overwritten.
+        $exportDir = Join-Path $pipeline "exports"
+        if (-not (Test-Path $exportDir)) { New-Item -ItemType Directory -Path $exportDir | Out-Null }
+        $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+        $destName = "$($f.BaseName)-$stamp.json"
+        $dest = Join-Path $exportDir $destName
         try {
             Move-Item -Path $f.FullName -Destination $dest -Force -ErrorAction Stop
         } catch {
@@ -56,11 +62,11 @@ while ($true) {
             if ($data.items) { $count = @($data.items).Count }
         } catch {}
 
-        Log "picked up $($f.Name) - rendering $count video(s)..."
+        Log "picked up $($f.Name) -> exports\$destName - rendering $count video(s)..."
         Notify "What If Studio" "Rendering $count video(s) now. New scenarios take 2-5 minutes each - the output folder opens when everything is ready."
 
         Set-Location $pipeline
-        & python make_videos.py whatifstudio-queue.json --ai-visuals 2>&1 |
+        & python make_videos.py "exports/$destName" --ai-visuals 2>&1 |
             ForEach-Object { Add-Content -Path $log -Value "    $_" }
         $code = $LASTEXITCODE
         Log "render finished (exit code $code)"
