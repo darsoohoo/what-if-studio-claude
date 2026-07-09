@@ -54,6 +54,18 @@ button:disabled { opacity: 0.45; cursor: default; }
 .spoken .mini { border: none; background: none; padding: 0 2px; font-size: 11.5px; font-style: normal; font-weight: 600; color: var(--accent-strong); flex: none; }
 .spoken .mini:hover { color: var(--text); border: none; }
 .spoken .mini.keep { color: var(--good); }
+.hist-row { display: flex; gap: 10px; align-items: center; font-size: 12.5px; color: var(--text-dim); padding: 7px 2px; border-bottom: 1px solid var(--border); }
+.hist-row .when { flex: none; color: var(--text-faint); font-size: 11.5px; white-space: nowrap; }
+.hist-row .kind { flex: none; font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--accent-strong); width: 62px; }
+.hist-row .preview { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist-row .note { flex: none; color: var(--text-faint); font-size: 11px; font-style: italic; }
+.hist-row button { flex: none; font-size: 12px; padding: 4px 10px; }
+.beat-hist { margin-top: 8px; border-top: 1px dashed var(--border-strong); padding-top: 6px; }
+.beat-hist .bh-head { font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-faint); margin: 6px 0 2px; }
+.bh-row { display: flex; gap: 8px; align-items: baseline; font-size: 12px; color: var(--text-dim); padding: 3px 0; }
+.bh-row .when { flex: none; color: var(--text-faint); font-size: 11px; white-space: nowrap; }
+.bh-row .val { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bh-row button { flex: none; font-size: 11.5px; padding: 2px 9px; }
 .prompt .thumb { flex: none; width: 88px; display: flex; flex-direction: column; gap: 8px; }
 .refslot { display: flex; align-items: flex-start; gap: 6px; }
 .refslot input[type="radio"] { margin: 2px 0 0; accent-color: var(--accent); flex: none; }
@@ -168,6 +180,10 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
           <button type="button" id="prUndoBtn">Undo edits</button>
           <span class="status" id="prStatus" style="margin:0" role="status" aria-live="polite"></span>
         </div>
+        <details id="histBox" style="margin-top:12px">
+          <summary style="cursor:pointer;color:var(--text-dim);font-size:13px">🕘 Full history — whole saved versions of the script and prompts (each beat row has its own 🕘 for just that beat)</summary>
+          <div id="histList"></div>
+        </details>
       </div>
     </section>
 
@@ -311,6 +327,8 @@ $id("pkgSelect").addEventListener("change", async (e) => {
   });
   updateVoicePlayBtn();
   fillScript(info.script);
+  $id("histBox").open = false;   // each package has its own history
+  $id("histList").innerHTML = "";
   $id("flow").hidden = false;
   sizePrompts();   // textareas measure 0 while #flow is hidden
 });
@@ -339,6 +357,7 @@ $id("scSaveBtn").addEventListener("click", async () => {
   if (r.error) { $id("scStatus").className = "status bad"; $id("scStatus").textContent = r.error; return; }
   $id("scStatus").className = "status good";
   $id("scStatus").textContent = "✓ Saved — the next render speaks and captions this version.";
+  if ($id("histBox").open) loadHistory();
   // Prompts derive from the beats - refresh them (keeps the script box open).
   const info = await api(`/api/produce/info?queue=${encodeURIComponent(S.queue)}&slot=${S.slot}`);
   if (!info.error) {
@@ -462,18 +481,12 @@ function renderPrompts(prompts) {
     enh.textContent = "✨";
     enh.title = "AI-enhance this spoken line — when this beat has a selected image or video, the rewrite matches what's on screen; you keep or undo";
     enh.setAttribute("aria-label", `AI-enhance the spoken line of beat ${i + 1}`);
-    enh.addEventListener("click", async () => {
-      enh.disabled = true; enh.textContent = "…";
-      const r = await api("/api/produce/enhance-line", { queue: S.queue, slot: S.slot, index: i });
-      enh.disabled = false; enh.textContent = "✨";
-      if (r.error) {
-        $id("prSaveRow").hidden = false;
-        $id("prStatus").className = "status bad";
-        $id("prStatus").textContent = r.error;
-        return;
-      }
+    // Show a proposed spoken line (from ✨ or from this beat's history) with
+    // keep/undo - nothing is saved until keep.
+    const proposeLine = (newText) => {
+      if (spoken.classList.contains("suggested")) return;   // one proposal at a time
       const original = line.textContent;
-      line.textContent = r.line;
+      line.textContent = newText;
       spoken.classList.add("suggested");
       enh.hidden = true;
       const keep = document.createElement("button");
@@ -484,7 +497,7 @@ function renderPrompts(prompts) {
       undo.addEventListener("click", () => { line.textContent = original; settle(); });
       keep.addEventListener("click", async () => {
         keep.disabled = undo.disabled = true; keep.textContent = "saving…";
-        const err = await saveScriptLine(i, r.line);
+        const err = await saveScriptLine(i, newText);
         if (err) {
           keep.disabled = undo.disabled = false; keep.textContent = "✓ keep";
           $id("prSaveRow").hidden = false;
@@ -494,6 +507,18 @@ function renderPrompts(prompts) {
         // on success renderPrompts re-runs with the fresh script - no cleanup needed
       });
       spoken.append(keep, undo);
+    };
+    enh.addEventListener("click", async () => {
+      enh.disabled = true; enh.textContent = "…";
+      const r = await api("/api/produce/enhance-line", { queue: S.queue, slot: S.slot, index: i });
+      enh.disabled = false; enh.textContent = "✨";
+      if (r.error) {
+        $id("prSaveRow").hidden = false;
+        $id("prStatus").className = "status bad";
+        $id("prStatus").textContent = r.error;
+        return;
+      }
+      proposeLine(r.line);
     });
     spoken.append(tag, line, enh);
     const ta = document.createElement("textarea");
@@ -504,7 +529,10 @@ function renderPrompts(prompts) {
     const suffix = document.createElement("div");
     suffix.className = "prompt-suffix";
     suffix.textContent = `+ ${S.promptSuffix} — added automatically`;
-    wrap.append(spoken, ta, suffix);
+    const bh = document.createElement("div");
+    bh.className = "beat-hist";
+    bh.hidden = true;
+    wrap.append(spoken, ta, suffix, bh);
     const btns = document.createElement("div");
     btns.className = "btns";
     const btn = document.createElement("button");
@@ -538,7 +566,19 @@ function renderPrompts(prompts) {
     };
     const dbi = mkDescribe("🖼 From image", "describeBtn", "image");
     const dbv = mkDescribe("🎬 From video", "describeVidBtn", "video");
-    btns.append(btn, dbi, dbv);
+    const hb = document.createElement("button");
+    hb.textContent = "🕘 History";
+    hb.title = "Past versions of this beat's spoken line and prompt";
+    hb.addEventListener("click", async () => {
+      if (!bh.hidden) { bh.hidden = true; return; }
+      hb.disabled = true;
+      const r = await api(`/api/produce/history?queue=${encodeURIComponent(S.queue)}&slot=${S.slot}`);
+      hb.disabled = false;
+      if (r.error) return;
+      renderBeatHist(bh, i, r.history || [], prompts.length, ta, proposeLine);
+      bh.hidden = false;
+    });
+    btns.append(btn, dbi, dbv, hb);
     div.append(thumb, wrap, btns);
     // The whole row is an image target: drop a file on it, or point at it
     // and paste. dropZone below stays the target for .mp4 clips.
@@ -738,7 +778,121 @@ async function saveScriptLine(i, newLine) {
     fillScript(info.script);
     updateVidHint();
   }
+  if ($id("histBox").open) loadHistory();
   return null;
+}
+/* ---------- history: every saved script/prompts version, restorable ---------- */
+async function refreshAll() {
+  const info = await api(`/api/produce/info?queue=${encodeURIComponent(S.queue)}&slot=${S.slot}`);
+  if (info.error) return;
+  S.prompts = info.prompts;
+  S.segments = info.segments || [];
+  S.script = info.script;
+  S.refs = info.refs || [];
+  renderPrompts(info.prompts);
+  fillScript(info.script);
+  updateVidHint();
+}
+/* Per-beat history: slice the whole-version snapshots down to ONE beat's
+   spoken line (hook / beats[i-1] / outro by row position) and prompt,
+   deduping unchanged repeats. "Use" proposes, never saves. */
+function beatVersions(history, i, rowCount) {
+  const spoken = [], prompts = [];
+  for (const e of history) {
+    if (e.kind === "prompts") {
+      const v = (e.data || [])[i];
+      if (typeof v === "string" && v) prompts.push({ ts: e.ts, v });
+    } else if (e.kind === "script") {
+      const d = e.data || {};
+      const v = i === 0 ? d.hook : (i === rowCount - 1 ? d.outro : (d.beats || [])[i - 1]);
+      if (typeof v === "string" && v) spoken.push({ ts: e.ts, v });
+    }
+  }
+  const dedupe = (arr) => arr.filter((e, idx) => idx === 0 || e.v !== arr[idx - 1].v);
+  return { spoken: dedupe(spoken), prompts: dedupe(prompts) };
+}
+function renderBeatHist(bh, i, history, rowCount, ta, proposeLine) {
+  bh.innerHTML = "";
+  const vers = beatVersions(history, i, rowCount);
+  const mkSection = (label, items, currentValue, useFn) => {
+    const versions = [...items].reverse().filter(e => e.v !== currentValue).slice(0, 8);
+    const head = document.createElement("div");
+    head.className = "bh-head";
+    head.textContent = label + (versions.length ? "" : " — no other versions saved yet");
+    bh.appendChild(head);
+    versions.forEach(e => {
+      const row = document.createElement("div");
+      row.className = "bh-row";
+      const when = document.createElement("span");
+      when.className = "when"; when.textContent = e.ts;
+      const val = document.createElement("span");
+      val.className = "val"; val.textContent = e.v; val.title = e.v;
+      const use = document.createElement("button");
+      use.textContent = "Use";
+      use.addEventListener("click", () => { useFn(e.v); bh.hidden = true; });
+      row.append(when, val, use);
+      bh.appendChild(row);
+    });
+  };
+  mkSection("🎙 spoken line", vers.spoken, (S.segments || [])[i] || "",
+    (v) => proposeLine(v));
+  mkSection("🎬 prompt", vers.prompts, ta.value.trim(),
+    (v) => { ta.value = v; autoGrow(ta); promptsDirty(true); ta.focus(); });
+}
+$id("histBox").addEventListener("toggle", () => { if ($id("histBox").open) loadHistory(); });
+async function loadHistory() {
+  const r = await api(`/api/produce/history?queue=${encodeURIComponent(S.queue)}&slot=${S.slot}`);
+  const box = $id("histList");
+  box.innerHTML = "";
+  const list = r.history || [];
+  if (!list.length) {
+    const p = document.createElement("p");
+    p.className = "hint";
+    p.textContent = "No saved versions yet — every Save script, Save prompts, and ✨ keep lands here.";
+    box.appendChild(p);
+    return;
+  }
+  // the newest entry of each kind IS the current version - no restore button
+  const currentIdx = {};
+  list.forEach(e => { currentIdx[e.kind] = e.i; });
+  [...list].reverse().forEach(e => {
+    const row = document.createElement("div");
+    row.className = "hist-row";
+    const when = document.createElement("span");
+    when.className = "when"; when.textContent = e.ts;
+    const kind = document.createElement("span");
+    kind.className = "kind"; kind.textContent = e.kind;
+    const prev = document.createElement("span");
+    prev.className = "preview"; prev.textContent = e.preview;
+    prev.title = e.preview;
+    row.append(when, kind, prev);
+    if (e.note) {
+      const note = document.createElement("span");
+      note.className = "note"; note.textContent = e.note;
+      row.appendChild(note);
+    }
+    if (currentIdx[e.kind] === e.i) {
+      const cur = document.createElement("span");
+      cur.className = "note"; cur.textContent = "current";
+      row.appendChild(cur);
+    } else {
+      const btn = document.createElement("button");
+      btn.textContent = "Restore";
+      btn.addEventListener("click", async () => {
+        btn.disabled = true; btn.textContent = "Restoring…";
+        const res = await api("/api/produce/revert", { queue: S.queue, slot: S.slot, index: e.i });
+        if (res.error) { btn.disabled = false; btn.textContent = "Restore"; alert(res.error); return; }
+        await refreshAll();
+        $id("histBox").open = true;
+        await loadHistory();
+        $id("prSaveRow").hidden = false;
+        $id("prStatus").className = "status good";
+        $id("prStatus").textContent = `✓ Restored the ${e.kind} from ${e.ts} — the restore itself is in history too.`;
+      });
+      row.appendChild(btn);
+    }
+    box.appendChild(row);
+  });
 }
 $id("prUndoBtn").addEventListener("click", () => renderPrompts(S.prompts));
 $id("prSaveBtn").addEventListener("click", async () => {
@@ -754,6 +908,7 @@ $id("prSaveBtn").addEventListener("click", async () => {
   $id("prSaveRow").hidden = false;
   st.className = "status good";
   st.textContent = "✓ Saved — copies and AI renders now use your wording (editing the script resets it).";
+  if ($id("histBox").open) loadHistory();
 });
 
 /* ---------- step 3: clips ---------- */

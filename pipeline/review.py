@@ -454,6 +454,36 @@ def renumber(d):
         f.rename(d / f"{i + 1:02d}.mp4")
 
 
+HISTORY_MAX = 40
+
+
+def load_history(d):
+    try:
+        h = json.loads((d / "history.json").read_text(encoding="utf-8"))
+        return h if isinstance(h, list) else []
+    except Exception:
+        return []
+
+
+def record_history(d, kind, data, baseline=None, note=""):
+    """Append a snapshot after a successful save (kind: script|prompts).
+    The first save of a kind also stores the pre-save state, so the very
+    original stays recoverable. Restores are recorded too - history only
+    ever grows forward, nothing is destroyed by reverting."""
+    h = load_history(d)
+    now = time.strftime("%Y-%m-%d %H:%M")
+    if baseline is not None and not any(e.get("kind") == kind for e in h):
+        h.append({"ts": now, "kind": kind, "data": baseline, "note": "original"})
+    h.append({"ts": now, "kind": kind, "data": data, "note": note})
+    (d / "history.json").write_text(json.dumps(h[-HISTORY_MAX:], indent=1),
+                                    encoding="utf-8")
+
+
+def script_snapshot(pkg):
+    return {"title": pkg.get("title", ""), "hook": (pkg.get("hooks") or [""])[0],
+            "beats": list(pkg.get("beats") or []), "outro": pkg.get("outro", "")}
+
+
 REF_IMAGE_EXTS = {".jpg": "image/jpeg", ".jpeg": "image/jpeg",
                   ".png": "image/png", ".webp": "image/webp"}
 
@@ -877,6 +907,27 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self.send_json({"error": str(exc)}, 400)
             return
+        if self.path.startswith("/api/produce/history"):
+            q = parse_qs(urlparse(self.path).query)
+            try:
+                queue = (q.get("queue") or [""])[0]
+                slot = int((q.get("slot") or ["0"])[0])
+                pkg = load_package(queue, slot)
+                d = produce_dir(staging_key(queue, slot, pkg))
+                entries = []
+                for i, e in enumerate(load_history(d)):
+                    data_ = e.get("data")
+                    if e.get("kind") == "script":
+                        preview = str((data_ or {}).get("hook", ""))[:90]
+                    else:
+                        preview = str((data_ or [""])[0])[:90]
+                    entries.append({"i": i, "ts": e.get("ts", ""), "kind": e.get("kind", ""),
+                                    "note": e.get("note", ""), "preview": preview,
+                                    "data": data_})
+                self.send_json({"history": entries})
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 400)
+            return
         if self.path == "/api/produce/render-status":
             log_tail = ""
             try:
@@ -1087,6 +1138,7 @@ class Handler(BaseHTTPRequestHandler):
                             if it.get("slot") == slot and it.get("package")), None)
                 if not pkg:
                     raise RuntimeError(f"slot {slot} not in {qpath.name}")
+                old_script = script_snapshot(pkg)
 
                 def clean(v, cap):
                     return re.sub(r"\s+", " ", str(v)).strip()[:cap]
@@ -1111,6 +1163,11 @@ class Handler(BaseHTTPRequestHandler):
                     for f in mv.POLISH_CACHE.glob(f"{slug}-*.json"):
                         f.unlink()
                 mv._polish_memo.clear()
+                try:
+                    d = produce_dir(staging_key(str(data.get("queue", "")), slot, pkg))
+                    record_history(d, "script", script_snapshot(pkg), baseline=old_script)
+                except Exception:
+                    pass   # history must never block a save
                 self.send_json({"ok": True})
             except Exception as exc:
                 self.send_json({"error": str(exc)}, 400)
@@ -1186,6 +1243,59 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": str(exc)}, 400)
             return
 
+        if self.path == "/api/produce/revert":
+            # Restore a history snapshot. The restore is itself recorded, so
+            # nothing is ever lost - you can revert the revert.
+            try:
+                queue = str(data.get("queue", ""))
+                slot = int(data.get("slot") or 0)
+                qpath = queue_path(queue)
+                if not qpath or not qpath.is_file():
+                    raise RuntimeError("queue file not found")
+                qdata = json.loads(qpath.read_text(encoding="utf-8"))
+                pkg = next((it["package"] for it in qdata.get("items", [])
+                            if it.get("slot") == slot and it.get("package")), None)
+                if not pkg:
+                    raise RuntimeError(f"slot {slot} not in {qpath.name}")
+                d = produce_dir(staging_key(queue, slot, pkg))
+                h = load_history(d)
+                idx = int(data.get("index", -1))
+                if not (0 <= idx < len(h)):
+                    raise RuntimeError("no such version")
+                entry = h[idx]
+                if entry.get("kind") == "prompts":
+                    save_prompts(pkg, [str(p) for p in (entry.get("data") or [])])
+                    record_history(d, "prompts", entry["data"],
+                                   note=f"restored from {entry.get('ts', '')}")
+                else:
+                    snap = entry.get("data") or {}
+                    cur_prompts = beat_prompts(pkg)   # preserved when possible
+                    if str(snap.get("title", "")).strip():
+                        pkg["title"] = str(snap["title"])
+                    hooks = list(pkg.get("hooks") or [""])
+                    hooks[0] = str(snap.get("hook", "")) or hooks[0]
+                    pkg["hooks"] = hooks
+                    beats = [str(b) for b in (snap.get("beats") or []) if str(b).strip()]
+                    if len(beats) < 3:
+                        raise RuntimeError("that version has too few beats to restore")
+                    pkg["beats"] = beats
+                    if str(snap.get("outro", "")).strip():
+                        pkg["outro"] = str(snap["outro"])
+                    qpath.write_text(json.dumps(qdata, indent=2), encoding="utf-8")
+                    slug = mv.slugify(str(pkg.get("scenarioId", "pkg")))
+                    if mv.POLISH_CACHE.is_dir():
+                        for f in mv.POLISH_CACHE.glob(f"{slug}-*.json"):
+                            f.unlink()
+                    mv._polish_memo.clear()
+                    if len(cur_prompts) == len(mv.narration_segments(pkg, 0)):
+                        save_prompts(pkg, cur_prompts)
+                    record_history(d, "script", script_snapshot(pkg),
+                                   note=f"restored from {entry.get('ts', '')}")
+                self.send_json({"ok": True})
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 400)
+            return
+
         if self.path == "/api/produce/enhance-line":
             # AI-rewrite one spoken narration line; nothing is saved here -
             # the client shows the suggestion and only /api/produce/edit
@@ -1223,10 +1333,19 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/produce/prompts":
             # Save edited visual prompts (cores, no style suffix).
             try:
-                pkg = load_package(str(data.get("queue", "")), int(data.get("slot") or 0))
+                queue = str(data.get("queue", ""))
+                slot = int(data.get("slot") or 0)
+                pkg = load_package(queue, slot)
                 prompts = [re.sub(r"\s+", " ", str(p)).strip(" ,.;")[:600]
                            for p in (data.get("prompts") or [])]
+                old_prompts = beat_prompts(pkg)
                 save_prompts(pkg, prompts)
+                if prompts != old_prompts:
+                    try:
+                        record_history(produce_dir(staging_key(queue, slot, pkg)),
+                                       "prompts", prompts, baseline=old_prompts)
+                    except Exception:
+                        pass   # history must never block a save
                 self.send_json({"ok": True, "prompts": beat_prompts(pkg)})
             except Exception as exc:
                 self.send_json({"error": str(exc)}, 400)
