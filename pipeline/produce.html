@@ -41,8 +41,31 @@ button:disabled { opacity: 0.45; cursor: default; }
 .primary { background: linear-gradient(135deg, var(--accent), #6a5ae0); border-color: transparent; color: #fff; }
 .hint { color: var(--text-faint); font-size: 12.5px; margin: 6px 0 0; }
 .prompt { display: flex; gap: 10px; align-items: flex-start; background: var(--bg-inset); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-top: 8px; }
+.prompt.imgover { border-color: var(--accent); background: rgba(139,123,255,0.08); }
 .prompt .num { flex: none; font-weight: 700; color: var(--accent-strong); }
 .prompt .text { flex: 1; font-size: 13px; color: var(--text-dim); }
+.prompt .text textarea { display: block; width: 100%; font: inherit; font-size: 13px; line-height: 1.5; color: var(--text-dim); background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 1px 5px; margin-left: -6px; resize: none; overflow: hidden; }
+.prompt .text textarea:hover { border-color: var(--border-strong); }
+.prompt .text textarea:focus { border-color: var(--accent); background: var(--bg); color: var(--text); }
+.prompt-suffix { color: var(--text-faint); font-size: 11.5px; margin-top: 2px; }
+.spoken { display: flex; gap: 6px; align-items: baseline; font-size: 12.5px; color: var(--text-dim); font-style: italic; border-left: 2px solid var(--accent); padding: 1px 8px; margin-bottom: 7px; }
+.spoken .tag { flex: none; font-style: normal; font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--accent-strong); }
+.spoken.suggested { border-left-color: var(--good); color: var(--text); }
+.spoken .mini { border: none; background: none; padding: 0 2px; font-size: 11.5px; font-style: normal; font-weight: 600; color: var(--accent-strong); flex: none; }
+.spoken .mini:hover { color: var(--text); border: none; }
+.spoken .mini.keep { color: var(--good); }
+.prompt .thumb { flex: none; width: 88px; display: flex; flex-direction: column; gap: 8px; }
+.refslot { display: flex; align-items: flex-start; gap: 6px; }
+.refslot input[type="radio"] { margin: 2px 0 0; accent-color: var(--accent); flex: none; }
+.refslot .slotbody { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.prompt .thumb img, .prompt .thumb video { width: 58px; height: 64px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border-strong); cursor: pointer; display: block; background: #000; }
+.prompt .thumb img:hover, .prompt .thumb video:hover { border-color: var(--accent); }
+.prompt .thumb .addimg { width: 58px; height: 64px; border: 1px dashed var(--border-strong); border-radius: 6px; background: none; color: var(--text-faint); font-size: 11px; padding: 2px; }
+.prompt .thumb .addimg:hover { color: var(--accent-strong); }
+.prompt .thumb .rmimg { border: none; background: none; color: var(--text-faint); font-size: 10.5px; padding: 0; }
+.prompt .thumb .rmimg:hover { color: var(--danger); border: none; }
+.prompt .btns { flex: none; display: flex; flex-direction: column; gap: 6px; }
+.prompt .btns button { white-space: nowrap; }
 .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
 .drop { border: 2px dashed var(--border-strong); border-radius: 10px; padding: 22px; text-align: center; color: var(--text-faint); margin-top: 12px; }
 .drop.over { border-color: var(--accent); color: var(--accent-strong); background: rgba(139,123,255,0.06); }
@@ -135,8 +158,16 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
         </label>
       </div>
       <div id="manualPrompts">
-        <p class="hint">Manual path — in <a href="https://tryinfer.com" target="_blank" rel="noopener" style="color:var(--accent-strong)">tryinfer Studio</a>: <strong>9:16 vertical · 5s</strong> · your chosen model. Copy each prompt, generate, download — in order.</p>
+        <p class="hint" id="manualHint">Manual path — in <a href="https://tryinfer.com" target="_blank" rel="noopener" style="color:var(--accent-strong)">tryinfer Studio</a>: <strong>9:16 vertical · 5s</strong> · your chosen model. Copy each prompt, generate, download — in order.</p>
+        <p class="hint">Click any prompt to rewrite it — <strong>Save prompts</strong> keeps your wording for the Copy buttons <em>and</em> the AI modes above. Attach a picture or your own clip to a beat — <strong>＋ image</strong> / <strong>＋ video</strong>, drop a file on the row, or point at a row and paste (<strong>Ctrl+V</strong>). The <strong>radio button</strong> picks which one that beat uses: image = the AI animates from it, video = your clip plays as-is (nothing billed for that beat). <strong>🎥 From image</strong> writes the prompt for you: a video description of the picture.</p>
         <div id="prompts"></div>
+        <input type="file" id="refFile" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" hidden>
+        <input type="file" id="refVidFile" accept=".mp4,video/mp4" hidden>
+        <div class="row" id="prSaveRow" hidden>
+          <button type="button" id="prSaveBtn" class="primary">Save prompts</button>
+          <button type="button" id="prUndoBtn">Undo edits</button>
+          <span class="status" id="prStatus" style="margin:0" role="status" aria-live="polite"></span>
+        </div>
       </div>
     </section>
 
@@ -224,6 +255,11 @@ $id("pkgSelect").addEventListener("change", async (e) => {
   const info = await api(`/api/produce/info?queue=${encodeURIComponent(queue)}&slot=${slot}`);
   if (info.error) { alert(info.error); return; }
   S.queue = queue; S.slot = Number(slot); S.dir = info.dir; S.prompts = info.prompts;
+  S.promptSuffix = info.prompt_suffix || "";
+  S.segments = info.segments || [];
+  S.script = info.script;
+  S.refs = info.refs || [];
+  S.openai = !!info.openai;
   renderPrompts(info.prompts);
   renderClips(info.staged);
   $id("importCount").textContent = info.prompts.length;
@@ -276,6 +312,7 @@ $id("pkgSelect").addEventListener("change", async (e) => {
   updateVoicePlayBtn();
   fillScript(info.script);
   $id("flow").hidden = false;
+  sizePrompts();   // textareas measure 0 while #flow is hidden
 });
 
 /* ---------- script editing (writes back into the archived export) ---------- */
@@ -304,7 +341,16 @@ $id("scSaveBtn").addEventListener("click", async () => {
   $id("scStatus").textContent = "✓ Saved — the next render speaks and captions this version.";
   // Prompts derive from the beats - refresh them (keeps the script box open).
   const info = await api(`/api/produce/info?queue=${encodeURIComponent(S.queue)}&slot=${S.slot}`);
-  if (!info.error) { S.prompts = info.prompts; renderPrompts(info.prompts); updateVidHint(); }
+  if (!info.error) {
+    S.prompts = info.prompts;
+    S.promptSuffix = info.prompt_suffix || S.promptSuffix || "";
+    S.segments = info.segments || S.segments || [];
+    S.script = info.script || S.script;
+    S.refs = info.refs || [];
+    S.openai = !!info.openai;
+    renderPrompts(info.prompts);
+    updateVidHint();
+  }
 });
 
 /* ---------- voice sample preview (free - ElevenLabs hosts one per voice) ---------- */
@@ -336,7 +382,9 @@ function visMode() {
 }
 function applyVisMode() {
   const auto = visMode() !== "manual";
-  $id("manualPrompts").classList.toggle("skipped", auto);
+  // Only the manual-path instructions go dormant in AI modes - the prompt
+  // boxes stay live, since saved edits feed the AI generation too.
+  $id("manualHint").classList.toggle("skipped", auto);
   $id("stepClips").classList.toggle("skipped", auto);
   $id("renderBtn").textContent =
     visMode() === "infer" ? "⚡ Generate clips + render" :
@@ -360,9 +408,16 @@ function updateVidHint() {
   const n = S.prompts.length;
   const m = $id("vidModel").value;
   const p = clipPrice(m);
-  $id("apiHint").textContent = p
+  const refs = S.refs || [];
+  const notes = [];
+  const imgN = refs.filter(r => r && r.use === "image").length;
+  const vidN = refs.filter(r => r && r.use === "video").length;
+  if (imgN) notes.push(`${imgN} beat(s) will animate from your image`);
+  if (vidN) notes.push(`${vidN} beat(s) play your video as-is (not billed)`);
+  const imgNote = notes.length ? " · " + notes.join(" · ") : "";
+  $id("apiHint").textContent = (p
     ? `— one 5s clip per beat, ≈$${(n * p).toFixed(2)} for ${n}${m === "seedance-2.0-pro" ? "" : " (learned from your past renders)"} (cached clips are free)`
-    : `— one 5s clip per beat; ${m} bills per clip — its price is unknown until your first render with it (then it shows here; fast/flash models cost far less than pro; cached clips are free)`;
+    : `— one 5s clip per beat; ${m} bills per clip — its price is unknown until your first render with it (then it shows here; fast/flash models cost far less than pro; cached clips are free)`) + imgNote;
 }
 $id("vidModel").addEventListener("change", () => {
   document.querySelector('input[name="visMode"][value="infer"]').checked = true;
@@ -370,26 +425,336 @@ $id("vidModel").addEventListener("change", () => {
   applyVisMode();
 });
 
-/* ---------- step 2: prompts ---------- */
+/* ---------- step 2: prompts (click to edit, Save persists) ----------
+   The boxes hold the prompt CORE; the style tail (cinematic, 9:16, …) is
+   shown under each one and re-appended on Copy and at render time, so it
+   can't be doubled or lost. Save writes the wording into the polish cache -
+   the same place every render mode reads first. */
+function autoGrow(ta) { ta.style.height = "auto"; ta.style.height = ta.scrollHeight + "px"; }
+function sizePrompts() { document.querySelectorAll("#prompts textarea").forEach(autoGrow); }
+function promptsDirty(d) {
+  $id("prSaveRow").hidden = !d && !$id("prStatus").textContent;
+  $id("prSaveBtn").disabled = !d;
+  $id("prUndoBtn").disabled = !d;
+  if (d) { $id("prStatus").className = "status"; $id("prStatus").textContent = ""; }
+}
 function renderPrompts(prompts) {
   const box = $id("prompts");
   box.innerHTML = "";
   prompts.forEach((p, i) => {
     const div = document.createElement("div");
     div.className = "prompt";
+    div.dataset.index = i;
+    div.innerHTML = `<span class="num">${String(i + 1).padStart(2, "0")}</span>`;
+    const thumb = document.createElement("div");
+    thumb.className = "thumb";
+    const wrap = document.createElement("div");
+    wrap.className = "text";
+    const spoken = document.createElement("div");
+    spoken.className = "spoken";
+    const tag = document.createElement("span");
+    tag.className = "tag";
+    tag.textContent = i === 0 ? "🎙 hook" : (i === prompts.length - 1 ? "🎙 outro" : `🎙 beat ${i}`);
+    const line = document.createElement("span");
+    line.textContent = (S.segments || [])[i] || "";
+    const enh = document.createElement("button");
+    enh.className = "mini";
+    enh.textContent = "✨";
+    enh.title = "AI-enhance this spoken line — when this beat has a selected image or video, the rewrite matches what's on screen; you keep or undo";
+    enh.setAttribute("aria-label", `AI-enhance the spoken line of beat ${i + 1}`);
+    enh.addEventListener("click", async () => {
+      enh.disabled = true; enh.textContent = "…";
+      const r = await api("/api/produce/enhance-line", { queue: S.queue, slot: S.slot, index: i });
+      enh.disabled = false; enh.textContent = "✨";
+      if (r.error) {
+        $id("prSaveRow").hidden = false;
+        $id("prStatus").className = "status bad";
+        $id("prStatus").textContent = r.error;
+        return;
+      }
+      const original = line.textContent;
+      line.textContent = r.line;
+      spoken.classList.add("suggested");
+      enh.hidden = true;
+      const keep = document.createElement("button");
+      keep.className = "mini keep"; keep.textContent = "✓ keep";
+      const undo = document.createElement("button");
+      undo.className = "mini"; undo.textContent = "↩ undo";
+      const settle = () => { keep.remove(); undo.remove(); spoken.classList.remove("suggested"); enh.hidden = false; };
+      undo.addEventListener("click", () => { line.textContent = original; settle(); });
+      keep.addEventListener("click", async () => {
+        keep.disabled = undo.disabled = true; keep.textContent = "saving…";
+        const err = await saveScriptLine(i, r.line);
+        if (err) {
+          keep.disabled = undo.disabled = false; keep.textContent = "✓ keep";
+          $id("prSaveRow").hidden = false;
+          $id("prStatus").className = "status bad";
+          $id("prStatus").textContent = err;
+        }
+        // on success renderPrompts re-runs with the fresh script - no cleanup needed
+      });
+      spoken.append(keep, undo);
+    });
+    spoken.append(tag, line, enh);
+    const ta = document.createElement("textarea");
+    ta.rows = 1;
+    ta.value = p;
+    ta.setAttribute("aria-label", `Prompt ${i + 1} — click to edit`);
+    ta.addEventListener("input", () => { autoGrow(ta); promptsDirty(true); });
+    const suffix = document.createElement("div");
+    suffix.className = "prompt-suffix";
+    suffix.textContent = `+ ${S.promptSuffix} — added automatically`;
+    wrap.append(spoken, ta, suffix);
+    const btns = document.createElement("div");
+    btns.className = "btns";
     const btn = document.createElement("button");
     btn.textContent = "Copy";
     btn.addEventListener("click", async () => {
-      try { await navigator.clipboard.writeText(p); btn.textContent = "Copied ✓"; }
+      const full = ta.value.trim().replace(/[\s,]+$/, "") + ", " + S.promptSuffix;
+      try { await navigator.clipboard.writeText(full); btn.textContent = "Copied ✓"; }
       catch (e) { btn.textContent = "Select + copy"; }
       setTimeout(() => { btn.textContent = "Copy"; }, 2000);
     });
-    div.innerHTML = `<span class="num">${String(i + 1).padStart(2, "0")}</span><span class="text"></span>`;
-    div.querySelector(".text").textContent = p;
-    div.appendChild(btn);
+    const mkDescribe = (label, cls, kind) => {
+      const b = document.createElement("button");
+      b.className = cls;
+      b.textContent = label;
+      b.addEventListener("click", async () => {
+        b.disabled = true; b.textContent = "Describing…";
+        const r = await api("/api/produce/describe", { dir: S.dir, index: i + 1, kind });
+        b.textContent = label; b.disabled = false;
+        if (r.error) {
+          $id("prSaveRow").hidden = false;
+          $id("prStatus").className = "status bad";
+          $id("prStatus").textContent = r.error;
+          return;
+        }
+        ta.value = r.prompt;
+        autoGrow(ta);
+        promptsDirty(true);
+        ta.focus();
+      });
+      return b;
+    };
+    const dbi = mkDescribe("🖼 From image", "describeBtn", "image");
+    const dbv = mkDescribe("🎬 From video", "describeVidBtn", "video");
+    btns.append(btn, dbi, dbv);
+    div.append(thumb, wrap, btns);
+    // The whole row is an image target: drop a file on it, or point at it
+    // and paste. dropZone below stays the target for .mp4 clips.
+    div.addEventListener("mouseenter", () => { pasteTarget = i; });
+    div.addEventListener("mouseleave", () => {
+      // keep the target if the row still holds keyboard focus
+      if (pasteTarget === i && !div.contains(document.activeElement)) pasteTarget = null;
+    });
+    div.addEventListener("focusin", () => { pasteTarget = i; });
+    div.addEventListener("dragover", (e) => {
+      const items = [...((e.dataTransfer || {}).items || [])];
+      if (!items.some(it => it.kind === "file"
+          && (it.type.startsWith("image/") || it.type === "video/mp4"))) return;
+      e.preventDefault();
+      e.stopPropagation();
+      div.classList.add("imgover");
+    });
+    div.addEventListener("dragleave", () => div.classList.remove("imgover"));
+    div.addEventListener("drop", (e) => {
+      div.classList.remove("imgover");
+      const f = [...((e.dataTransfer || {}).files || [])].find(f =>
+        f.type.startsWith("image/") || f.type === "video/mp4" || /\.mp4$/i.test(f.name));
+      if (!f) return;
+      e.preventDefault();
+      e.stopPropagation();
+      uploadRef(i, f, f.type.startsWith("image/") ? "image" : "video");
+    });
     box.appendChild(div);
+    refreshRefUI(i);
   });
+  pasteTarget = null;
+  $id("prStatus").className = "status";
+  $id("prStatus").textContent = "";
+  promptsDirty(false);
+  sizePrompts();
 }
+/* Per-beat references: an optional picture AND/OR your own clip, stored
+   beside the staged clips (ref-NN.jpg / refv-NN.mp4) so they stick to the
+   package. The radio picks which one the beat uses: image = the AI animates
+   from it, video = your clip plays as-is (that beat bills nothing). */
+let refTarget = 0;      // beat receiving the next file-picker upload
+let pasteTarget = null; // beat under the pointer / focus - receives Ctrl+V
+function pickRef(i, kind) {
+  refTarget = i;
+  $id(kind === "video" ? "refVidFile" : "refFile").click();
+}
+function refSlotBody(i, kind) {
+  const r = (S.refs || [])[i] || {};
+  const body = document.createElement("div");
+  body.className = "slotbody";
+  if (r[kind]) {
+    const el = document.createElement(kind === "video" ? "video" : "img");
+    el.src = `/produce-files/${S.dir}/${r[kind].name}?v=${r[kind].mtime}`;
+    el.title = `Click to replace the ${kind}`;
+    if (kind === "video") {
+      el.muted = true;
+      el.preload = "metadata";
+      el.addEventListener("mouseenter", () => el.play().catch(() => {}));
+      el.addEventListener("mouseleave", () => { el.pause(); el.currentTime = 0; });
+    } else {
+      el.alt = `Reference image for beat ${i + 1}`;
+    }
+    el.addEventListener("click", () => pickRef(i, kind));
+    const rm = document.createElement("button");
+    rm.className = "rmimg";
+    rm.textContent = "✕ remove";
+    rm.setAttribute("aria-label", `Remove the ${kind} from beat ${i + 1}`);
+    rm.addEventListener("click", async () => {
+      await api("/api/produce/ref-remove", { dir: S.dir, index: i + 1, kind });
+      S.refs[i][kind] = null;
+      S.refs[i].use = S.refs[i].image ? "image" : (S.refs[i].video ? "video" : null);
+      refreshRefUI(i);
+    });
+    body.append(el, rm);
+  } else {
+    const add = document.createElement("button");
+    add.className = "addimg";
+    add.textContent = kind === "video" ? "＋ video" : "＋ image";
+    add.title = kind === "video"
+      ? "Attach your own clip to this beat (it plays as-is when its radio is on)"
+      : "Attach a reference picture to this beat";
+    add.addEventListener("click", () => pickRef(i, kind));
+    body.appendChild(add);
+  }
+  return body;
+}
+function refreshRefUI(i) {
+  const card = document.querySelector(`#prompts .prompt[data-index="${i}"]`);
+  if (!card) return;
+  const cell = card.querySelector(".thumb");
+  cell.innerHTML = "";
+  const r = (S.refs || [])[i] || {};
+  for (const kind of ["image", "video"]) {
+    const slot = document.createElement("div");
+    slot.className = "refslot";
+    const radio = document.createElement("input");
+    radio.type = "radio";
+    radio.name = `refuse-${i}`;
+    radio.value = kind;
+    radio.checked = r.use === kind;
+    radio.disabled = !r[kind];
+    radio.title = r[kind] ? `This beat uses the ${kind}` : `Attach a ${kind} first`;
+    radio.setAttribute("aria-label", `Use the ${kind} for beat ${i + 1}`);
+    radio.addEventListener("change", async () => {
+      const res = await api("/api/produce/ref-choice", { dir: S.dir, index: i + 1, use: kind });
+      if (res.error) return;
+      S.refs[i].use = kind;
+      updateVidHint();
+    });
+    slot.append(radio, refSlotBody(i, kind));
+    cell.appendChild(slot);
+  }
+  const dbi = card.querySelector(".describeBtn");
+  dbi.disabled = !r.image || !S.openai;
+  dbi.title = !S.openai ? "Needs an OpenAI key in pipeline\\openai_key.txt"
+    : !r.image ? "Attach an image first"
+    : "Rewrite this prompt to describe a video of the image";
+  const dbv = card.querySelector(".describeVidBtn");
+  dbv.disabled = !r.video || !S.openai;
+  dbv.title = !S.openai ? "Needs an OpenAI key in pipeline\\openai_key.txt"
+    : !r.video ? "Attach a video first"
+    : "Rewrite this prompt to describe your clip (from its first frame)";
+  updateVidHint();   // counts image-animated and video-pinned beats
+}
+async function uploadRef(i, file, kind) {
+  let url;
+  if (kind === "video") {
+    url = `/api/produce/ref-video?dir=${encodeURIComponent(S.dir)}&index=${i + 1}`;
+  } else {
+    const ext = ({ "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" })[file.type]
+      || (file.name.split(".").pop() || "jpg").toLowerCase();
+    url = `/api/produce/ref-image?dir=${encodeURIComponent(S.dir)}&index=${i + 1}&ext=${encodeURIComponent(ext)}`;
+  }
+  const r = await (await fetch(url, { method: "POST", body: file })).json();
+  if (r.error) {
+    $id("prSaveRow").hidden = false;
+    $id("prStatus").className = "status bad";
+    $id("prStatus").textContent = r.error;
+    return;
+  }
+  S.refs[i] = S.refs[i] || { image: null, video: null, use: null };
+  S.refs[i][kind] = { name: r.name, mtime: r.mtime };
+  S.refs[i].use = kind;   // uploading something means "use it" - the server agrees
+  refreshRefUI(i);
+  // A fresh image auto-describes into the prompt (still unsaved - Save
+  // prompts or Undo edits as usual), so frame and motion always agree.
+  if (kind === "image" && S.openai) {
+    document.querySelector(`#prompts .prompt[data-index="${i}"] .describeBtn`)?.click();
+  }
+}
+$id("refFile").addEventListener("change", () => {
+  const f = $id("refFile").files[0];
+  $id("refFile").value = "";
+  if (f) uploadRef(refTarget, f, "image");
+});
+$id("refVidFile").addEventListener("change", () => {
+  const f = $id("refVidFile").files[0];
+  $id("refVidFile").value = "";
+  if (f) uploadRef(refTarget, f, "video");
+});
+/* Point at a row and Ctrl+V: pastes a clipboard image (e.g. a screenshot)
+   straight onto that beat. Text pastes into the prompt box are untouched. */
+document.addEventListener("paste", (e) => {
+  if ($id("flow").hidden || pasteTarget === null) return;
+  const item = [...((e.clipboardData || {}).items || [])]
+    .find(it => it.kind === "file" && it.type.startsWith("image/"));
+  if (!item) return;
+  e.preventDefault();
+  uploadRef(pasteTarget, item.getAsFile(), "image");
+});
+/* Save ONE spoken line back into the archived export (hook, beat, or outro
+   by row position). The script edit clears the polish cache, so the user's
+   current prompt wording is re-saved right after - an enhanced line never
+   costs them their visual prompts. */
+async function saveScriptLine(i, newLine) {
+  const s = S.script || {};
+  const beats = [...(s.beats || [])];
+  const last = (S.segments || []).length - 1;
+  const body = { queue: S.queue, slot: S.slot, beats };
+  if (i === 0) body.hook = newLine;
+  else if (i === last) body.outro = newLine;
+  else if (i - 1 < beats.length) beats[i - 1] = newLine;
+  else return "row does not map to a script line - edit it in the Script box";
+  const r = await api("/api/produce/edit", body);
+  if (r.error) return r.error;
+  const vals = [...document.querySelectorAll("#prompts textarea")].map(t => t.value.trim());
+  if (vals.length && vals.every(Boolean)) {
+    await api("/api/produce/prompts", { queue: S.queue, slot: S.slot, prompts: vals });
+  }
+  const info = await api(`/api/produce/info?queue=${encodeURIComponent(S.queue)}&slot=${S.slot}`);
+  if (!info.error) {
+    S.prompts = info.prompts;
+    S.segments = info.segments || [];
+    S.script = info.script;
+    S.refs = info.refs || [];
+    renderPrompts(info.prompts);
+    fillScript(info.script);
+    updateVidHint();
+  }
+  return null;
+}
+$id("prUndoBtn").addEventListener("click", () => renderPrompts(S.prompts));
+$id("prSaveBtn").addEventListener("click", async () => {
+  const vals = [...document.querySelectorAll("#prompts textarea")].map(t => t.value.trim());
+  const st = $id("prStatus");
+  if (vals.some(v => !v)) { st.className = "status bad"; st.textContent = "Every beat needs a prompt."; return; }
+  $id("prSaveBtn").disabled = true;
+  st.className = "status"; st.textContent = "Saving…";
+  const r = await api("/api/produce/prompts", { queue: S.queue, slot: S.slot, prompts: vals });
+  if (r.error) { $id("prSaveBtn").disabled = false; st.className = "status bad"; st.textContent = r.error; return; }
+  S.prompts = r.prompts || vals;
+  renderPrompts(S.prompts);
+  $id("prSaveRow").hidden = false;
+  st.className = "status good";
+  st.textContent = "✓ Saved — copies and AI renders now use your wording (editing the script resets it).";
+});
 
 /* ---------- step 3: clips ---------- */
 function renderClips(staged) {
