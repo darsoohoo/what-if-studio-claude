@@ -136,6 +136,18 @@ def clean_for_tts(text):
     return re.sub(r"\s+", " ", text).strip()
 
 
+def versioned_slug(out_dir, slug):
+    """Never overwrite an existing render: when slug.mp4 is already there,
+    bump to -v2, -v3, ... so every render of a package is kept side by side
+    (the post kit and thumbnail share the slug, so they version together)."""
+    if not (Path(out_dir) / f"{slug}.mp4").exists():
+        return slug
+    v = 2
+    while (Path(out_dir) / f"{slug}-v{v}.mp4").exists():
+        v += 1
+    return f"{slug}-v{v}"
+
+
 def narration_segments(pkg, hook_index):
     """Ordered spoken segments: [hook, *beats, outro] (non-empty, cleaned)."""
     hooks = pkg.get("hooks", [])
@@ -1664,9 +1676,12 @@ def main():
 
     for slot, item, pkg in items:
         title = pkg.get("title", "untitled")
-        slug = f"{slot:02d}-{slugify(title)}"
+        base_slug = f"{slot:02d}-{slugify(title)}"
+        slug = versioned_slug(out_dir, base_slug)
         out_path = out_dir / f"{slug}.mp4"
         print(f"[slot {slot}] {title}")
+        if slug != base_slug:
+            print(f"  earlier render kept - this one saves as {out_path.name}")
 
         vconf = dict(VOICE_MAP.get(pkg.get("voice"), DEFAULT_VOICE))
         if args.voice:
