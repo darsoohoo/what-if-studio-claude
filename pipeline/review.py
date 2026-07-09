@@ -15,6 +15,7 @@ Notes and ordering persist in review-notes.json next to this script.
 """
 
 import argparse
+import base64
 import json
 import os
 import re
@@ -113,6 +114,67 @@ def openai_key():
     if f.exists():
         return f.read_text(encoding="utf-8").strip()
     return None
+
+
+def openai_admin_key():
+    """An OpenAI ADMIN key (platform.openai.com -> settings -> Admin keys)
+    unlocks the official Costs API. Regular secret keys get a 403 on every
+    billing endpoint, and the remaining-balance number is browser-only."""
+    key = os.environ.get("OPENAI_ADMIN_KEY", "").strip()
+    if key:
+        return key
+    f = HERE / "openai_admin_key.txt"
+    if f.exists():
+        return f.read_text(encoding="utf-8").strip() or None
+    return None
+
+
+_openai_costs_cache = {"ts": 0.0, "data": None}
+
+
+def openai_month_costs():
+    """Month-to-date OpenAI cost in real billed dollars via the Costs API.
+    Needs an admin key; results cache for 10 minutes so the Spend page's
+    polling never hammers OpenAI."""
+    key = openai_admin_key()
+    if not key:
+        return {"available": False, "reason": "no_admin_key"}
+    now = time.time()
+    if _openai_costs_cache["data"] is not None and now - _openai_costs_cache["ts"] < 600:
+        return _openai_costs_cache["data"]
+    try:
+        start = int(time.mktime(time.strptime(time.strftime("%Y-%m-01"), "%Y-%m-%d")))
+        total, page = 0.0, None
+        for _ in range(6):   # paginated: 6 pages x 31 buckets is plenty for a month
+            url = f"https://api.openai.com/v1/organization/costs?start_time={start}&limit=31"
+            if page:
+                url += f"&page={quote(page)}"
+            req = urllib.request.Request(url, headers={
+                "Authorization": f"Bearer {key}",
+                "User-Agent": "WhatIfStudio-review/1.0",
+            })
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                reply = json.loads(resp.read().decode("utf-8", "replace"))
+            for bucket in reply.get("data", []):
+                for r in bucket.get("results", []):
+                    total += float((r.get("amount") or {}).get("value") or 0)
+            if not reply.get("has_more"):
+                break
+            page = reply.get("next_page")
+        data = {"available": True, "month_usd": round(total, 4)}
+    except urllib.error.HTTPError as exc:
+        detail = ""
+        try:
+            detail = exc.read().decode("utf-8", "replace")[:200]
+        except Exception:
+            pass
+        # Not cached: the moment the user fixes the key, the next poll works.
+        return {"available": False, "reason": f"OpenAI said HTTP {exc.code}",
+                "detail": detail}
+    except Exception as exc:
+        return {"available": False, "reason": str(exc)[:200]}
+    _openai_costs_cache.update(ts=now, data=data)
+    return data
 
 
 # Per-beat word budget for each runtime the app offers. The video is exactly
@@ -222,6 +284,73 @@ def ai_draft(title, category, runtime=60):
     return ai_draft_pollinations(title, category, runtime)
 
 
+def _clean_line(text):
+    t = re.sub(r"\s+", " ", str(text)).strip().strip("\"'")
+    if not t:
+        raise RuntimeError("the AI returned an empty rewrite - try again")
+    return t[:900]
+
+
+def enhance_line(title, role, line, img=None):
+    """Punch up one spoken narration line. When img (the beat's selected
+    reference image, or its video's first frame) is given and OpenAI is
+    available, the rewrite is grounded in what the viewer actually sees.
+    Falls back to the free Pollinations writer (text-only)."""
+    base = (
+        'You punch up narration lines for short-form "What if?" videos '
+        f'(TikTok explainer style). Video: "{title}". Rewrite this {role} line '
+        "to be more vivid, punchy and spoken-sounding: keep every fact and "
+        "number, keep roughly the same length (within 20%), no hashtags, no "
+        "emoji, no quotes, no stage directions."
+    )
+    grounding = (
+        " The attached frame is what the viewer SEES while this line is spoken"
+        " - make the words fit that visual, weaving in what's on screen"
+        " naturally (don't just describe the picture)."
+    )
+    tail = " Reply with ONLY the rewritten line.\n\nLINE: " + line
+    key = openai_key()
+    if key:
+        try:
+            content = [{"type": "text", "text": base + (grounding if img else "") + tail}]
+            if img is not None:
+                b64 = base64.b64encode(img.read_bytes()).decode("ascii")
+                mime = REF_IMAGE_EXTS.get(img.suffix.lower(), "image/jpeg")
+                content.append({"type": "image_url",
+                                "image_url": {"url": f"data:{mime};base64,{b64}", "detail": "low"}})
+            body = json.dumps({
+                "model": OPENAI_MODEL,
+                "messages": [{"role": "user", "content": content}],
+                "temperature": 0.9,
+                "max_tokens": 300,
+            }).encode("utf-8")
+            req = urllib.request.Request(OPENAI_API, data=body, method="POST", headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+                "User-Agent": "WhatIfStudio-review/1.0",
+            })
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                reply = json.loads(resp.read().decode("utf-8", "replace"))
+            mv.record_spend("openai", "line enhance", mv.openai_usage_cost(reply),
+                            OPENAI_MODEL, title[:60], estimated=True)
+            return _clean_line(reply["choices"][0]["message"]["content"])
+        except Exception as exc:
+            print(f"OpenAI line enhance failed ({exc}); falling back to the free writer")
+    prompt = base + tail   # the free writer can't see images - text-only
+    for attempt in range(3):
+        url = TEXT_AI + quote(prompt) + f"?seed={int(time.time())}"
+        req = urllib.request.Request(url, headers={"User-Agent": "WhatIfStudio-review/1.0"})
+        try:
+            with urllib.request.urlopen(req, timeout=90) as resp:
+                return _clean_line(resp.read().decode("utf-8", "replace"))
+        except urllib.error.HTTPError as exc:
+            if exc.code == 429 and attempt < 2:
+                time.sleep(18)
+                continue
+            raise
+    raise RuntimeError("the free writing service is busy - try again in a minute")
+
+
 # ---------------- produce (premium clip workflow) ----------------
 
 
@@ -303,26 +432,242 @@ def staging_key(queue_file, slot, pkg):
     return f"{slot:02d}-{pkg.get('scenarioId', 'clips')}"
 
 
+def staged_clips(d):
+    """Ordered staged clips. Per-beat reference videos (refv-NN.mp4) live in
+    the same folder but are targeted at one beat - they never count as clips."""
+    return sorted(f for f in d.glob("*.mp4") if not f.name.startswith("refv-"))
+
+
 def staged_list(d):
     # mtime rides along as a cache-buster: swapping clips renames files, so a
     # position's URL keeps serving the browser's cached video without it.
     return [{"name": f.name, "size_mb": round(f.stat().st_size / 1e6, 2),
              "mtime": int(f.stat().st_mtime * 1000)}
-            for f in sorted(d.glob("*.mp4"))]
+            for f in staged_clips(d)]
 
 
 def renumber(d):
-    files = sorted(d.glob("*.mp4"))
+    files = staged_clips(d)
     for i, f in enumerate(files):
         f.rename(d / f"zztmp_{i:02d}.mp4")
     for i, f in enumerate(sorted(d.glob("zztmp_*.mp4"))):
         f.rename(d / f"{i + 1:02d}.mp4")
 
 
+HISTORY_MAX = 40
+
+
+def load_history(d):
+    try:
+        h = json.loads((d / "history.json").read_text(encoding="utf-8"))
+        return h if isinstance(h, list) else []
+    except Exception:
+        return []
+
+
+def record_history(d, kind, data, baseline=None, note=""):
+    """Append a snapshot after a successful save (kind: script|prompts).
+    The first save of a kind also stores the pre-save state, so the very
+    original stays recoverable. Restores are recorded too - history only
+    ever grows forward, nothing is destroyed by reverting."""
+    h = load_history(d)
+    now = time.strftime("%Y-%m-%d %H:%M")
+    if baseline is not None and not any(e.get("kind") == kind for e in h):
+        h.append({"ts": now, "kind": kind, "data": baseline, "note": "original"})
+    h.append({"ts": now, "kind": kind, "data": data, "note": note})
+    (d / "history.json").write_text(json.dumps(h[-HISTORY_MAX:], indent=1),
+                                    encoding="utf-8")
+
+
+def script_snapshot(pkg):
+    return {"title": pkg.get("title", ""), "hook": (pkg.get("hooks") or [""])[0],
+            "beats": list(pkg.get("beats") or []), "outro": pkg.get("outro", "")}
+
+
+REF_IMAGE_EXTS = {".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                  ".png": "image/png", ".webp": "image/webp"}
+
+
+def ref_image_path(d, index):
+    """The reference image staged for beat `index` (1-based), or None."""
+    for ext in REF_IMAGE_EXTS:
+        f = d / f"ref-{index:02d}{ext}"
+        if f.is_file():
+            return f
+    return None
+
+
+def ref_video_path(d, index):
+    f = d / f"refv-{index:02d}.mp4"
+    return f if f.is_file() else None
+
+
+def ref_choices(d):
+    try:
+        data = json.loads((d / "ref-choice.json").read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def set_ref_choice(d, index, use):
+    """Remember which reference (image/video) a beat should use. use=None
+    recomputes the default from whichever files remain."""
+    data = ref_choices(d)
+    if use is None:
+        img, vid = ref_image_path(d, index), ref_video_path(d, index)
+        use = "image" if img else ("video" if vid else None)
+    if use is None:
+        data.pop(str(index), None)
+    else:
+        data[str(index)] = use
+    (d / "ref-choice.json").write_text(json.dumps(data), encoding="utf-8")
+
+
+NEW_BEAT_TEXT = "New beat - click this line and write what the narrator says here."
+NEW_PROMPT_TEXT = "Describe this beat's visual here - or attach an image or video and use the describe buttons."
+
+
+def move_beat_refs(d, src, dst):
+    """Move one beat's reference files (image, video, cached frame) to a new
+    beat number - used when inserting/removing beats shifts the rows."""
+    img = ref_image_path(d, src)
+    if img:
+        img.rename(d / f"ref-{dst:02d}{img.suffix.lower()}")
+    vid = ref_video_path(d, src)
+    if vid:
+        vid.rename(d / f"refv-{dst:02d}.mp4")
+    frame = d / f"refv-{src:02d}-frame.jpg"
+    if frame.is_file():
+        frame.rename(d / f"refv-{dst:02d}-frame.jpg")
+
+
+def delete_beat_refs(d, num):
+    for f in (ref_image_path(d, num), ref_video_path(d, num),
+              d / f"refv-{num:02d}-frame.jpg"):
+        if f and f.is_file():
+            f.unlink()
+
+
+def shift_ref_choices(d, from_num, delta, drop=None):
+    """Renumber ref-choice.json keys when beats shift (drop removes one)."""
+    choices = ref_choices(d)
+    out = {}
+    for k, v in choices.items():
+        try:
+            ki = int(k)
+        except ValueError:
+            continue
+        if drop is not None and ki == drop:
+            continue
+        out[str(ki + delta if ki >= from_num else ki)] = v
+    (d / "ref-choice.json").write_text(json.dumps(out), encoding="utf-8")
+
+
+def ref_info(d, count):
+    """Per-beat references: [{image, video, use}] - image/video are
+    {name, mtime} or None; use says which one the render will honor.
+    They live beside the staged clips, so they follow the package around
+    and survive clip imports/clears (which only touch numbered clips)."""
+    out, choices = [], ref_choices(d)
+    for i in range(1, count + 1):
+        img, vid = ref_image_path(d, i), ref_video_path(d, i)
+        use = None
+        if img or vid:
+            c = choices.get(str(i), "")
+            use = ("video" if (c == "video" and vid)
+                   else "image" if (c == "image" and img)
+                   else "image" if img else "video")
+        out.append({
+            "image": {"name": img.name, "mtime": int(img.stat().st_mtime * 1000)} if img else None,
+            "video": {"name": vid.name, "mtime": int(vid.stat().st_mtime * 1000)} if vid else None,
+            "use": use,
+        })
+    return out
+
+
+def ffmpeg_exe():
+    """mv.find_tool sys.exits when ffmpeg is missing - the dashboard must
+    survive that and degrade gracefully instead."""
+    try:
+        return mv.find_tool("ffmpeg")
+    except SystemExit:
+        return None
+
+
+def video_first_frame(vid):
+    """Extract (and cache) the first frame of a reference video as a JPEG -
+    refv-NN-frame.jpg beside it; redone when the video changes."""
+    frame = vid.with_name(vid.stem + "-frame.jpg")
+    if frame.is_file() and frame.stat().st_mtime >= vid.stat().st_mtime:
+        return frame
+    ff = ffmpeg_exe()
+    if not ff:
+        raise RuntimeError("ffmpeg not found - it's needed to read a frame from the video")
+    mv.run([ff, "-y", "-i", str(vid), "-frames:v", "1", "-q:v", "3", str(frame)])
+    if not frame.is_file():
+        raise RuntimeError("couldn't read a frame from that video")
+    return frame
+
+
+DESCRIBE_PROMPT = (
+    "You write prompts for an AI video generator. Describe this image as ONE "
+    "sentence for a 5-second video shot that brings the scene to life: name the "
+    "subject, the setting, and one natural motion (of the subject or the camera). "
+    "Under 45 words. No style words like 'cinematic' and no aspect ratios - those "
+    "are appended separately. No quotes, no preamble."
+)
+
+
+def describe_ref_image(img, key):
+    """One OpenAI vision call: reference image -> video-prompt core."""
+    b64 = base64.b64encode(img.read_bytes()).decode("ascii")
+    mime = REF_IMAGE_EXTS.get(img.suffix.lower(), "image/jpeg")
+    body = json.dumps({
+        "model": OPENAI_MODEL,
+        "messages": [{"role": "user", "content": [
+            {"type": "text", "text": DESCRIBE_PROMPT},
+            {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}", "detail": "low"}},
+        ]}],
+        "max_tokens": 120,
+        "temperature": 0.4,
+    }).encode("utf-8")
+    req = urllib.request.Request(OPENAI_API, data=body, method="POST", headers={
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "User-Agent": "WhatIfStudio-review/1.0",
+    })
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        reply = json.loads(resp.read().decode("utf-8", "replace"))
+    mv.record_spend("openai", "image describe", mv.openai_usage_cost(reply),
+                    OPENAI_MODEL, img.parent.name[:60], estimated=True)
+    text = reply["choices"][0]["message"]["content"]
+    return re.sub(r"\s+", " ", str(text)).strip(" \"'.,;")
+
+
 def beat_prompts(pkg):
+    """Per-beat visual prompt cores, WITHOUT the style suffix - the Produce
+    page shows these in editable boxes and re-appends the suffix on copy;
+    renders append their own mode's suffix the same way."""
     segments = mv.narration_segments(pkg, 0)
-    return [mv.ai_prompt_for_segment(pkg, i, len(segments), mv.VIDEO_MOTION_SUFFIX)
+    return [mv.ai_prompt_for_segment(pkg, i, len(segments), "").rstrip(" ,")
             for i in range(len(segments))]
+
+
+def save_prompts(pkg, prompts):
+    """Persist user-edited prompt cores into the polish cache (both the
+    default and --no-people variants), where every consumer - the Copy
+    buttons, --infer, --infer-images, --ai-visuals - already looks first.
+    A script edit clears the cache, so stale wording never outlives its beats."""
+    n = len(mv.narration_segments(pkg, 0))
+    if len(prompts) != n or not all(prompts):
+        raise RuntimeError(f"need {n} non-empty prompts, got {len([p for p in prompts if p])}")
+    slug = mv.slugify(str(pkg.get("scenarioId", "pkg")))
+    mv.POLISH_CACHE.mkdir(parents=True, exist_ok=True)
+    for variant in ("", "-nopeople"):
+        (mv.POLISH_CACHE / f"{slug}-{n}seg{variant}.json").write_text(
+            json.dumps(prompts, indent=1), encoding="utf-8")
+    mv._polish_memo.clear()
 
 
 def spend_summary():
@@ -540,6 +885,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/spend":
             self.send_json(spend_summary())
             return
+        if self.path == "/api/spend/openai":
+            self.send_json(openai_month_costs())
+            return
         if self.path.split("?")[0] in ("/help", "/help.html"):
             help_page = HERE.parent / "help.html"
             if help_page.is_file():
@@ -569,6 +917,7 @@ class Handler(BaseHTTPRequestHandler):
                                                         [v["name"] for v in voices])
                     except Exception:
                         voices = []
+                prompts = beat_prompts(pkg)
                 self.send_json({
                     "script": {
                         "title": pkg.get("title", ""),
@@ -581,7 +930,13 @@ class Handler(BaseHTTPRequestHandler):
                     "observed_prices": observed_prices(),
                     "title": pkg.get("title"),
                     "dir": d.name,
-                    "prompts": beat_prompts(pkg),
+                    "prompts": prompts,
+                    # The narration line spoken over each beat - same order
+                    # and length as prompts (hook, *beats, outro).
+                    "segments": mv.narration_segments(pkg, 0),
+                    "prompt_suffix": mv.VIDEO_MOTION_SUFFIX,
+                    "refs": ref_info(d, len(prompts)),
+                    "openai": bool(openai_key()),
                     "staged": staged_list(d),
                     "voices": voices,
                     "auto_voice": auto_voice,
@@ -589,6 +944,27 @@ class Handler(BaseHTTPRequestHandler):
                     "infer": bool(mv.infer_api_key()),
                     "rendering": render_running(),
                 })
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 400)
+            return
+        if self.path.startswith("/api/produce/history"):
+            q = parse_qs(urlparse(self.path).query)
+            try:
+                queue = (q.get("queue") or [""])[0]
+                slot = int((q.get("slot") or ["0"])[0])
+                pkg = load_package(queue, slot)
+                d = produce_dir(staging_key(queue, slot, pkg))
+                entries = []
+                for i, e in enumerate(load_history(d)):
+                    data_ = e.get("data")
+                    if e.get("kind") == "script":
+                        preview = str((data_ or {}).get("hook", ""))[:90]
+                    else:
+                        preview = str((data_ or [""])[0])[:90]
+                    entries.append({"i": i, "ts": e.get("ts", ""), "kind": e.get("kind", ""),
+                                    "note": e.get("note", ""), "preview": preview,
+                                    "data": data_})
+                self.send_json({"history": entries})
             except Exception as exc:
                 self.send_json({"error": str(exc)}, 400)
             return
@@ -608,7 +984,7 @@ class Handler(BaseHTTPRequestHandler):
                 dname, fname = safe_name(parts[0]), safe_name(parts[1])
                 path = (PRODUCE_DIR / dname / fname) if dname and fname else None
                 if path and path.is_file():
-                    self.send_file(path, "video/mp4")
+                    self.send_file(path, REF_IMAGE_EXTS.get(path.suffix.lower(), "video/mp4"))
                     return
             self.send_json({"error": "not found"}, 404)
             return
@@ -653,7 +1029,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": "bad size"}, 400)
                 return
             with _lock:
-                index = len(list(d.glob("*.mp4"))) + 1
+                index = len(staged_clips(d)) + 1
                 dest = d / f"{index:02d}.mp4"
                 with open(dest, "wb") as out:
                     remaining = length
@@ -664,6 +1040,73 @@ class Handler(BaseHTTPRequestHandler):
                         out.write(chunk)
                         remaining -= len(chunk)
             self.send_json({"ok": True, "staged": staged_list(d)})
+            return
+
+        # Raw-body reference-image upload for one beat - not JSON.
+        if self.path.startswith("/api/produce/ref-image"):
+            q = parse_qs(urlparse(self.path).query)
+            dname = safe_name((q.get("dir") or [""])[0])
+            ext = "." + re.sub(r"[^a-z]", "", (q.get("ext") or ["jpg"])[0].lower())
+            ext = {".jpeg": ".jpg"}.get(ext, ext)
+            try:
+                index = int((q.get("index") or ["0"])[0])
+            except ValueError:
+                index = 0
+            if not dname or ext not in REF_IMAGE_EXTS or not (1 <= index <= 20):
+                self.send_json({"error": "bad dir/index/ext"}, 400)
+                return
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            if length <= 0 or length > 20_000_000:
+                self.send_json({"error": "image too large (20 MB max)"}, 400)
+                return
+            d = produce_dir(dname)
+            with _lock:
+                old = ref_image_path(d, index)
+                if old:
+                    old.unlink()
+                dest = d / f"ref-{index:02d}{ext}"
+                with open(dest, "wb") as out:
+                    remaining = length
+                    while remaining > 0:
+                        chunk = self.rfile.read(min(65536, remaining))
+                        if not chunk:
+                            break
+                        out.write(chunk)
+                        remaining -= len(chunk)
+                set_ref_choice(d, index, "image")
+            self.send_json({"ok": True, "name": dest.name,
+                            "mtime": int(dest.stat().st_mtime * 1000)})
+            return
+
+        # Raw-body reference-VIDEO upload for one beat - not JSON.
+        if self.path.startswith("/api/produce/ref-video"):
+            q = parse_qs(urlparse(self.path).query)
+            dname = safe_name((q.get("dir") or [""])[0])
+            try:
+                index = int((q.get("index") or ["0"])[0])
+            except ValueError:
+                index = 0
+            if not dname or not (1 <= index <= 20):
+                self.send_json({"error": "bad dir/index"}, 400)
+                return
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            if length <= 0 or length > 500_000_000:
+                self.send_json({"error": "bad size"}, 400)
+                return
+            d = produce_dir(dname)
+            with _lock:
+                dest = d / f"refv-{index:02d}.mp4"
+                with open(dest, "wb") as out:
+                    remaining = length
+                    while remaining > 0:
+                        chunk = self.rfile.read(min(65536, remaining))
+                        if not chunk:
+                            break
+                        out.write(chunk)
+                        remaining -= len(chunk)
+                set_ref_choice(d, index, "video")
+            self.send_json({"ok": True, "name": dest.name,
+                            "mtime": int(dest.stat().st_mtime * 1000)})
             return
 
         try:
@@ -702,7 +1145,7 @@ class Handler(BaseHTTPRequestHandler):
             d = PRODUCE_DIR / dname
             with _lock:
                 if self.path.endswith("clear"):
-                    for f in d.glob("*.mp4"):
+                    for f in staged_clips(d):
                         f.unlink()
                 elif self.path.endswith("remove"):
                     name = safe_name(str(data.get("name", "")))
@@ -735,6 +1178,7 @@ class Handler(BaseHTTPRequestHandler):
                             if it.get("slot") == slot and it.get("package")), None)
                 if not pkg:
                     raise RuntimeError(f"slot {slot} not in {qpath.name}")
+                old_script = script_snapshot(pkg)
 
                 def clean(v, cap):
                     return re.sub(r"\s+", " ", str(v)).strip()[:cap]
@@ -759,7 +1203,260 @@ class Handler(BaseHTTPRequestHandler):
                     for f in mv.POLISH_CACHE.glob(f"{slug}-*.json"):
                         f.unlink()
                 mv._polish_memo.clear()
+                try:
+                    d = produce_dir(staging_key(str(data.get("queue", "")), slot, pkg))
+                    record_history(d, "script", script_snapshot(pkg), baseline=old_script)
+                except Exception:
+                    pass   # history must never block a save
                 self.send_json({"ok": True})
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 400)
+            return
+
+        if self.path == "/api/produce/ref-remove":
+            dname = safe_name(str(data.get("dir", "")))
+            kind = str(data.get("kind") or "image")
+            try:
+                index = int(data.get("index") or 0)
+            except ValueError:
+                index = 0
+            if (not dname or not (PRODUCE_DIR / dname).is_dir()
+                    or not (1 <= index <= 20) or kind not in ("image", "video")):
+                self.send_json({"error": "bad dir/index/kind"}, 400)
+                return
+            d = PRODUCE_DIR / dname
+            with _lock:
+                f = ref_image_path(d, index) if kind == "image" else ref_video_path(d, index)
+                if f:
+                    f.unlink()
+                if kind == "video":
+                    (d / f"refv-{index:02d}-frame.jpg").unlink(missing_ok=True)
+                set_ref_choice(d, index, None)   # fall back to whatever remains
+            self.send_json({"ok": True})
+            return
+
+        if self.path == "/api/produce/ref-choice":
+            # The radio buttons: which reference (image/video) a beat uses.
+            dname = safe_name(str(data.get("dir", "")))
+            use = str(data.get("use") or "")
+            try:
+                index = int(data.get("index") or 0)
+            except ValueError:
+                index = 0
+            d = (PRODUCE_DIR / dname) if dname else None
+            has = d and d.is_dir() and (1 <= index <= 20) and (
+                ref_image_path(d, index) if use == "image"
+                else ref_video_path(d, index) if use == "video" else None)
+            if not has:
+                self.send_json({"error": "no such reference for that beat"}, 400)
+                return
+            with _lock:
+                set_ref_choice(d, index, use)
+            self.send_json({"ok": True})
+            return
+
+        if self.path == "/api/produce/describe":
+            # Turn one beat's reference image - or the first frame of its
+            # reference video - into a video-prompt core (OpenAI vision).
+            # The UI drops the result into the prompt box unsaved - Save
+            # prompts makes it stick.
+            try:
+                dname = safe_name(str(data.get("dir", "")))
+                index = int(data.get("index") or 0)
+                kind = str(data.get("kind") or "image")
+                d = (PRODUCE_DIR / dname) if dname else None
+                if kind == "video":
+                    vid = ref_video_path(d, index) if d else None
+                    if not vid:
+                        raise RuntimeError("no video staged for this beat - add one first")
+                    img = video_first_frame(vid)
+                else:
+                    img = ref_image_path(d, index) if d else None
+                    if not img:
+                        raise RuntimeError("no image staged for this beat - add one first")
+                key = openai_key()
+                if not key:
+                    raise RuntimeError("describing needs an OpenAI key - "
+                                       "put one in pipeline/openai_key.txt")
+                self.send_json({"ok": True, "prompt": describe_ref_image(img, key)})
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 400)
+            return
+
+        if self.path == "/api/produce/beat-edit":
+            # Insert a beat after `row` or remove the beat at `row` (0-based
+            # card rows: 0=hook, last=outro). Prompts and reference files are
+            # shifted so every attachment stays with ITS beat.
+            try:
+                queue = str(data.get("queue", ""))
+                slot = int(data.get("slot") or 0)
+                action = str(data.get("action") or "")
+                row = int(data.get("row", -1))
+                qpath = queue_path(queue)
+                if not qpath or not qpath.is_file():
+                    raise RuntimeError("queue file not found")
+                qdata = json.loads(qpath.read_text(encoding="utf-8"))
+                pkg = next((it["package"] for it in qdata.get("items", [])
+                            if it.get("slot") == slot and it.get("package")), None)
+                if not pkg:
+                    raise RuntimeError(f"slot {slot} not in {qpath.name}")
+                old_script = script_snapshot(pkg)
+                old_prompts = beat_prompts(pkg)
+                n = len(mv.narration_segments(pkg, 0))
+                beats = [str(b) for b in (pkg.get("beats") or [])]
+                prompts = [re.sub(r"\s+", " ", str(p)).strip(" ,.;")[:600]
+                           for p in (data.get("prompts") or [])]
+                if len(prompts) != n or not all(prompts):
+                    prompts = list(old_prompts)   # client view unusable - keep server's
+                d = produce_dir(staging_key(queue, slot, pkg))
+                if action == "insert":
+                    if not (0 <= row <= n - 2):
+                        raise RuntimeError("can't insert a beat after the outro")
+                    if n >= 20:
+                        raise RuntimeError("20 rows per video is the cap")
+                    beats.insert(row, NEW_BEAT_TEXT)
+                    prompts.insert(row + 1, NEW_PROMPT_TEXT)
+                    with _lock:
+                        for j in range(n, row + 1, -1):       # shift rows >= row+2 up
+                            move_beat_refs(d, j, j + 1)
+                        shift_ref_choices(d, row + 2, +1)
+                    note = f"beat added after row {row + 1}"
+                elif action == "remove":
+                    if not (1 <= row <= n - 2):
+                        raise RuntimeError("only body beats can be deleted (not hook/outro)")
+                    if len(beats) <= 3:
+                        raise RuntimeError("need at least 3 beats")
+                    beats.pop(row - 1)
+                    prompts.pop(row)
+                    with _lock:
+                        delete_beat_refs(d, row + 1)
+                        for j in range(row + 2, n + 1):       # shift rows > row+1 down
+                            move_beat_refs(d, j, j - 1)
+                        shift_ref_choices(d, row + 2, -1, drop=row + 1)
+                    note = f"beat {row} removed"
+                else:
+                    raise RuntimeError("action must be insert or remove")
+                pkg["beats"] = beats
+                qpath.write_text(json.dumps(qdata, indent=2), encoding="utf-8")
+                slug = mv.slugify(str(pkg.get("scenarioId", "pkg")))
+                if mv.POLISH_CACHE.is_dir():
+                    for f in mv.POLISH_CACHE.glob(f"{slug}-*.json"):
+                        f.unlink()
+                mv._polish_memo.clear()
+                save_prompts(pkg, prompts)
+                record_history(d, "script", script_snapshot(pkg),
+                               baseline=old_script, note=note)
+                record_history(d, "prompts", prompts,
+                               baseline=old_prompts, note=note)
+                self.send_json({"ok": True})
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 400)
+            return
+
+        if self.path == "/api/produce/revert":
+            # Restore a history snapshot. The restore is itself recorded, so
+            # nothing is ever lost - you can revert the revert.
+            try:
+                queue = str(data.get("queue", ""))
+                slot = int(data.get("slot") or 0)
+                qpath = queue_path(queue)
+                if not qpath or not qpath.is_file():
+                    raise RuntimeError("queue file not found")
+                qdata = json.loads(qpath.read_text(encoding="utf-8"))
+                pkg = next((it["package"] for it in qdata.get("items", [])
+                            if it.get("slot") == slot and it.get("package")), None)
+                if not pkg:
+                    raise RuntimeError(f"slot {slot} not in {qpath.name}")
+                d = produce_dir(staging_key(queue, slot, pkg))
+                h = load_history(d)
+                idx = int(data.get("index", -1))
+                if not (0 <= idx < len(h)):
+                    raise RuntimeError("no such version")
+                entry = h[idx]
+                if entry.get("kind") == "prompts":
+                    save_prompts(pkg, [str(p) for p in (entry.get("data") or [])])
+                    record_history(d, "prompts", entry["data"],
+                                   note=f"restored from {entry.get('ts', '')}")
+                else:
+                    snap = entry.get("data") or {}
+                    cur_prompts = beat_prompts(pkg)   # preserved when possible
+                    if str(snap.get("title", "")).strip():
+                        pkg["title"] = str(snap["title"])
+                    hooks = list(pkg.get("hooks") or [""])
+                    hooks[0] = str(snap.get("hook", "")) or hooks[0]
+                    pkg["hooks"] = hooks
+                    beats = [str(b) for b in (snap.get("beats") or []) if str(b).strip()]
+                    if len(beats) < 3:
+                        raise RuntimeError("that version has too few beats to restore")
+                    pkg["beats"] = beats
+                    if str(snap.get("outro", "")).strip():
+                        pkg["outro"] = str(snap["outro"])
+                    qpath.write_text(json.dumps(qdata, indent=2), encoding="utf-8")
+                    slug = mv.slugify(str(pkg.get("scenarioId", "pkg")))
+                    if mv.POLISH_CACHE.is_dir():
+                        for f in mv.POLISH_CACHE.glob(f"{slug}-*.json"):
+                            f.unlink()
+                    mv._polish_memo.clear()
+                    if len(cur_prompts) == len(mv.narration_segments(pkg, 0)):
+                        save_prompts(pkg, cur_prompts)
+                    record_history(d, "script", script_snapshot(pkg),
+                                   note=f"restored from {entry.get('ts', '')}")
+                self.send_json({"ok": True})
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 400)
+            return
+
+        if self.path == "/api/produce/enhance-line":
+            # AI-rewrite one spoken narration line; nothing is saved here -
+            # the client shows the suggestion and only /api/produce/edit
+            # (keep) makes it real.
+            try:
+                queue = str(data.get("queue", ""))
+                slot = int(data.get("slot") or 0)
+                pkg = load_package(queue, slot)
+                index = int(data.get("index") or 0)
+                segs = mv.narration_segments(pkg, 0)
+                if not (0 <= index < len(segs)):
+                    raise RuntimeError("bad line index")
+                role = ("hook" if index == 0 else
+                        "outro" if index == len(segs) - 1 else f"beat {index}")
+                # Ground the rewrite in the beat's SELECTED visual when there
+                # is one: the image itself, or the video's first frame.
+                img = None
+                try:
+                    d = produce_dir(staging_key(queue, slot, pkg))
+                    choice = mv._ref_choice(d, index + 1)
+                    if choice == "image":
+                        img = ref_image_path(d, index + 1)
+                    elif choice == "video":
+                        vid = ref_video_path(d, index + 1)
+                        img = video_first_frame(vid) if vid else None
+                except Exception:
+                    img = None   # a broken frame never blocks a text enhance
+                self.send_json({"ok": True, "grounded": bool(img),
+                                "line": enhance_line(pkg.get("title", ""), role,
+                                                     segs[index], img=img)})
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 400)
+            return
+
+        if self.path == "/api/produce/prompts":
+            # Save edited visual prompts (cores, no style suffix).
+            try:
+                queue = str(data.get("queue", ""))
+                slot = int(data.get("slot") or 0)
+                pkg = load_package(queue, slot)
+                prompts = [re.sub(r"\s+", " ", str(p)).strip(" ,.;")[:600]
+                           for p in (data.get("prompts") or [])]
+                old_prompts = beat_prompts(pkg)
+                save_prompts(pkg, prompts)
+                if prompts != old_prompts:
+                    try:
+                        record_history(produce_dir(staging_key(queue, slot, pkg)),
+                                       "prompts", prompts, baseline=old_prompts)
+                    except Exception:
+                        pass   # history must never block a save
+                self.send_json({"ok": True, "prompts": beat_prompts(pkg)})
             except Exception as exc:
                 self.send_json({"error": str(exc)}, 400)
             return
@@ -773,9 +1470,11 @@ class Handler(BaseHTTPRequestHandler):
                 slot = int(data.get("slot") or 0)
                 pkg = load_package(queue, slot)
                 d = produce_dir(staging_key(queue, slot, pkg))
-                # AI modes generate their own visuals - staged clips aren't needed.
+                # AI modes generate their own visuals - staged clips aren't
+                # needed. Per-beat reference videos count as clips too.
                 if (not data.get("infer") and not data.get("ai_visuals")
-                        and not data.get("infer_images") and not list(d.glob("*.mp4"))):
+                        and not data.get("infer_images") and not staged_clips(d)
+                        and not any(d.glob("refv-*.mp4"))):
                     raise RuntimeError("no clips staged - import or drop clips first")
                 start_render(queue, slot, d, data)
                 self.send_json({"ok": True})
