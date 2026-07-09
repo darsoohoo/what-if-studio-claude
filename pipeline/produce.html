@@ -598,6 +598,25 @@ function renderPrompts(prompts) {
       bh.hidden = false;
     });
     btns.append(btn, dbi, dbv, hb);
+    if (i < prompts.length - 1) {   // anywhere but after the outro
+      const addB = document.createElement("button");
+      addB.textContent = "＋ beat";
+      addB.title = "Insert a new beat right after this row (the video grows with the narration)";
+      addB.addEventListener("click", () => beatEdit("insert", i, addB));
+      btns.appendChild(addB);
+    }
+    if (i > 0 && i < prompts.length - 1) {   // body beats only
+      const delB = document.createElement("button");
+      delB.textContent = "🗑 beat";
+      delB.style.color = "var(--danger)";
+      delB.title = "Delete this beat — its spoken line, prompt, and attached image/video";
+      delB.addEventListener("click", () => {
+        if (!confirm(`Delete beat ${i}? Its spoken line and prompt stay in history, `
+            + `but an attached image/video for this row is removed for good.`)) return;
+        beatEdit("remove", i, delB);
+      });
+      btns.appendChild(delB);
+    }
     div.append(thumb, wrap, btns);
     // The whole row is an image target: drop a file on it, or point at it
     // and paste. dropZone below stays the target for .mp4 clips.
@@ -800,6 +819,29 @@ async function saveScriptLine(i, newLine) {
   if ($id("histBox").open) loadHistory();
   return null;
 }
+/* Add/remove a beat. The server shifts prompts, reference files, and radio
+   choices so every attachment stays with ITS beat; both changes land in
+   history. Current (possibly unsaved) prompt wording rides along. */
+async function beatEdit(action, row, btn) {
+  btn.disabled = true;
+  const vals = [...document.querySelectorAll("#prompts textarea.prompt-edit")].map(t => t.value.trim());
+  const r = await api("/api/produce/beat-edit", { queue: S.queue, slot: S.slot, action, row, prompts: vals });
+  btn.disabled = false;
+  $id("prSaveRow").hidden = false;
+  if (r.error) {
+    $id("prStatus").className = "status bad";
+    $id("prStatus").textContent = r.error;
+    return;
+  }
+  await refreshAll();
+  if ($id("histBox").open) loadHistory();
+  $id("prSaveRow").hidden = false;
+  $id("prStatus").className = "status good";
+  $id("prStatus").textContent = action === "insert"
+    ? `✓ New beat added after row ${String(row + 1).padStart(2, "0")} — write its spoken line and prompt (or attach media and let the AI describe it).`
+    : "✓ Beat deleted — its lines are still in 🕘 History if you change your mind.";
+}
+
 /* ---------- history: every saved script/prompts version, restorable ---------- */
 async function refreshAll() {
   const info = await api(`/api/produce/info?queue=${encodeURIComponent(S.queue)}&slot=${S.slot}`);

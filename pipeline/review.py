@@ -524,6 +524,46 @@ def set_ref_choice(d, index, use):
     (d / "ref-choice.json").write_text(json.dumps(data), encoding="utf-8")
 
 
+NEW_BEAT_TEXT = "New beat - click this line and write what the narrator says here."
+NEW_PROMPT_TEXT = "Describe this beat's visual here - or attach an image or video and use the describe buttons."
+
+
+def move_beat_refs(d, src, dst):
+    """Move one beat's reference files (image, video, cached frame) to a new
+    beat number - used when inserting/removing beats shifts the rows."""
+    img = ref_image_path(d, src)
+    if img:
+        img.rename(d / f"ref-{dst:02d}{img.suffix.lower()}")
+    vid = ref_video_path(d, src)
+    if vid:
+        vid.rename(d / f"refv-{dst:02d}.mp4")
+    frame = d / f"refv-{src:02d}-frame.jpg"
+    if frame.is_file():
+        frame.rename(d / f"refv-{dst:02d}-frame.jpg")
+
+
+def delete_beat_refs(d, num):
+    for f in (ref_image_path(d, num), ref_video_path(d, num),
+              d / f"refv-{num:02d}-frame.jpg"):
+        if f and f.is_file():
+            f.unlink()
+
+
+def shift_ref_choices(d, from_num, delta, drop=None):
+    """Renumber ref-choice.json keys when beats shift (drop removes one)."""
+    choices = ref_choices(d)
+    out = {}
+    for k, v in choices.items():
+        try:
+            ki = int(k)
+        except ValueError:
+            continue
+        if drop is not None and ki == drop:
+            continue
+        out[str(ki + delta if ki >= from_num else ki)] = v
+    (d / "ref-choice.json").write_text(json.dumps(out), encoding="utf-8")
+
+
 def ref_info(d, count):
     """Per-beat references: [{image, video, use}] - image/video are
     {name, mtime} or None; use says which one the render will honor.
@@ -1239,6 +1279,76 @@ class Handler(BaseHTTPRequestHandler):
                     raise RuntimeError("describing needs an OpenAI key - "
                                        "put one in pipeline/openai_key.txt")
                 self.send_json({"ok": True, "prompt": describe_ref_image(img, key)})
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 400)
+            return
+
+        if self.path == "/api/produce/beat-edit":
+            # Insert a beat after `row` or remove the beat at `row` (0-based
+            # card rows: 0=hook, last=outro). Prompts and reference files are
+            # shifted so every attachment stays with ITS beat.
+            try:
+                queue = str(data.get("queue", ""))
+                slot = int(data.get("slot") or 0)
+                action = str(data.get("action") or "")
+                row = int(data.get("row", -1))
+                qpath = queue_path(queue)
+                if not qpath or not qpath.is_file():
+                    raise RuntimeError("queue file not found")
+                qdata = json.loads(qpath.read_text(encoding="utf-8"))
+                pkg = next((it["package"] for it in qdata.get("items", [])
+                            if it.get("slot") == slot and it.get("package")), None)
+                if not pkg:
+                    raise RuntimeError(f"slot {slot} not in {qpath.name}")
+                old_script = script_snapshot(pkg)
+                old_prompts = beat_prompts(pkg)
+                n = len(mv.narration_segments(pkg, 0))
+                beats = [str(b) for b in (pkg.get("beats") or [])]
+                prompts = [re.sub(r"\s+", " ", str(p)).strip(" ,.;")[:600]
+                           for p in (data.get("prompts") or [])]
+                if len(prompts) != n or not all(prompts):
+                    prompts = list(old_prompts)   # client view unusable - keep server's
+                d = produce_dir(staging_key(queue, slot, pkg))
+                if action == "insert":
+                    if not (0 <= row <= n - 2):
+                        raise RuntimeError("can't insert a beat after the outro")
+                    if n >= 20:
+                        raise RuntimeError("20 rows per video is the cap")
+                    beats.insert(row, NEW_BEAT_TEXT)
+                    prompts.insert(row + 1, NEW_PROMPT_TEXT)
+                    with _lock:
+                        for j in range(n, row + 1, -1):       # shift rows >= row+2 up
+                            move_beat_refs(d, j, j + 1)
+                        shift_ref_choices(d, row + 2, +1)
+                    note = f"beat added after row {row + 1}"
+                elif action == "remove":
+                    if not (1 <= row <= n - 2):
+                        raise RuntimeError("only body beats can be deleted (not hook/outro)")
+                    if len(beats) <= 3:
+                        raise RuntimeError("need at least 3 beats")
+                    beats.pop(row - 1)
+                    prompts.pop(row)
+                    with _lock:
+                        delete_beat_refs(d, row + 1)
+                        for j in range(row + 2, n + 1):       # shift rows > row+1 down
+                            move_beat_refs(d, j, j - 1)
+                        shift_ref_choices(d, row + 2, -1, drop=row + 1)
+                    note = f"beat {row} removed"
+                else:
+                    raise RuntimeError("action must be insert or remove")
+                pkg["beats"] = beats
+                qpath.write_text(json.dumps(qdata, indent=2), encoding="utf-8")
+                slug = mv.slugify(str(pkg.get("scenarioId", "pkg")))
+                if mv.POLISH_CACHE.is_dir():
+                    for f in mv.POLISH_CACHE.glob(f"{slug}-*.json"):
+                        f.unlink()
+                mv._polish_memo.clear()
+                save_prompts(pkg, prompts)
+                record_history(d, "script", script_snapshot(pkg),
+                               baseline=old_script, note=note)
+                record_history(d, "prompts", prompts,
+                               baseline=old_prompts, note=note)
+                self.send_json({"ok": True})
             except Exception as exc:
                 self.send_json({"error": str(exc)}, 400)
             return
