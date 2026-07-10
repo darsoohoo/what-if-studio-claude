@@ -49,6 +49,9 @@ details { font-size: 12.5px; }
 summary { cursor: pointer; color: var(--text-dim); }
 pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(--border); border-radius: 8px; padding: 10px; max-height: 260px; overflow-y: auto; font-size: 12px; }
 .saved { color: var(--good); font-size: 11.5px; min-height: 14px; }
+.card.uploaded { border-color: var(--good); }
+.upbadge { color: var(--good); font-size: 11px; font-weight: 700; letter-spacing: 0.04em; white-space: nowrap; }
+.upbtn.on { color: var(--good); border-color: var(--good); }
 .empty { color: var(--text-dim); padding: 40px 24px; }
 :focus-visible { outline: 3px solid var(--accent-strong); outline-offset: 2px; }
 </style>
@@ -147,10 +150,22 @@ function render() {
     note.value = v.note || "";
     note.addEventListener("input", () => noteChanged(v, note, saved));
 
-    const card = el("div", { class: "card" }, [
+    const upBtn = el("button", {
+      class: "upbtn" + (v.uploaded ? " on" : ""),
+      text: v.uploaded ? "✓ Uploaded" : "Mark uploaded",
+      title: v.uploaded ? "Click to unmark (e.g. you deleted the post)" : "Track that you've posted this one",
+      onclick: async () => {
+        const r = await api("/api/uploaded", { name: v.name, uploaded: !v.uploaded });
+        if (r.ok !== undefined ? r.ok : !r.error) { v.uploaded = r.uploaded || null; render(); }
+      },
+    });
+    const card = el("div", { class: "card" + (v.uploaded ? " uploaded" : "") }, [
       el("div", { class: "row" }, [
         el("span", { class: "pos", text: "#" + (i + 1) }),
         el("span", { class: "title", text: v.title }),
+        v.uploaded
+          ? el("span", { class: "upbadge", text: "✅ " + new Date(v.uploaded * 1000).toLocaleDateString() })
+          : el("span", {}),
       ]),
       player,
       el("div", { class: "row" }, [
@@ -158,6 +173,7 @@ function render() {
         el("button", { text: "↓", "aria-label": "Move down", onclick: () => move(i, 1), ...(i === videos.length - 1 ? { disabled: "" } : {}) }),
         el("span", { class: "meta", text: v.size_mb + " MB" }),
         el("span", { style: "flex:1" }),
+        upBtn,
         el("button", { class: "del", text: "Remove", onclick: () => removeVideo(i) }),
       ]),
       note,
@@ -211,5 +227,6 @@ document.getElementById("navStudioBtn").addEventListener("click", () => {
   render();
 })();
 </script>
+<script src="/assistant.js"></script>
 </body>
 </html>

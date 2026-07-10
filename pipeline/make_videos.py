@@ -27,6 +27,7 @@ Requirements: Python 3.9+, `pip install -r requirements.txt`, ffmpeg on PATH
 
 import argparse
 import asyncio
+import base64
 import glob
 import json
 import os
@@ -135,6 +136,18 @@ def clean_for_tts(text):
     return re.sub(r"\s+", " ", text).strip()
 
 
+def versioned_slug(out_dir, slug):
+    """Never overwrite an existing render: when slug.mp4 is already there,
+    bump to -v2, -v3, ... so every render of a package is kept side by side
+    (the post kit and thumbnail share the slug, so they version together)."""
+    if not (Path(out_dir) / f"{slug}.mp4").exists():
+        return slug
+    v = 2
+    while (Path(out_dir) / f"{slug}-v{v}.mp4").exists():
+        v += 1
+    return f"{slug}-v{v}"
+
+
 def narration_segments(pkg, hook_index):
     """Ordered spoken segments: [hook, *beats, outro] (non-empty, cleaned)."""
     hooks = pkg.get("hooks", [])
@@ -177,11 +190,18 @@ def music_credit_for(music, music_dir):
         return None
 
 
+def is_ref_file(f):
+    """Per-beat reference images/videos (ref-NN.jpg, refv-NN.mp4) live beside
+    the staged clips but are targeted inputs, not ordered visuals."""
+    return f.name.startswith(("ref-", "refv-"))
+
+
 def list_visuals(directory):
     folder = Path(directory) if directory else None
     if not folder or not folder.is_dir():
         return []
-    return sorted(f for f in folder.iterdir() if f.suffix.lower() in (VIDEO_EXTS | IMAGE_EXTS))
+    return sorted(f for f in folder.iterdir()
+                  if f.suffix.lower() in (VIDEO_EXTS | IMAGE_EXTS) and not is_ref_file(f))
 
 
 # ---------------------------------------------------------------- TTS + captions
@@ -928,29 +948,111 @@ def _run_infer_job(model, task, input_obj, key, find_url=_find_video_url):
     return None, None, f"timed out after {INFER_POLL_TIMEOUT}s"
 
 
-def generate_infer_videos(pkg, segments, key, model, task, duration, cache_root):
-    """One AI-generated clip per beat via tryinfer. image-to-video animates a
-    free Pollinations first frame (shared style = coherence); if the provider
-    content-flags that image, the beat falls back to text-to-video. Clips
-    cache per scenario+model. Paid API - one billed job per beat."""
+def _ref_frame(ref_dir, index):
+    """A user-staged reference image for one beat (ref-NN.jpg beside the
+    staged clips, uploaded on the Produce page), or None."""
+    if not ref_dir:
+        return None
+    for ext in (".jpg", ".jpeg", ".png", ".webp"):
+        f = Path(ref_dir) / f"ref-{index:02d}{ext}"
+        if f.is_file():
+            return f
+    return None
+
+
+def _ref_video(ref_dir, index):
+    """A user-staged reference video for one beat (refv-NN.mp4), or None."""
+    if not ref_dir:
+        return None
+    f = Path(ref_dir) / f"refv-{index:02d}.mp4"
+    return f if f.is_file() else None
+
+
+def _ref_choice(ref_dir, index):
+    """Which per-beat reference is active: 'video', 'image', or None.
+    The Produce page's radio buttons write ref-choice.json; without an entry,
+    whichever file exists wins (image when both do)."""
+    img, vid = _ref_frame(ref_dir, index), _ref_video(ref_dir, index)
+    if not img and not vid:
+        return None
+    choice = ""
+    try:
+        choice = json.loads((Path(ref_dir) / "ref-choice.json")
+                            .read_text(encoding="utf-8")).get(str(index), "")
+    except Exception:
+        pass
+    if choice == "video" and vid:
+        return "video"
+    if choice == "image" and img:
+        return "image"
+    return "image" if img else "video"
+
+
+def _ref_frame_uri(ref, ffmpeg, cache_folder, index):
+    """The reference image as a base64 data URI for image-to-video. When
+    ffmpeg is available the image is first normalized to the clip's own
+    9:16 1080x1920 frame (cached; redone when the image changes) so the
+    model isn't handed a mismatched aspect ratio."""
+    src = ref
+    if ffmpeg:
+        norm = cache_folder / f"ref-{index:02d}-norm.jpg"
+        if not norm.exists() or norm.stat().st_mtime < ref.stat().st_mtime:
+            try:
+                run([ffmpeg, "-y", "-i", str(ref),
+                     "-vf", f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,crop={WIDTH}:{HEIGHT}",
+                     "-frames:v", "1", "-q:v", "3", str(norm)])
+            except Exception:
+                norm = None
+        if norm and norm.is_file():
+            src = norm
+    mime = {".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+            ".png": "image/png", ".webp": "image/webp"}[src.suffix.lower()]
+    return f"data:{mime};base64,{base64.b64encode(src.read_bytes()).decode('ascii')}"
+
+
+def generate_infer_videos(pkg, segments, key, model, task, duration, cache_root,
+                          ref_dir=None, ffmpeg=None):
+    """One AI-generated clip per beat via tryinfer. image-to-video animates the
+    beat's user-attached reference image when one is staged (ref-NN.jpg in
+    ref_dir), else a free Pollinations first frame (shared style = coherence);
+    if the provider rejects that image, the beat falls back to text-to-video.
+    Clips cache per scenario+model; a beat regenerates when its reference
+    image is newer than its cached clip. Paid API - one billed job per beat."""
     folder = Path(cache_root) / f"{slugify(pkg.get('scenarioId', 'pkg'))}-{model}"
     folder.mkdir(parents=True, exist_ok=True)
     files, spent = [], 0.0
     for i, seg in enumerate(segments):
-        dest = folder / f"{i + 1:02d}.mp4"
-        if dest.exists():
-            files.append(dest)
+        if _ref_choice(ref_dir, i + 1) == "video":
+            vid = _ref_video(ref_dir, i + 1)
+            print(f"    beat {i + 1}: using your uploaded video ({vid.name}) - nothing billed")
+            files.append(vid)
             continue
+        dest = folder / f"{i + 1:02d}.mp4"
+        ref = _ref_frame(ref_dir, i + 1)
+        if dest.exists():
+            if ref and ref.stat().st_mtime > dest.stat().st_mtime:
+                print(f"    beat {i + 1}: reference image is newer than the cached clip - regenerating")
+                dest.unlink()
+            else:
+                files.append(dest)
+                continue
         motion = ai_prompt_for_segment(pkg, i, len(segments), VIDEO_MOTION_SUFFIX)
         base_input = {"prompt": motion, "duration_seconds": str(duration), "aspect_ratio": "9:16"}
 
         attempts = []
         if task == "image-to-video":
+            if ref:
+                try:
+                    uri = _ref_frame_uri(ref, ffmpeg, folder, i + 1)
+                    attempts.append(("image-to-video", {**base_input, "image_url": uri}))
+                    print(f"    beat {i + 1}: animating your attached image ({ref.name})")
+                except Exception as exc:
+                    print(f"    beat {i + 1}: couldn't read attached image ({exc})")
             frame_prompt = ai_prompt_for_segment(pkg, i, len(segments), AI_STYLES["cinematic"])
             image_url = pollinations_image_url(frame_prompt, seed=(i + 1) * 17)
             if _prewarm_url(image_url):
                 attempts.append(("image-to-video", {**base_input, "image_url": image_url}))
-            else:
+            elif not attempts:
                 print(f"    beat {i + 1}: first-frame image unavailable, using text-to-video")
         attempts.append(("text-to-video", dict(base_input)))
 
@@ -1574,9 +1676,12 @@ def main():
 
     for slot, item, pkg in items:
         title = pkg.get("title", "untitled")
-        slug = f"{slot:02d}-{slugify(title)}"
+        base_slug = f"{slot:02d}-{slugify(title)}"
+        slug = versioned_slug(out_dir, base_slug)
         out_path = out_dir / f"{slug}.mp4"
         print(f"[slot {slot}] {title}")
+        if slug != base_slug:
+            print(f"  earlier render kept - this one saves as {out_path.name}")
 
         vconf = dict(VOICE_MAP.get(pkg.get("voice"), DEFAULT_VOICE))
         if args.voice:
@@ -1616,7 +1721,8 @@ def main():
                 if args.infer:
                     print(f"  generating AI video with {args.infer_model}...")
                     item_visuals = generate_infer_videos(pkg, segments, infer_key, args.infer_model,
-                                                         args.infer_task, args.infer_duration, args.infer_cache)
+                                                         args.infer_task, args.infer_duration, args.infer_cache,
+                                                         ref_dir=args.backgrounds, ffmpeg=ffmpeg)
                 elif args.infer_images:
                     print(f"  generating AI images with {args.infer_images}...")
                     item_visuals = generate_infer_images(pkg, len(segments), infer_key, args.infer_images,
@@ -1627,6 +1733,22 @@ def main():
                 elif args.ai_visuals:
                     print(f"  generating AI visuals ({args.ai_style})...")
                     item_visuals = generate_ai_visuals(pkg, len(segments), args.ai_style, args.ai_cache)
+
+                # Per-beat video overrides from the Produce page: a beat whose
+                # radio says "video" plays that uploaded clip in EVERY mode
+                # (in --infer the generation for it was already skipped above).
+                over = {i: _ref_video(args.backgrounds, i + 1) for i in range(len(segments))
+                        if _ref_choice(args.backgrounds, i + 1) == "video"}
+                if over:
+                    if item_visuals:
+                        per_beat = [item_visuals[i % len(item_visuals)] for i in range(len(segments))]
+                    else:
+                        ordered = [over[i] for i in sorted(over)]
+                        per_beat = [ordered[i % len(ordered)] for i in range(len(segments))]
+                    for i, v in over.items():
+                        per_beat[i] = v
+                    item_visuals = per_beat
+                    print(f"  visuals: {len(over)} beat(s) play your uploaded video")
 
                 charts = None
                 if args.charts:

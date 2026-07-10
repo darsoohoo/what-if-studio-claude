@@ -1989,6 +1989,297 @@ function bindBuilder() {
 }
 
 /* ============================================================
+   14c. STUDIO ASSISTANT HOST
+   The chat UI and generic brains live in assistant.js (shared
+   by every page). This section is the Studio-specific "host":
+   the app context, the offline command parser, and the action
+   whitelist - never anything destructive (no reset, no delete).
+   ============================================================ */
+
+function voiceLabel(id) {
+  const v = VOICES.find(v => v.id === (id || state.options.voice));
+  return v ? v.label : id;
+}
+
+/* Snapshot of what the user is looking at - sent with every AI request
+   and used to answer "what's selected?" style questions offline. */
+function assistantContext() {
+  const scenario = getScenario(state.selectedId);
+  return {
+    selectedScenario: scenario ? {
+      title: scenario.title,
+      category: scenario.category,
+      custom: Boolean(scenario.custom),
+      beats: scenario.beats.length
+    } : null,
+    packageGenerated: Boolean(state.pkg),
+    runtime: state.options.runtime,
+    voice: voiceLabel(),
+    searchQuery: state.search,
+    categoryFilter: state.category,
+    libraryTotal: allScenarios().length,
+    customScenarios: state.customScenarios.length,
+    lastSeed: state.seed ? `${state.seed.category}: ${state.seed.text}` : null,
+    storageMode: storage.mode,
+    categories: CATEGORIES,
+    runtimes: RUNTIMES.map(r => r.id),
+    voices: VOICES.map(v => v.label)
+  };
+}
+
+/* Loose title match: "open the moon one" should find the Moon scenario. */
+function findScenarioByTitle(text) {
+  const stop = new Set(["the", "a", "an", "one", "that", "scenario", "video", "what", "if", "about"]);
+  const words = String(text).toLowerCase().replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/).filter(w => w && !stop.has(w));
+  if (!words.length) return null;
+  let best = null, bestScore = 0;
+  allScenarios().forEach(s => {
+    const hay = (s.title + " " + s.tags.join(" ")).toLowerCase();
+    const score = words.reduce((n, w) => n + (hay.includes(w) ? 1 : 0), 0);
+    if (score > bestScore) { best = s; bestScore = score; }
+  });
+  return bestScore >= Math.max(1, Math.ceil(words.length / 2)) ? best : null;
+}
+
+/* Create a custom scenario without opening the dialog. Uses the same AI
+   draft service as "Write it for me"; falls back to the prefilled builder
+   when the dashboard is offline. */
+async function assistantCreateScenario(args) {
+  let raw = String(args.title || "").trim().replace(/\s+/g, " ");
+  if (!raw) return "Give me a topic — e.g. “make a video about haunted vending machines”.";
+  const title = /^what\s+if\b/i.test(raw) ? raw : `What if ${raw.replace(/[.?!]+$/, "")}?`;
+  const category = CATEGORIES.includes(args.category) ? args.category : "Speculative";
+  let draft;
+  try {
+    draft = await draftScenarioWithAI(title, category, state.options.runtime);
+  } catch (err) {
+    $("newScenarioBtn").click();
+    $("bTitle").value = title;
+    return err && err.message === "dashboard-offline"
+      ? "The AI writer needs the Studio helper running — I opened the builder with your title instead. Fill in the beats yourself, or start “Start-What-If-Studio” and click “Write it for me”."
+      : "The writing service hiccuped — I opened the builder with your title. Try “Write it for me” again in a moment.";
+  }
+  const scenario = scaffoldScenario({
+    title,
+    category,
+    glyph: draft.emoji,
+    premise: draft.premise,
+    tags: draft.tags,
+    beats: draft.beats
+  });
+  state.customScenarios.push(scenario);
+  persist();
+  state.category = "All";
+  state.search = "";
+  $("searchInput").value = "";
+  renderCategoryChips();
+  renderLibrary();
+  selectScenario(scenario.id);
+  if (args.render) {
+    $("generateBtn").click();
+    return `Created “${scenario.title}” (draft by ${draft.engine}) and exported it for render — the watcher takes it from here. Everything is editable if you want another cut.`;
+  }
+  return `Added “${scenario.title}” to your library (draft by ${draft.engine}) and opened it. Review the beats, then say “generate” to send it to render.`;
+}
+
+/* Whitelisted actions - the only things chat (local or AI) can do.
+   Each returns a human status line. */
+async function runAssistantAction(action) {
+  const args = (action && action.args) || {};
+  switch (action && action.name) {
+    case "select_scenario": {
+      const s = findScenarioByTitle(String(args.title || ""));
+      if (!s) return `I couldn't find a scenario matching “${String(args.title || "").slice(0, 60)}” — try “search ${String(args.title || "").split(/\s+/)[0] || "…"}” to browse.`;
+      selectScenario(s.id);
+      return `Opened “${s.title}” (${s.category}). Say “generate” to build and export it.`;
+    }
+    case "search": {
+      if (args.category && CATEGORIES.includes(args.category)) state.category = args.category;
+      else if (args.category === "All") state.category = "All";
+      state.search = String(args.query || "").slice(0, 80);
+      $("searchInput").value = state.search;
+      renderCategoryChips();
+      renderLibrary();
+      const n = filteredScenarios().length;
+      return n
+        ? `Showing ${n} scenario${n === 1 ? "" : "s"}${state.search ? ` for “${state.search}”` : ""}${state.category !== "All" ? ` in ${state.category}` : ""}. Tell me which to open.`
+        : "No matches — try different words, or say “make a video about …” and I'll draft a new one.";
+    }
+    case "set_options": {
+      const parts = [];
+      const rt = Number(args.runtime);
+      if (RUNTIMES.some(r => r.id === rt)) {
+        state.options.runtime = rt;
+        if (getScenario(state.selectedId)) renderRuntimeControl();
+        syncBuilderRuntime();
+        parts.push(`runtime ${rt === 180 ? "3 min" : rt + "s"}`);
+      }
+      const vid = String(args.voice || "").toLowerCase();
+      const voice = VOICES.find(v => v.id === vid || v.label.toLowerCase().includes(vid));
+      if (voice && vid) {
+        state.options.voice = voice.id;
+        const sel = $("voiceSelect");
+        if (sel.options.length) sel.value = voice.id;
+        parts.push(`voice ${voice.label}`);
+      }
+      return parts.length
+        ? `Done — ${parts.join(", ")}. This applies to the next package you generate.`
+        : "I can set runtime to 30s, 60s, 90s or 3 min, and the voice to Calm, High-Energy or Deadpan.";
+    }
+    case "generate": {
+      const scenario = getScenario(state.selectedId);
+      if (!scenario) return "Pick a scenario first — say “open …” with a title, or “make a video about …” for a new one.";
+      $("generateBtn").click();
+      return `Generated “${scenario.title}” (${state.options.runtime === 180 ? "3 min" : state.options.runtime + "s"}, ${voiceLabel()}) and downloaded the render queue — the watcher picks it up from Downloads.`;
+    }
+    case "export": {
+      if (!state.pkg) {
+        const scenario = getScenario(state.selectedId);
+        if (!scenario) return "Nothing to export yet — open a scenario and say “generate” first.";
+        state.pkg = buildPackage(scenario, state.options);
+        state.activeTab = 0;
+        renderPackage();
+      }
+      const format = String(args.format || "json").toLowerCase();
+      if (format === "txt") { $("exportTxtBtn").click(); return "Exported the package as .txt."; }
+      if (format === "srt") { $("exportSrtBtn").click(); return "Exported the subtitles as .srt."; }
+      $("exportJsonBtn").click();
+      return "Exported the render .json — the watcher will pick it up from Downloads.";
+    }
+    case "new_seed": {
+      nextSeed();
+      return `Here's a fresh angle — ${state.seed.category}: ${state.seed.text} Say “make a video about it” and I'll draft it.`;
+    }
+    case "create_scenario":
+      return assistantCreateScenario(args);
+    case "navigate": {
+      const page = String(args.page || "").toLowerCase();
+      if (page.startsWith("video")) { $("navVideosBtn").click(); return "Checking the dashboard and heading to Videos…"; }
+      if (page.startsWith("produce")) { $("navProduceBtn").click(); return "Checking the dashboard and heading to Produce…"; }
+      if (page.startsWith("spend")) { $("navSpendBtn").click(); return "Checking the dashboard and heading to Spend…"; }
+      if (page.startsWith("help") || page.startsWith("how")) { $("navHelpBtn").click(); return "Opening the how-to guide…"; }
+      if (page.startsWith("studio")) return "You're already in the Studio.";
+      return "I can take you to Videos, Produce, Spend, or the How-to guide.";
+    }
+    default:
+      return null;
+  }
+}
+
+const ASSISTANT_CAPABILITIES =
+  "I can drive the studio for you — try:\n" +
+  "• “open the black hole scenario”\n" +
+  "• “make a 90s deadpan video about haunted elevators”\n" +
+  "• “set the voice to high-energy” / “make it 3 min”\n" +
+  "• “generate” (build + export the selected scenario)\n" +
+  "• “search history” or “show scary ones”\n" +
+  "• “give me an idea”, “go to produce”, “export srt”\n" +
+  "• “is my video done?” (render status + newest videos)\n" +
+  "• “give me the caption for my newest video” (post kit, ready to copy)\n" +
+  "• “mark it posted” once a video has gone out\n" +
+  "…and ask me anything about how the app or the render pipeline works.";
+
+/* Local intent parsing - fast, free, and works offline. Returns
+   { action, reply } or null (which hands off to the AI tier). */
+function parseIntent(raw) {
+  const text = raw.trim();
+  const t = text.toLowerCase().replace(/[""'']/g, "");
+  if (!t) return null;
+
+  if (/what('?s| is) (selected|open|loaded)|current (settings|status|setup)|^status$/.test(t)) {
+    const c = assistantContext();
+    return { reply: (c.selectedScenario
+      ? `You have “${c.selectedScenario.title}” open (${c.selectedScenario.category}${c.selectedScenario.custom ? ", custom" : ""}).`
+      : "Nothing is selected yet.")
+      + ` Settings: ${c.runtime === 180 ? "3 min" : c.runtime + "s"}, ${c.voice}. Library: ${c.libraryTotal} scenarios (${c.customScenarios} custom).`
+      + (c.packageGenerated ? " A package is generated and ready to export." : "") };
+  }
+
+  const nav = t.match(/^(?:go to|take me to|open|show me|show)\s+(?:the\s+)?(videos?|produce|spend|help|how[- ]to|dashboard|guide)\b/);
+  if (nav) {
+    const page = /help|how|guide/.test(nav[1]) ? "help" : (nav[1] === "dashboard" ? "videos" : nav[1]);
+    return { action: { name: "navigate", args: { page } } };
+  }
+
+  if (/^(?:give me |get me |i need )?(?:a |another |new |fresh )?(?:seed|idea|angle|inspiration)\b/.test(t) ||
+      /new scenario seed/.test(t))
+    return { action: { name: "new_seed", args: {} } };
+
+  // Settings: runtime and/or voice in one message ("make it a 90s hype video").
+  const rtMatch = t.match(/\b(30|60|90|180)\s*s?(?:ec(?:ond)?s?)?\b/) || (/\b3\s*min/.test(t) ? ["", "180"] : null);
+  const voiceMatch = t.match(/\b(calm|hype|high[\s-]?energy|deadpan)\b/);
+  const settingsIntent = /\b(set|change|switch|use|make it|runtime|length|voice|style)\b/.test(t);
+  if (settingsIntent && (rtMatch || voiceMatch) && !/\babout\b/.test(t)) {
+    const args = {};
+    if (rtMatch) args.runtime = Number(rtMatch[1]);
+    if (voiceMatch) args.voice = voiceMatch[1].startsWith("high") ? "hype" : voiceMatch[1];
+    return { action: { name: "set_options", args } };
+  }
+
+  if (/^(generate|render|export for render|make (?:the|this) video|build (?:the |this )?package|send it|do it|go|ship it)\W*$/.test(t))
+    return { action: { name: "generate", args: {} } };
+
+  const exp = t.match(/^export\b.*?\b(txt|srt|json|text|subtitles?)\b|^(?:download|save)\b.*\b(txt|srt|json)\b/);
+  if (exp) {
+    const f = (exp[1] || exp[2] || "json").replace("text", "txt").replace(/subtitles?/, "srt");
+    return { action: { name: "export", args: { format: f } } };
+  }
+  if (/^export\W*$/.test(t)) return { action: { name: "export", args: { format: "json" } } };
+
+  // Creation: "make a video about X", or a bare "what if ...?" premise.
+  const create = t.match(/^(?:make|create|write|draft|build)(?:\s+me)?(?:\s+(?:a|an|another|new))?\s*(?:\d+\s*s?|3\s*min)?\s*(?:calm|hype|high[\s-]?energy|deadpan)?\s*(?:scenario|video|short|one)?\s*(?:about|on|called|for|:)\s*(.+)$/);
+  if (create || /^what\s+if\s+.+/.test(t)) {
+    const topic = create ? create[1] : text;
+    const args = { title: topic.trim(), render: /\b(and )?(render|export|ship|send) it\b|right now/.test(t) };
+    if (rtMatch || voiceMatch) {
+      // Apply inline settings before drafting.
+      const opts = {};
+      if (rtMatch) opts.runtime = Number(rtMatch[1]);
+      if (voiceMatch) opts.voice = voiceMatch[1].startsWith("high") ? "hype" : voiceMatch[1];
+      runAssistantAction({ name: "set_options", args: opts });
+    }
+    const cat = CATEGORIES.find(c => t.includes(c.toLowerCase()));
+    if (cat) args.category = cat;
+    return { action: { name: "create_scenario", args } };
+  }
+
+  const search = t.match(/^(?:search|find|filter|show)\s+(?:for\s+|me\s+)?(.+)$/);
+  if (search) {
+    const q = search[1].replace(/\s*(scenarios?|ones?|videos?)$/, "").trim();
+    const cat = CATEGORIES.find(c => q.toLowerCase() === c.toLowerCase() ||
+      (q.length > 3 && c.toLowerCase().startsWith(q.toLowerCase())));
+    if (/^(all|everything)$/.test(q)) return { action: { name: "search", args: { query: "", category: "All" } } };
+    return { action: { name: "search", args: cat ? { query: "", category: cat } : { query: q } } };
+  }
+
+  const open = t.match(/^(?:open|select|load|pick|choose)\s+(.+)$/);
+  if (open) {
+    if (findScenarioByTitle(open[1])) return { action: { name: "select_scenario", args: { title: open[1] } } };
+    return { action: { name: "search", args: { query: open[1].replace(/^the\s+/, "") } } };
+  }
+
+  // A message that closely matches a library title ("the moon one").
+  if (t.split(/\s+/).length <= 6) {
+    const s = findScenarioByTitle(t);
+    if (s) return { action: { name: "select_scenario", args: { title: t } } };
+  }
+
+  return null;
+}
+
+/* Register this page as the assistant's host. assistant.js (loaded after
+   this file) builds the chat UI, handles smalltalk/FAQ/AI tiers, and calls
+   back into these for everything Studio-specific. */
+window.assistantHost = {
+  page: "studio",
+  capabilities: ASSISTANT_CAPABILITIES,
+  getContext: assistantContext,
+  parseIntent,
+  runAction: runAssistantAction
+};
+
+/* ============================================================
    15. WIRING
    ============================================================ */
 

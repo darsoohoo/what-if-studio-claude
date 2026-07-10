@@ -41,14 +41,50 @@ button:disabled { opacity: 0.45; cursor: default; }
 .primary { background: linear-gradient(135deg, var(--accent), #6a5ae0); border-color: transparent; color: #fff; }
 .hint { color: var(--text-faint); font-size: 12.5px; margin: 6px 0 0; }
 .prompt { display: flex; gap: 10px; align-items: flex-start; background: var(--bg-inset); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-top: 8px; }
+.prompt.imgover { border-color: var(--accent); background: rgba(139,123,255,0.08); }
 .prompt .num { flex: none; font-weight: 700; color: var(--accent-strong); }
 .prompt .text { flex: 1; font-size: 13px; color: var(--text-dim); }
+.prompt .text textarea.prompt-edit { display: block; width: 100%; font: inherit; font-size: 13px; line-height: 1.5; color: var(--text-dim); background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 1px 5px; margin-left: -6px; resize: none; overflow: hidden; }
+.prompt .text textarea.prompt-edit:hover { border-color: var(--border-strong); }
+.prompt .text textarea.prompt-edit:focus { border-color: var(--accent); background: var(--bg); color: var(--text); }
+.spoken textarea { flex: 1; font: inherit; font-size: 12.5px; font-style: italic; line-height: 1.45; color: inherit; background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 1px 5px; resize: none; overflow: hidden; }
+.spoken textarea:hover { border-color: var(--border-strong); }
+.spoken textarea:focus { border-color: var(--accent); background: var(--bg); color: var(--text); font-style: normal; }
+.prompt-suffix { color: var(--text-faint); font-size: 11.5px; margin-top: 2px; }
+.spoken { display: flex; gap: 6px; align-items: flex-start; font-size: 12.5px; color: var(--text-dim); font-style: italic; border-left: 2px solid var(--accent); padding: 1px 8px; margin-bottom: 7px; }
+.spoken .tag { flex: none; font-style: normal; font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--accent-strong); margin-top: 3px; }
+.spoken .mini { margin-top: 2px; }
+.spoken select.tone { flex: none; width: auto; font-size: 11px; font-style: normal; padding: 1px 4px; margin-top: 2px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--text-faint); cursor: pointer; }
+.spoken select.tone:hover { border-color: var(--border-strong); color: var(--text-dim); }
+.spoken.suggested { border-left-color: var(--good); color: var(--text); }
+.spoken .mini { border: none; background: none; padding: 0 2px; font-size: 11.5px; font-style: normal; font-weight: 600; color: var(--accent-strong); flex: none; }
+.spoken .mini:hover { color: var(--text); border: none; }
+.spoken .mini.keep { color: var(--good); }
+.hist-row { display: flex; gap: 10px; align-items: center; font-size: 12.5px; color: var(--text-dim); padding: 7px 2px; border-bottom: 1px solid var(--border); }
+.hist-row .when { flex: none; color: var(--text-faint); font-size: 11.5px; white-space: nowrap; }
+.hist-row .kind { flex: none; font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--accent-strong); width: 62px; }
+.hist-row .preview { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist-row .note { flex: none; color: var(--text-faint); font-size: 11px; font-style: italic; }
+.hist-row button { flex: none; font-size: 12px; padding: 4px 10px; }
+.beat-hist { margin-top: 8px; border-top: 1px dashed var(--border-strong); padding-top: 6px; }
+.beat-hist .bh-head { font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-faint); margin: 6px 0 2px; }
+.bh-row { display: flex; gap: 8px; align-items: baseline; font-size: 12px; color: var(--text-dim); padding: 3px 0; }
+.bh-row .when { flex: none; color: var(--text-faint); font-size: 11px; white-space: nowrap; }
+.bh-row .val { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bh-row button { flex: none; font-size: 11.5px; padding: 2px 9px; }
+.prompt .thumb { flex: none; width: 88px; display: flex; flex-direction: column; gap: 8px; }
+.refslot { display: flex; align-items: flex-start; gap: 6px; }
+.refslot input[type="radio"] { margin: 2px 0 0; accent-color: var(--accent); flex: none; }
+.refslot .slotbody { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.prompt .thumb img, .prompt .thumb video { width: 58px; height: 64px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border-strong); cursor: pointer; display: block; background: #000; }
+.prompt .thumb img:hover, .prompt .thumb video:hover { border-color: var(--accent); }
+.prompt .thumb .addimg { width: 58px; height: 64px; border: 1px dashed var(--border-strong); border-radius: 6px; background: none; color: var(--text-faint); font-size: 11px; padding: 2px; }
+.prompt .thumb .addimg:hover { color: var(--accent-strong); }
+.prompt .thumb .rmimg { border: none; background: none; color: var(--text-faint); font-size: 10.5px; padding: 0; }
+.prompt .thumb .rmimg:hover { color: var(--danger); border: none; }
+.prompt .btns { flex: none; display: flex; flex-direction: column; gap: 6px; }
+.prompt .btns button { white-space: nowrap; }
 .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
-.drop { border: 2px dashed var(--border-strong); border-radius: 10px; padding: 22px; text-align: center; color: var(--text-faint); margin-top: 12px; }
-.drop.over { border-color: var(--accent); color: var(--accent-strong); background: rgba(139,123,255,0.06); }
-.clip { display: flex; gap: 12px; align-items: center; background: var(--bg-inset); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin-top: 8px; }
-.clip video { width: 64px; aspect-ratio: 9/16; background: #000; border-radius: 6px; }
-.clip .name { flex: 1; font-size: 13px; }
 label.opt { display: flex; gap: 8px; align-items: center; font-size: 13.5px; color: var(--text-dim); }
 pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(--border); border-radius: 8px; padding: 10px; max-height: 240px; overflow-y: auto; font-size: 12px; margin-top: 10px; }
 .status { font-size: 13px; margin-top: 10px; min-height: 18px; }
@@ -135,31 +171,35 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
         </label>
       </div>
       <div id="manualPrompts">
-        <p class="hint">Manual path — in <a href="https://tryinfer.com" target="_blank" rel="noopener" style="color:var(--accent-strong)">tryinfer Studio</a>: <strong>9:16 vertical · 5s</strong> · your chosen model. Copy each prompt, generate, download — in order.</p>
+        <p class="hint" id="manualHint">Manual path — in <a href="https://tryinfer.com" target="_blank" rel="noopener" style="color:var(--accent-strong)">tryinfer Studio</a>: <strong>9:16 vertical · 5s</strong> · your chosen model. Copy each prompt, generate, download — in order, then:</p>
+        <div class="row" id="importRow">
+          <button type="button" id="importBtn" class="primary">⬇ Import newest <span id="importCount">7</span> videos from Downloads → the beats</button>
+          <span class="hint" style="margin:0">oldest first = generation order; each lands on its beat with the radio set to video. Or drop files straight onto the rows (several at once fill consecutive beats).</span>
+        </div>
+        <p class="status" id="importStatus" role="status" aria-live="polite" style="margin:4px 0 0"></p>
+        <p class="hint">Click any prompt to rewrite it — <strong>Save prompts</strong> keeps your wording for the Copy buttons <em>and</em> the AI modes above. Attach a picture or your own clip to a beat — <strong>＋ image</strong> / <strong>＋ video</strong>, drop a file on the row, or point at a row and paste (<strong>Ctrl+V</strong>). The <strong>radio button</strong> picks which one that beat uses: image = the AI animates from it, video = your clip plays as-is (nothing billed for that beat). <strong>🎥 From image</strong> writes the prompt for you: a video description of the picture.</p>
         <div id="prompts"></div>
+        <input type="file" id="refFile" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" hidden>
+        <input type="file" id="refVidFile" accept=".mp4,video/mp4" hidden>
+        <div class="row" id="prSaveRow" hidden>
+          <button type="button" id="prSaveBtn" class="primary">Save prompts</button>
+          <button type="button" id="prUndoBtn">Undo edits</button>
+          <span class="status" id="prStatus" style="margin:0" role="status" aria-live="polite"></span>
+        </div>
+        <details id="histBox" style="margin-top:12px">
+          <summary style="cursor:pointer;color:var(--text-dim);font-size:13px">🕘 Full history — whole saved versions of the script and prompts (each beat row has its own 🕘 for just that beat)</summary>
+          <div id="histList"></div>
+        </details>
       </div>
-    </section>
-
-    <section id="stepClips">
-      <h2><span class="step">3</span>Bring the clips in</h2>
-      <div class="row">
-        <button type="button" id="importBtn" class="primary">⬇ Import newest <span id="importCount">7</span> videos from Downloads</button>
-        <span class="hint" style="margin:0">…or drag the downloaded files into the box below.</span>
-      </div>
-      <div class="drop" id="dropZone">Drop clips here (they'll be numbered in the order you drop them)</div>
-      <div id="clips"></div>
-      <div class="row">
-        <button type="button" id="clearBtn">Clear all clips</button>
-      </div>
-      <p class="status" id="clipStatus" role="status" aria-live="polite"></p>
     </section>
 
     <section>
-      <h2><span class="step">4</span>Render</h2>
+      <h2><span class="step">3</span>Render</h2>
       <div class="row">
         <label class="opt"><input type="checkbox" id="optEleven"> ElevenLabs voice</label>
         <label class="opt">Voice: <select id="optVoice" style="width:auto"><option value="auto">Auto (from style)</option></select></label>
         <button type="button" id="voicePlayBtn" title="Play a short sample of the selected voice">▶ Hear it</button>
+        <button type="button" id="voiceStarBtn" title="Pin the selected voice to the top and make it the default narrator">☆ Make default</button>
         <label class="opt"><input type="checkbox" id="optCharts" checked> Animated numbers</label>
         <label class="opt"><input type="checkbox" id="optClipAudio"> Keep clip sound (LTX)</label>
       </div>
@@ -224,8 +264,13 @@ $id("pkgSelect").addEventListener("change", async (e) => {
   const info = await api(`/api/produce/info?queue=${encodeURIComponent(queue)}&slot=${slot}`);
   if (info.error) { alert(info.error); return; }
   S.queue = queue; S.slot = Number(slot); S.dir = info.dir; S.prompts = info.prompts;
-  renderPrompts(info.prompts);
-  renderClips(info.staged);
+  S.promptSuffix = info.prompt_suffix || "";
+  S.segments = info.segments || [];
+  S.script = info.script;
+  S.refs = info.refs || [];
+  S.openai = !!info.openai;
+  renderPrompts(info.prompts, false);   // fresh package - nothing carries over
+  $id("importStatus").textContent = "";
   $id("importCount").textContent = info.prompts.length;
   $id("modeInfer").hidden = !info.infer;
   if (!info.infer && visMode() === "infer") {
@@ -258,24 +303,18 @@ $id("pkgSelect").addEventListener("change", async (e) => {
   applyVisMode();
   $id("optEleven").checked = info.elevenlabs;
   $id("optEleven").disabled = !info.elevenlabs;
-  const vs = $id("optVoice");
-  vs.innerHTML = "";
-  const autoOpt = document.createElement("option");
-  autoOpt.value = "auto";
-  autoOpt.textContent = info.auto_voice ? `Auto — ${info.auto_voice}` : "Auto (from style)";
-  vs.appendChild(autoOpt);
-  S.voicePreviews = { auto: null };
-  (info.voices || []).forEach(v => {
-    const name = typeof v === "string" ? v : v.name;
-    S.voicePreviews[name] = (typeof v === "object" && v.preview) || null;
-    if (name === info.auto_voice) S.voicePreviews.auto = S.voicePreviews[name];
-    const o = document.createElement("option");
-    o.value = name; o.textContent = name;
-    vs.appendChild(o);
-  });
-  updateVoicePlayBtn();
+  S.voices = info.voices || [];
+  S.autoVoice = info.auto_voice;
+  S.voicePrefs = {
+    voice_default: (info.voice_prefs || {}).voice_default || null,
+    voice_favs: (info.voice_prefs || {}).voice_favs || [],
+  };
+  buildVoices();
   fillScript(info.script);
+  $id("histBox").open = false;   // each package has its own history
+  $id("histList").innerHTML = "";
   $id("flow").hidden = false;
+  sizePrompts();   // textareas measure 0 while #flow is hidden
 });
 
 /* ---------- script editing (writes back into the archived export) ---------- */
@@ -302,10 +341,90 @@ $id("scSaveBtn").addEventListener("click", async () => {
   if (r.error) { $id("scStatus").className = "status bad"; $id("scStatus").textContent = r.error; return; }
   $id("scStatus").className = "status good";
   $id("scStatus").textContent = "✓ Saved — the next render speaks and captions this version.";
+  if ($id("histBox").open) loadHistory();
   // Prompts derive from the beats - refresh them (keeps the script box open).
   const info = await api(`/api/produce/info?queue=${encodeURIComponent(S.queue)}&slot=${S.slot}`);
-  if (!info.error) { S.prompts = info.prompts; renderPrompts(info.prompts); updateVidHint(); }
+  if (!info.error) {
+    S.prompts = info.prompts;
+    S.promptSuffix = info.prompt_suffix || S.promptSuffix || "";
+    S.segments = info.segments || S.segments || [];
+    S.script = info.script || S.script;
+    S.refs = info.refs || [];
+    S.openai = !!info.openai;
+    renderPrompts(info.prompts);
+    updateVidHint();
+    // A saved title should show in the "Pick a package" dropdown right away.
+    const opt = $id("pkgSelect").selectedOptions[0];
+    if (opt && opt.value && info.script && info.script.title) {
+      const extras = opt.textContent.split("  —  ")[1];
+      opt.textContent = info.script.title + (extras ? `  —  ${extras}` : "");
+    }
+  }
 });
+
+/* ---------- voice dropdown: favorites pinned on top, default preselected ---------- */
+function buildVoices() {
+  const vs = $id("optVoice");
+  vs.innerHTML = "";
+  const autoOpt = document.createElement("option");
+  autoOpt.value = "auto";
+  autoOpt.textContent = S.autoVoice ? `Auto — ${S.autoVoice}` : "Auto (from style)";
+  vs.appendChild(autoOpt);
+  S.voicePreviews = { auto: null };
+  const names = [];
+  (S.voices || []).forEach(v => {
+    const name = typeof v === "string" ? v : v.name;
+    names.push(name);
+    S.voicePreviews[name] = (typeof v === "object" && v.preview) || null;
+    if (name === S.autoVoice) S.voicePreviews.auto = S.voicePreviews[name];
+  });
+  const favs = ((S.voicePrefs || {}).voice_favs || []).filter(n => names.includes(n));
+  const ordered = [...favs, ...names.filter(n => !favs.includes(n))];
+  ordered.forEach(name => {
+    const o = document.createElement("option");
+    o.value = name;
+    o.textContent = (favs.includes(name) ? "★ " : "") + name;
+    vs.appendChild(o);
+  });
+  const def = (S.voicePrefs || {}).voice_default;
+  vs.value = def && names.includes(def) ? def : "auto";
+  updateVoicePlayBtn();
+  updateStarBtn();
+}
+function updateStarBtn() {
+  const sel = $id("optVoice").value;
+  const p = S.voicePrefs || {};
+  const isDef = sel !== "auto" && sel === p.voice_default;
+  const btn = $id("voiceStarBtn");
+  btn.disabled = !(S.voices || []).length;
+  btn.textContent = isDef ? "★ Default" : "☆ Make default";
+  btn.title = isDef
+    ? "This voice is your default narrator — click to unpin it and go back to Auto"
+    : sel === "auto"
+      ? "Auto is the default — pick a voice first, then click to make it your default"
+      : "Pin this voice to the top and make it the default narrator";
+}
+$id("voiceStarBtn").addEventListener("click", async () => {
+  const sel = $id("optVoice").value;
+  const p = S.voicePrefs || {};
+  let def = p.voice_default || null;
+  let favs = [...(p.voice_favs || [])];
+  if (sel === "auto" || sel === def) {           // unset: back to Auto default
+    if (sel !== "auto") favs = favs.filter(n => n !== sel);
+    def = null;
+  } else {
+    def = sel;
+    if (!favs.includes(sel)) favs.push(sel);
+  }
+  const r = await api("/api/produce/voice-pref", { default: def, favs });
+  if (r.error) return;
+  S.voicePrefs = { voice_default: def, voice_favs: favs };
+  buildVoices();
+  $id("optVoice").value = sel;                   // keep what the user is looking at
+  updateVoicePlayBtn();
+  updateStarBtn();
+});
+$id("optVoice").addEventListener("change", updateStarBtn);
 
 /* ---------- voice sample preview (free - ElevenLabs hosts one per voice) ---------- */
 let voiceAudio = null;
@@ -336,8 +455,10 @@ function visMode() {
 }
 function applyVisMode() {
   const auto = visMode() !== "manual";
-  $id("manualPrompts").classList.toggle("skipped", auto);
-  $id("stepClips").classList.toggle("skipped", auto);
+  // Only the manual-path instructions go dormant in AI modes - the prompt
+  // boxes stay live, since saved edits feed the AI generation too.
+  $id("manualHint").classList.toggle("skipped", auto);
+  $id("importRow").classList.toggle("skipped", auto);
   $id("renderBtn").textContent =
     visMode() === "infer" ? "⚡ Generate clips + render" :
     visMode() === "images" ? "🖼️ Generate images + render" : "🎬 Render video";
@@ -360,9 +481,16 @@ function updateVidHint() {
   const n = S.prompts.length;
   const m = $id("vidModel").value;
   const p = clipPrice(m);
-  $id("apiHint").textContent = p
+  const refs = S.refs || [];
+  const notes = [];
+  const imgN = refs.filter(r => r && r.use === "image").length;
+  const vidN = refs.filter(r => r && r.use === "video").length;
+  if (imgN) notes.push(`${imgN} beat(s) will animate from your image`);
+  if (vidN) notes.push(`${vidN} beat(s) play your video as-is (not billed)`);
+  const imgNote = notes.length ? " · " + notes.join(" · ") : "";
+  $id("apiHint").textContent = (p
     ? `— one 5s clip per beat, ≈$${(n * p).toFixed(2)} for ${n}${m === "seedance-2.0-pro" ? "" : " (learned from your past renders)"} (cached clips are free)`
-    : `— one 5s clip per beat; ${m} bills per clip — its price is unknown until your first render with it (then it shows here; fast/flash models cost far less than pro; cached clips are free)`;
+    : `— one 5s clip per beat; ${m} bills per clip — its price is unknown until your first render with it (then it shows here; fast/flash models cost far less than pro; cached clips are free)`) + imgNote;
 }
 $id("vidModel").addEventListener("change", () => {
   document.querySelector('input[name="visMode"][value="infer"]').checked = true;
@@ -370,92 +498,609 @@ $id("vidModel").addEventListener("change", () => {
   applyVisMode();
 });
 
-/* ---------- step 2: prompts ---------- */
-function renderPrompts(prompts) {
+/* Tone for the ✨ rewrite - one shared choice, shown on every row and
+   remembered across sessions. */
+const TONES = [
+  ["punchy", "✨ Punchy"],
+  ["funny", "😂 Funny"],
+  ["natgeo", "🌍 Nat Geo"],
+  ["tongue", "😏 Tongue-in-cheek"],
+  ["satire", "🎭 Satire"],
+  ["dramatic", "🎬 Dramatic"],
+  ["simple", "🧒 Simple"],
+];
+S.tone = (() => { try { return localStorage.getItem("wis.enhanceTone") || "punchy"; } catch (e) { return "punchy"; } })();
+if (!TONES.some(([id]) => id === S.tone)) S.tone = "punchy";
+function setTone(v) {
+  S.tone = v;
+  try { localStorage.setItem("wis.enhanceTone", v); } catch (e) {}
+  document.querySelectorAll("#prompts select.tone").forEach(s => { s.value = v; });
+}
+
+/* ---------- step 2: prompts (click to edit, Save persists) ----------
+   The boxes hold the prompt CORE; the style tail (cinematic, 9:16, …) is
+   shown under each one and re-appended on Copy and at render time, so it
+   can't be doubled or lost. Save writes the wording into the polish cache -
+   the same place every render mode reads first. */
+function autoGrow(ta) { ta.style.height = "auto"; ta.style.height = ta.scrollHeight + "px"; }
+function sizePrompts() { document.querySelectorAll("#prompts textarea").forEach(autoGrow); }
+function promptsDirty(d) {
+  $id("prSaveRow").hidden = !d && !$id("prStatus").textContent;
+  $id("prSaveBtn").disabled = !d;
+  $id("prUndoBtn").disabled = !d;
+  if (d) { $id("prStatus").className = "status"; $id("prStatus").textContent = ""; }
+}
+function renderPrompts(prompts, keepPending = true) {
   const box = $id("prompts");
+  // Unsaved edits in OTHER rows survive a re-render: saving one line must
+  // never erase work elsewhere. Each box remembers the saved value it was
+  // rendered with (dataset.saved); anything that differs is carried over.
+  // A row whose new saved value now matches the pending text falls clean.
+  const pending = {};
+  if (keepPending) {
+    box.querySelectorAll(".prompt").forEach(card => {
+      const idx = Number(card.dataset.index);
+      const sp = card.querySelector(".spoken textarea");
+      const pr = card.querySelector("textarea.prompt-edit");
+      const e = {};
+      if (sp && sp.value !== sp.dataset.saved) e.spoken = sp.value;
+      if (pr && pr.value !== pr.dataset.saved) e.prompt = pr.value;
+      if ("spoken" in e || "prompt" in e) pending[idx] = e;
+    });
+  }
   box.innerHTML = "";
+  let promptCarried = false;
   prompts.forEach((p, i) => {
     const div = document.createElement("div");
     div.className = "prompt";
+    div.dataset.index = i;
+    div.innerHTML = `<span class="num">${String(i + 1).padStart(2, "0")}</span>`;
+    const thumb = document.createElement("div");
+    thumb.className = "thumb";
+    const wrap = document.createElement("div");
+    wrap.className = "text";
+    const spoken = document.createElement("div");
+    spoken.className = "spoken";
+    const tag = document.createElement("span");
+    tag.className = "tag";
+    tag.textContent = i === 0 ? "🎙 hook" : (i === prompts.length - 1 ? "🎙 outro" : `🎙 beat ${i}`);
+    // The spoken line is directly editable; ✨ and per-beat history write into
+    // the same box. ✓ save / ↩ undo appear on any change; nothing is saved
+    // until ✓ save (which writes the real script - voice/captions follow).
+    const lineTa = document.createElement("textarea");
+    lineTa.rows = 1;
+    lineTa.value = (S.segments || [])[i] || "";
+    lineTa.dataset.saved = lineTa.value;
+    lineTa.setAttribute("aria-label", `Spoken line of beat ${i + 1} — click to edit`);
+    const lnSave = document.createElement("button");
+    lnSave.className = "mini keep"; lnSave.textContent = "✓ save"; lnSave.hidden = true;
+    const lnUndo = document.createElement("button");
+    lnUndo.className = "mini"; lnUndo.textContent = "↩ undo"; lnUndo.hidden = true;
+    const enh = document.createElement("button");
+    enh.className = "mini";
+    enh.textContent = "✨";
+    enh.title = "AI-enhance this spoken line — when this beat has a selected image or video, the rewrite matches what's on screen; save or undo after";
+    enh.setAttribute("aria-label", `AI-enhance the spoken line of beat ${i + 1}`);
+    const lineDirty = (d) => {
+      lnSave.hidden = lnUndo.hidden = !d;
+      spoken.classList.toggle("suggested", d);
+    };
+    const proposeLine = (v) => { lineTa.value = v; autoGrow(lineTa); lineDirty(true); lineTa.focus(); };
+    lineTa.addEventListener("input", () => {
+      autoGrow(lineTa);
+      lineDirty(lineTa.value.trim() !== ((S.segments || [])[i] || "").trim());
+    });
+    lnUndo.addEventListener("click", () => {
+      lineTa.value = (S.segments || [])[i] || "";
+      autoGrow(lineTa);
+      lineDirty(false);
+    });
+    lnSave.addEventListener("click", async () => {
+      const v = lineTa.value.trim();
+      if (!v) {
+        $id("prSaveRow").hidden = false;
+        $id("prStatus").className = "status bad";
+        $id("prStatus").textContent = "The spoken line can't be empty.";
+        return;
+      }
+      lnSave.disabled = lnUndo.disabled = true; lnSave.textContent = "saving…";
+      const err = await saveScriptLine(i, v);
+      if (err) {
+        lnSave.disabled = lnUndo.disabled = false; lnSave.textContent = "✓ save";
+        $id("prSaveRow").hidden = false;
+        $id("prStatus").className = "status bad";
+        $id("prStatus").textContent = err;
+      }
+      // on success renderPrompts re-runs with the fresh script - no cleanup needed
+    });
+    const toneSel = document.createElement("select");
+    toneSel.className = "tone";
+    toneSel.title = "The voice the ✨ rewrite aims for — applies to every row and is remembered";
+    toneSel.setAttribute("aria-label", "Rewrite tone");
+    TONES.forEach(([id, label]) => {
+      const o = document.createElement("option");
+      o.value = id; o.textContent = label;
+      toneSel.appendChild(o);
+    });
+    toneSel.value = S.tone;
+    toneSel.addEventListener("change", () => setTone(toneSel.value));
+    enh.addEventListener("click", async () => {
+      enh.disabled = true; enh.textContent = "…";
+      const r = await api("/api/produce/enhance-line",
+        { queue: S.queue, slot: S.slot, index: i, tone: S.tone });
+      enh.disabled = false; enh.textContent = "✨";
+      if (r.error) {
+        $id("prSaveRow").hidden = false;
+        $id("prStatus").className = "status bad";
+        $id("prStatus").textContent = r.error;
+        return;
+      }
+      proposeLine(r.line);
+    });
+    spoken.append(tag, lineTa, lnSave, lnUndo, toneSel, enh);
+    const ta = document.createElement("textarea");
+    ta.className = "prompt-edit";
+    ta.rows = 1;
+    ta.value = p;
+    ta.dataset.saved = p;
+    ta.setAttribute("aria-label", `Prompt ${i + 1} — click to edit`);
+    ta.addEventListener("input", () => { autoGrow(ta); promptsDirty(true); });
+    const suffix = document.createElement("div");
+    suffix.className = "prompt-suffix";
+    suffix.textContent = `+ ${S.promptSuffix} — added automatically`;
+    const bh = document.createElement("div");
+    bh.className = "beat-hist";
+    bh.hidden = true;
+    wrap.append(spoken, ta, suffix, bh);
+    const btns = document.createElement("div");
+    btns.className = "btns";
     const btn = document.createElement("button");
     btn.textContent = "Copy";
     btn.addEventListener("click", async () => {
-      try { await navigator.clipboard.writeText(p); btn.textContent = "Copied ✓"; }
+      const full = ta.value.trim().replace(/[\s,]+$/, "") + ", " + S.promptSuffix;
+      try { await navigator.clipboard.writeText(full); btn.textContent = "Copied ✓"; }
       catch (e) { btn.textContent = "Select + copy"; }
       setTimeout(() => { btn.textContent = "Copy"; }, 2000);
     });
-    div.innerHTML = `<span class="num">${String(i + 1).padStart(2, "0")}</span><span class="text"></span>`;
-    div.querySelector(".text").textContent = p;
-    div.appendChild(btn);
+    const mkDescribe = (label, cls, kind) => {
+      const b = document.createElement("button");
+      b.className = cls;
+      b.textContent = label;
+      b.addEventListener("click", async () => {
+        b.disabled = true; b.textContent = "Describing…";
+        const r = await api("/api/produce/describe", { dir: S.dir, index: i + 1, kind });
+        b.textContent = label; b.disabled = false;
+        if (r.error) {
+          $id("prSaveRow").hidden = false;
+          $id("prStatus").className = "status bad";
+          $id("prStatus").textContent = r.error;
+          return;
+        }
+        ta.value = r.prompt;
+        autoGrow(ta);
+        promptsDirty(true);
+        ta.focus();
+      });
+      return b;
+    };
+    const dbi = mkDescribe("🖼 From image", "describeBtn", "image");
+    const dbv = mkDescribe("🎬 From video", "describeVidBtn", "video");
+    const hb = document.createElement("button");
+    hb.textContent = "🕘 History";
+    hb.title = "Past versions of this beat's spoken line and prompt";
+    hb.addEventListener("click", async () => {
+      if (!bh.hidden) { bh.hidden = true; return; }
+      hb.disabled = true;
+      const r = await api(`/api/produce/history?queue=${encodeURIComponent(S.queue)}&slot=${S.slot}`);
+      hb.disabled = false;
+      if (r.error) return;
+      renderBeatHist(bh, i, r.history || [], prompts.length, ta, proposeLine);
+      bh.hidden = false;
+    });
+    btns.append(btn, dbi, dbv, hb);
+    if (i < prompts.length - 1) {   // anywhere but after the outro
+      const addB = document.createElement("button");
+      addB.textContent = "＋ beat";
+      addB.title = "Insert a new beat right after this row (the video grows with the narration)";
+      addB.addEventListener("click", () => beatEdit("insert", i, addB));
+      btns.appendChild(addB);
+    }
+    if (i > 0 && i < prompts.length - 1) {   // body beats only
+      const delB = document.createElement("button");
+      delB.textContent = "🗑 beat";
+      delB.style.color = "var(--danger)";
+      delB.title = "Delete this beat — its spoken line, prompt, and attached image/video";
+      delB.addEventListener("click", () => {
+        if (!confirm(`Delete beat ${i}? Its spoken line and prompt stay in history, `
+            + `but an attached image/video for this row is removed for good.`)) return;
+        beatEdit("remove", i, delB);
+      });
+      btns.appendChild(delB);
+    }
+    div.append(thumb, wrap, btns);
+    // The whole row is a media target: drop files on it (several fill
+    // consecutive beats), or point at it and paste an image.
+    div.addEventListener("mouseenter", () => { pasteTarget = i; });
+    div.addEventListener("mouseleave", () => {
+      // keep the target if the row still holds keyboard focus
+      if (pasteTarget === i && !div.contains(document.activeElement)) pasteTarget = null;
+    });
+    div.addEventListener("focusin", () => { pasteTarget = i; });
+    div.addEventListener("dragover", (e) => {
+      const items = [...((e.dataTransfer || {}).items || [])];
+      if (!items.some(it => it.kind === "file"
+          && (it.type.startsWith("image/") || it.type === "video/mp4"))) return;
+      e.preventDefault();
+      e.stopPropagation();
+      div.classList.add("imgover");
+    });
+    div.addEventListener("dragleave", () => div.classList.remove("imgover"));
+    div.addEventListener("drop", (e) => {
+      div.classList.remove("imgover");
+      const files = [...((e.dataTransfer || {}).files || [])].filter(f =>
+        f.type.startsWith("image/") || f.type === "video/mp4" || /\.mp4$/i.test(f.name));
+      if (!files.length) return;
+      e.preventDefault();
+      e.stopPropagation();
+      // several files at once fill consecutive beats starting here
+      (async () => {
+        let row = i;
+        for (const f of files) {
+          if (row >= S.prompts.length) break;
+          await uploadRef(row, f, f.type.startsWith("image/") ? "image" : "video");
+          row += 1;
+        }
+      })();
+    });
+    const pend = pending[i] || {};
+    if (pend.prompt !== undefined && pend.prompt !== p) {
+      ta.value = pend.prompt;
+      promptCarried = true;
+    }
+    if (pend.spoken !== undefined && pend.spoken !== lineTa.value) {
+      lineTa.value = pend.spoken;
+      lineDirty(true);
+    }
     box.appendChild(div);
+    refreshRefUI(i);
   });
+  pasteTarget = null;
+  $id("prStatus").className = "status";
+  $id("prStatus").textContent = "";
+  promptsDirty(false);
+  if (promptCarried) promptsDirty(true);
+  sizePrompts();
+}
+/* Per-beat references: an optional picture AND/OR your own clip, stored
+   beside the staged clips (ref-NN.jpg / refv-NN.mp4) so they stick to the
+   package. The radio picks which one the beat uses: image = the AI animates
+   from it, video = your clip plays as-is (that beat bills nothing). */
+let refTarget = 0;      // beat receiving the next file-picker upload
+let pasteTarget = null; // beat under the pointer / focus - receives Ctrl+V
+function pickRef(i, kind) {
+  refTarget = i;
+  $id(kind === "video" ? "refVidFile" : "refFile").click();
+}
+function refSlotBody(i, kind) {
+  const r = (S.refs || [])[i] || {};
+  const body = document.createElement("div");
+  body.className = "slotbody";
+  if (r[kind]) {
+    const el = document.createElement(kind === "video" ? "video" : "img");
+    el.src = `/produce-files/${S.dir}/${r[kind].name}?v=${r[kind].mtime}`;
+    el.title = `Click to replace the ${kind}`;
+    if (kind === "video") {
+      el.muted = true;
+      el.preload = "metadata";
+      el.addEventListener("mouseenter", () => el.play().catch(() => {}));
+      el.addEventListener("mouseleave", () => { el.pause(); el.currentTime = 0; });
+    } else {
+      el.alt = `Reference image for beat ${i + 1}`;
+    }
+    el.addEventListener("click", () => pickRef(i, kind));
+    const rm = document.createElement("button");
+    rm.className = "rmimg";
+    rm.textContent = "✕ remove";
+    rm.setAttribute("aria-label", `Remove the ${kind} from beat ${i + 1}`);
+    rm.addEventListener("click", async () => {
+      await api("/api/produce/ref-remove", { dir: S.dir, index: i + 1, kind });
+      S.refs[i][kind] = null;
+      S.refs[i].use = S.refs[i].image ? "image" : (S.refs[i].video ? "video" : null);
+      refreshRefUI(i);
+    });
+    body.append(el, rm);
+  } else {
+    const add = document.createElement("button");
+    add.className = "addimg";
+    add.textContent = kind === "video" ? "＋ video" : "＋ image";
+    add.title = kind === "video"
+      ? "Attach your own clip to this beat (it plays as-is when its radio is on)"
+      : "Attach a reference picture to this beat";
+    add.addEventListener("click", () => pickRef(i, kind));
+    body.appendChild(add);
+  }
+  return body;
+}
+function refreshRefUI(i) {
+  const card = document.querySelector(`#prompts .prompt[data-index="${i}"]`);
+  if (!card) return;
+  const cell = card.querySelector(".thumb");
+  cell.innerHTML = "";
+  const r = (S.refs || [])[i] || {};
+  for (const kind of ["image", "video"]) {
+    const slot = document.createElement("div");
+    slot.className = "refslot";
+    const radio = document.createElement("input");
+    radio.type = "radio";
+    radio.name = `refuse-${i}`;
+    radio.value = kind;
+    radio.checked = r.use === kind;
+    radio.disabled = !r[kind];
+    radio.title = r[kind] ? `This beat uses the ${kind}` : `Attach a ${kind} first`;
+    radio.setAttribute("aria-label", `Use the ${kind} for beat ${i + 1}`);
+    radio.addEventListener("change", async () => {
+      const res = await api("/api/produce/ref-choice", { dir: S.dir, index: i + 1, use: kind });
+      if (res.error) return;
+      S.refs[i].use = kind;
+      updateVidHint();
+    });
+    slot.append(radio, refSlotBody(i, kind));
+    cell.appendChild(slot);
+  }
+  const dbi = card.querySelector(".describeBtn");
+  dbi.disabled = !r.image || !S.openai;
+  dbi.title = !S.openai ? "Needs an OpenAI key in pipeline\\openai_key.txt"
+    : !r.image ? "Attach an image first"
+    : "Rewrite this prompt to describe a video of the image";
+  const dbv = card.querySelector(".describeVidBtn");
+  dbv.disabled = !r.video || !S.openai;
+  dbv.title = !S.openai ? "Needs an OpenAI key in pipeline\\openai_key.txt"
+    : !r.video ? "Attach a video first"
+    : "Rewrite this prompt to describe your clip (from its first frame)";
+  updateVidHint();   // counts image-animated and video-pinned beats
+}
+async function uploadRef(i, file, kind) {
+  let url;
+  if (kind === "video") {
+    url = `/api/produce/ref-video?dir=${encodeURIComponent(S.dir)}&index=${i + 1}`;
+  } else {
+    const ext = ({ "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" })[file.type]
+      || (file.name.split(".").pop() || "jpg").toLowerCase();
+    url = `/api/produce/ref-image?dir=${encodeURIComponent(S.dir)}&index=${i + 1}&ext=${encodeURIComponent(ext)}`;
+  }
+  const r = await (await fetch(url, { method: "POST", body: file })).json();
+  if (r.error) {
+    $id("prSaveRow").hidden = false;
+    $id("prStatus").className = "status bad";
+    $id("prStatus").textContent = r.error;
+    return;
+  }
+  S.refs[i] = S.refs[i] || { image: null, video: null, use: null };
+  S.refs[i][kind] = { name: r.name, mtime: r.mtime };
+  S.refs[i].use = kind;   // uploading something means "use it" - the server agrees
+  refreshRefUI(i);
+  // A fresh image auto-describes into the prompt (still unsaved - Save
+  // prompts or Undo edits as usual), so frame and motion always agree.
+  if (kind === "image" && S.openai) {
+    document.querySelector(`#prompts .prompt[data-index="${i}"] .describeBtn`)?.click();
+  }
+}
+$id("refFile").addEventListener("change", () => {
+  const f = $id("refFile").files[0];
+  $id("refFile").value = "";
+  if (f) uploadRef(refTarget, f, "image");
+});
+$id("refVidFile").addEventListener("change", () => {
+  const f = $id("refVidFile").files[0];
+  $id("refVidFile").value = "";
+  if (f) uploadRef(refTarget, f, "video");
+});
+/* Point at a row and Ctrl+V: pastes a clipboard image (e.g. a screenshot)
+   straight onto that beat. Text pastes into the prompt box are untouched. */
+document.addEventListener("paste", (e) => {
+  if ($id("flow").hidden || pasteTarget === null) return;
+  const item = [...((e.clipboardData || {}).items || [])]
+    .find(it => it.kind === "file" && it.type.startsWith("image/"));
+  if (!item) return;
+  e.preventDefault();
+  uploadRef(pasteTarget, item.getAsFile(), "image");
+});
+/* Save ONE spoken line back into the archived export (hook, beat, or outro
+   by row position). The script edit clears the polish cache, so the user's
+   current prompt wording is re-saved right after - an enhanced line never
+   costs them their visual prompts. */
+async function saveScriptLine(i, newLine) {
+  const s = S.script || {};
+  const beats = [...(s.beats || [])];
+  const last = (S.segments || []).length - 1;
+  const body = { queue: S.queue, slot: S.slot, beats };
+  if (i === 0) body.hook = newLine;
+  else if (i === last) body.outro = newLine;
+  else if (i - 1 < beats.length) beats[i - 1] = newLine;
+  else return "row does not map to a script line - edit it in the Script box";
+  const r = await api("/api/produce/edit", body);
+  if (r.error) return r.error;
+  const vals = [...document.querySelectorAll("#prompts textarea.prompt-edit")].map(t => t.value.trim());
+  if (vals.length && vals.every(Boolean)) {
+    await api("/api/produce/prompts", { queue: S.queue, slot: S.slot, prompts: vals });
+  }
+  const info = await api(`/api/produce/info?queue=${encodeURIComponent(S.queue)}&slot=${S.slot}`);
+  if (!info.error) {
+    S.prompts = info.prompts;
+    S.segments = info.segments || [];
+    S.script = info.script;
+    S.refs = info.refs || [];
+    renderPrompts(info.prompts);
+    fillScript(info.script);
+    updateVidHint();
+  }
+  if ($id("histBox").open) loadHistory();
+  return null;
+}
+/* Add/remove a beat. The server shifts prompts, reference files, and radio
+   choices so every attachment stays with ITS beat; both changes land in
+   history. Current (possibly unsaved) prompt wording rides along. */
+async function beatEdit(action, row, btn) {
+  btn.disabled = true;
+  const vals = [...document.querySelectorAll("#prompts textarea.prompt-edit")].map(t => t.value.trim());
+  const r = await api("/api/produce/beat-edit", { queue: S.queue, slot: S.slot, action, row, prompts: vals });
+  btn.disabled = false;
+  $id("prSaveRow").hidden = false;
+  if (r.error) {
+    $id("prStatus").className = "status bad";
+    $id("prStatus").textContent = r.error;
+    return;
+  }
+  // rows shift, so carried-over edits could land on the wrong beat - the
+  // prompt boxes were just persisted by the endpoint anyway
+  await refreshAll(false);
+  if ($id("histBox").open) loadHistory();
+  $id("prSaveRow").hidden = false;
+  $id("prStatus").className = "status good";
+  $id("prStatus").textContent = action === "insert"
+    ? `✓ New beat added after row ${String(row + 1).padStart(2, "0")} — write its spoken line and prompt (or attach media and let the AI describe it).`
+    : "✓ Beat deleted — its lines are still in 🕘 History if you change your mind.";
 }
 
-/* ---------- step 3: clips ---------- */
-function renderClips(staged) {
-  const box = $id("clips");
-  box.innerHTML = "";
-  staged.forEach((c, i) => {
-    const div = document.createElement("div");
-    div.className = "clip";
-    const vid = document.createElement("video");
-    vid.src = `/produce-files/${S.dir}/${c.name}?v=${c.mtime || 0}`;
-    vid.preload = "metadata"; vid.muted = true;
-    vid.addEventListener("mouseenter", () => vid.play().catch(() => {}));
-    vid.addEventListener("mouseleave", () => { vid.pause(); vid.currentTime = 0; });
-    const name = document.createElement("span");
-    name.className = "name";
-    name.textContent = `Clip ${String(i + 1).padStart(2, "0")} — ${c.size_mb} MB` + (S.prompts[i] ? "" : "  (extra)");
-    const up = mkBtn("↑", i === 0, async () => swap(staged[i - 1].name, c.name));
-    const down = mkBtn("↓", i === staged.length - 1, async () => swap(staged[i + 1].name, c.name));
-    const rm = mkBtn("Remove", false, async () => {
-      const r = await api("/api/produce/remove", { dir: S.dir, name: c.name });
-      renderClips(r.staged || []);
-    });
-    rm.style.color = "var(--danger)";
-    div.append(vid, name, up, down, rm);
-    box.appendChild(div);
-  });
-  const need = S.prompts.length, have = staged.length;
-  $id("clipStatus").className = "status " + (have >= need ? "good" : "");
-  $id("clipStatus").textContent = have === 0 ? "" :
-    have >= need ? `✓ ${have} clip(s) staged — ready to render.` :
-    `${have} of ${need} clips staged — beats without a clip reuse earlier ones.`;
+/* ---------- history: every saved script/prompts version, restorable ---------- */
+async function refreshAll(keepPending = true) {
+  const info = await api(`/api/produce/info?queue=${encodeURIComponent(S.queue)}&slot=${S.slot}`);
+  if (info.error) return;
+  S.prompts = info.prompts;
+  S.segments = info.segments || [];
+  S.script = info.script;
+  S.refs = info.refs || [];
+  renderPrompts(info.prompts, keepPending);
+  fillScript(info.script);
+  updateVidHint();
 }
-function mkBtn(label, disabled, fn) {
-  const b = document.createElement("button");
-  b.textContent = label; b.disabled = disabled;
-  b.addEventListener("click", fn);
-  return b;
-}
-async function swap(a, b) {
-  const r = await api("/api/produce/swap", { dir: S.dir, a, b });
-  renderClips(r.staged || []);
-}
-$id("importBtn").addEventListener("click", async () => {
-  $id("clipStatus").textContent = "Importing from Downloads…";
-  const r = await api("/api/produce/import", { dir: S.dir, count: S.prompts.length });
-  if (r.error) { $id("clipStatus").className = "status bad"; $id("clipStatus").textContent = r.error; return; }
-  renderClips(r.staged);
-});
-$id("clearBtn").addEventListener("click", async () => {
-  const r = await api("/api/produce/clear", { dir: S.dir });
-  renderClips(r.staged || []);
-});
-const dz = $id("dropZone");
-dz.addEventListener("dragover", (e) => { e.preventDefault(); dz.classList.add("over"); });
-dz.addEventListener("dragleave", () => dz.classList.remove("over"));
-dz.addEventListener("drop", async (e) => {
-  e.preventDefault(); dz.classList.remove("over");
-  const files = [...e.dataTransfer.files].filter(f => f.name.toLowerCase().endsWith(".mp4"));
-  if (!files.length) { $id("clipStatus").textContent = "Only .mp4 files, please."; return; }
-  let last = null;
-  for (const f of files) {
-    $id("clipStatus").textContent = `Uploading ${f.name}…`;
-    last = await (await fetch(`/api/produce/upload?dir=${encodeURIComponent(S.dir)}`, { method: "POST", body: f })).json();
+/* Per-beat history: slice the whole-version snapshots down to ONE beat's
+   spoken line (hook / beats[i-1] / outro by row position) and prompt,
+   deduping unchanged repeats. "Use" proposes, never saves. */
+function beatVersions(history, i, rowCount) {
+  const spoken = [], prompts = [];
+  for (const e of history) {
+    if (e.kind === "prompts") {
+      const v = (e.data || [])[i];
+      if (typeof v === "string" && v) prompts.push({ ts: e.ts, v });
+    } else if (e.kind === "script") {
+      const d = e.data || {};
+      const v = i === 0 ? d.hook : (i === rowCount - 1 ? d.outro : (d.beats || [])[i - 1]);
+      if (typeof v === "string" && v) spoken.push({ ts: e.ts, v });
+    }
   }
-  if (last && last.staged) renderClips(last.staged);
-  $id("clipStatus").textContent = "";
+  const dedupe = (arr) => arr.filter((e, idx) => idx === 0 || e.v !== arr[idx - 1].v);
+  return { spoken: dedupe(spoken), prompts: dedupe(prompts) };
+}
+function renderBeatHist(bh, i, history, rowCount, ta, proposeLine) {
+  bh.innerHTML = "";
+  const vers = beatVersions(history, i, rowCount);
+  const mkSection = (label, items, currentValue, useFn) => {
+    const versions = [...items].reverse().filter(e => e.v !== currentValue).slice(0, 8);
+    const head = document.createElement("div");
+    head.className = "bh-head";
+    head.textContent = label + (versions.length ? "" : " — no other versions saved yet");
+    bh.appendChild(head);
+    versions.forEach(e => {
+      const row = document.createElement("div");
+      row.className = "bh-row";
+      const when = document.createElement("span");
+      when.className = "when"; when.textContent = e.ts;
+      const val = document.createElement("span");
+      val.className = "val"; val.textContent = e.v; val.title = e.v;
+      const use = document.createElement("button");
+      use.textContent = "Use";
+      use.addEventListener("click", () => { useFn(e.v); bh.hidden = true; });
+      row.append(when, val, use);
+      bh.appendChild(row);
+    });
+  };
+  mkSection("🎙 spoken line", vers.spoken, (S.segments || [])[i] || "",
+    (v) => proposeLine(v));
+  mkSection("🎬 prompt", vers.prompts, ta.value.trim(),
+    (v) => { ta.value = v; autoGrow(ta); promptsDirty(true); ta.focus(); });
+}
+$id("histBox").addEventListener("toggle", () => { if ($id("histBox").open) loadHistory(); });
+async function loadHistory() {
+  const r = await api(`/api/produce/history?queue=${encodeURIComponent(S.queue)}&slot=${S.slot}`);
+  const box = $id("histList");
+  box.innerHTML = "";
+  const list = r.history || [];
+  if (!list.length) {
+    const p = document.createElement("p");
+    p.className = "hint";
+    p.textContent = "No saved versions yet — every Save script, Save prompts, and ✨ keep lands here.";
+    box.appendChild(p);
+    return;
+  }
+  // the newest entry of each kind IS the current version - no restore button
+  const currentIdx = {};
+  list.forEach(e => { currentIdx[e.kind] = e.i; });
+  [...list].reverse().forEach(e => {
+    const row = document.createElement("div");
+    row.className = "hist-row";
+    const when = document.createElement("span");
+    when.className = "when"; when.textContent = e.ts;
+    const kind = document.createElement("span");
+    kind.className = "kind"; kind.textContent = e.kind;
+    const prev = document.createElement("span");
+    prev.className = "preview"; prev.textContent = e.preview;
+    prev.title = e.preview;
+    row.append(when, kind, prev);
+    if (e.note) {
+      const note = document.createElement("span");
+      note.className = "note"; note.textContent = e.note;
+      row.appendChild(note);
+    }
+    if (currentIdx[e.kind] === e.i) {
+      const cur = document.createElement("span");
+      cur.className = "note"; cur.textContent = "current";
+      row.appendChild(cur);
+    } else {
+      const btn = document.createElement("button");
+      btn.textContent = "Restore";
+      btn.addEventListener("click", async () => {
+        btn.disabled = true; btn.textContent = "Restoring…";
+        const res = await api("/api/produce/revert", { queue: S.queue, slot: S.slot, index: e.i });
+        if (res.error) { btn.disabled = false; btn.textContent = "Restore"; alert(res.error); return; }
+        await refreshAll();
+        $id("histBox").open = true;
+        await loadHistory();
+        $id("prSaveRow").hidden = false;
+        $id("prStatus").className = "status good";
+        $id("prStatus").textContent = `✓ Restored the ${e.kind} from ${e.ts} — the restore itself is in history too.`;
+      });
+      row.appendChild(btn);
+    }
+    box.appendChild(row);
+  });
+}
+$id("prUndoBtn").addEventListener("click", () => renderPrompts(S.prompts, false));
+$id("prSaveBtn").addEventListener("click", async () => {
+  const vals = [...document.querySelectorAll("#prompts textarea.prompt-edit")].map(t => t.value.trim());
+  const st = $id("prStatus");
+  if (vals.some(v => !v)) { st.className = "status bad"; st.textContent = "Every beat needs a prompt."; return; }
+  $id("prSaveBtn").disabled = true;
+  st.className = "status"; st.textContent = "Saving…";
+  const r = await api("/api/produce/prompts", { queue: S.queue, slot: S.slot, prompts: vals });
+  if (r.error) { $id("prSaveBtn").disabled = false; st.className = "status bad"; st.textContent = r.error; return; }
+  S.prompts = r.prompts || vals;
+  renderPrompts(S.prompts);
+  $id("prSaveRow").hidden = false;
+  st.className = "status good";
+  st.textContent = "✓ Saved — copies and AI renders now use your wording (editing the script resets it).";
+  if ($id("histBox").open) loadHistory();
+});
+
+/* ---------- bulk import: Downloads -> per-beat video slots ---------- */
+$id("importBtn").addEventListener("click", async () => {
+  const st = $id("importStatus");
+  st.className = "status"; st.textContent = "Importing from Downloads…";
+  const r = await api("/api/produce/import", { dir: S.dir, count: S.prompts.length });
+  if (r.error) { st.className = "status bad"; st.textContent = r.error; return; }
+  await refreshAll();
+  st.className = "status good";
+  st.textContent = `✓ ${r.imported.length} clip(s) placed on beats 01–${String(r.imported.length).padStart(2, "0")} — check each row's thumbnail against its spoken line.`;
 });
 
 /* ---------- render-done announcement: system toast + chime + title flash ----------
@@ -573,5 +1218,6 @@ $id("openVideosBtn").addEventListener("click", () => { location.href = "/"; });
 
 loadQueues();
 </script>
+<script src="/assistant.js"></script>
 </body>
 </html>
