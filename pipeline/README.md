@@ -9,11 +9,15 @@ Turns queue exports from the app into **finished vertical videos**: AI voiceover
 **Free AI visuals** (`--ai-visuals`): generates one custom image per beat from the scenario's own shot list, using Pollinations (free, no account, no key — internet required). Images are cached in `ai-visuals/` per scenario+style, so re-renders are instant. Pick a look with `--ai-style`:
 
 ```
-python make_videos.py queue.json --ai-visuals                        # cinematic (default)
+python make_videos.py queue.json --ai-visuals                        # category default (see below)
+python make_videos.py queue.json --ai-visuals --ai-style cinematic   # dramatic digital art
 python make_videos.py queue.json --ai-visuals --ai-style dark        # eerie/horror topics
 python make_videos.py queue.json --ai-visuals --ai-style 3d          # pixar-ish characters
 python make_videos.py queue.json --ai-visuals --ai-style infographic # flat corporate vector look
+python make_videos.py queue.json --ai-visuals --ai-style archival    # aged photo / oil painting look
 ```
+
+Without `--ai-style`, each video uses its category's own style: **dark** for Scary Story, **archival** for True History, **cinematic** for everything else. Those categories also swap the burned-in follow card, spoken outro, and anchor hashtag to match (scary-story and true-history branding instead of what-if).
 
 To regenerate a scenario's images (new random look), delete its folder in `ai-visuals/`. AI images make the whole video AI-generated content — the disclosure reminder in each post kit covers this.
 

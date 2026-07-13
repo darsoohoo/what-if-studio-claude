@@ -20,7 +20,9 @@ const CATEGORIES = [
   "Internet Mystery",
   "Alternate Reality",
   "Unsettling Everyday",
-  "Scary/Weird"
+  "Scary/Weird",
+  "Scary Story",
+  "True History"
 ];
 
 /* Default card colors for custom scenarios, per category. */
@@ -32,12 +34,24 @@ const CATEGORY_COLORS = {
   "Internet Mystery": ["#2d8a6e", "#151a30"],
   "Alternate Reality": ["#6a5ae0", "#2d8a6e"],
   "Unsettling Everyday": ["#3b4368", "#2dbf8b"],
-  "Scary/Weird": ["#151a30", "#b83a6e"]
+  "Scary/Weird": ["#151a30", "#b83a6e"],
+  "Scary Story": ["#120a16", "#8a2431"],
+  "True History": ["#3d2f1a", "#8a6d2f"]
 };
 
 /* One package works everywhere: the spoken outro uses a platform-neutral CTA,
-   and per-platform hashtags come from the render's post kit, not the package. */
+   and per-platform hashtags come from the render's post kit, not the package.
+   Story categories carry their own follow line (the render's burned-in CTA
+   card and anchor hashtag follow the category too — see pipeline). */
 const NEUTRAL_CTA = "Follow for the next what-if.";
+const CATEGORY_CTA = {
+  "Scary Story": "Follow for more scary stories.",
+  "True History": "Follow for more true history."
+};
+const HYPE_LEAD = {
+  "Scary Story": "That's the story — tell me what you'd have done.",
+  "True History": "That's the true story — tell me which part you didn't believe."
+};
 const ASPECT = "9:16 vertical";
 
 const RUNTIMES = [
@@ -57,7 +71,7 @@ const VOICES = [
 const STORAGE_KEY = "whatIfStudio.v1";
 
 /* ============================================================
-   2. SCENARIO BANK — 24 scenarios, 3 per category
+   2. SCENARIO BANK — 37 scenarios across 10 categories
    ============================================================ */
 
 const scenarioBank = [
@@ -991,6 +1005,407 @@ const scenarioBank = [
     ]
   },
 
+  /* ---------------- SCARY STORY ----------------
+     Narrative category: true-feeling short horror told straight, no "what if"
+     framing. Picture-only by design — the pipeline defaults these to the
+     dark visual style and swaps in scary-story CTA + hashtags. */
+  {
+    id: "ss-lastdive",
+    category: "Scary Story",
+    title: "The dive was planned for 40 minutes",
+    image: { glyph: "🤿", from: "#0a1420", to: "#8a2431" },
+    premise: "A cave diver follows his own guideline into a flooded cave system he's mapped a dozen times. The line is right where he left it. The problem is what's clipped to it — a marker he didn't place, pointing the wrong way.",
+    tags: ["cave diving", "survival", "underwater", "scary story"],
+    safety: "Fictional story inspired by real cave-diving accident reports. No real victims or incidents depicted; dive-safety details kept realistic, not instructional.",
+    hooks: [
+      "Cave divers have a rule: the line is life. He found a second line — and it wasn't his.",
+      "40 minutes of air. 35 minutes of cave. The math worked until the silt came down.",
+      "The last thing his dive log says is 'passage wider than mapped.' It isn't."
+    ],
+    beats: [
+      "He drops below the surface at 9:04 AM, alone, the way he's done a dozen times. His guideline runs into the dark like a thread through a needle. Plan: 40 minutes, 300 feet back, touch the old gate grate, turn around.",
+      "At the squeeze — the point where his tanks scrape both walls — he notices it. A line marker clipped to his guideline, the plastic arrow kind divers use to point the way OUT. Except this arrow points deeper in. He didn't clip it there. Nobody dives this cave.",
+      "He tells himself it's old, left from a survey years ago. Then his fin catches the floor and the silt comes up like smoke filling a room. Visibility goes from sixty feet to zero in eight seconds. Now the line in his hand is the only thing that's real.",
+      "He follows it by touch, breathing slow, counting knots — and his glove finds a second marker. Then a third. All pointing deeper. And under his fingers, the line changes: his braided nylon becomes something older, stiffer. He is no longer holding his own line.",
+      "He backtracks hand over hand and surfaces at 9:51 with 200 psi to spare. That afternoon he pulls his gear up and finds every arrow on the recovered line pointing the right way — toward the exit. Whatever line he was holding down there, it wasn't the one he pulled out."
+    ],
+    shotList: [
+      "Hook: a lone diver's silhouette descending into a flooded cave mouth, flashlight beam swallowed by black water.",
+      "Close-up: a gloved hand following a thin guideline through a narrow rock squeeze, tanks scraping stone.",
+      "Macro shot: a plastic line arrow clipped to the guideline, pointing into darkness, caught in the flashlight beam.",
+      "Zero visibility: a wall of brown silt blooming through the beam, a hand gripping the line the only visible thing.",
+      "Surface shot: the diver's head breaking calm water in a dark cave pool, gasping, dawn light from the entrance.",
+      "Closer: coiled recovered dive line on wet stone, all arrows pointing one way, one frame held too long."
+    ],
+    captions: [
+      "The line is life. So whose line was he holding? 🤿",
+      "40 minutes of air. And arrows pointing the wrong way.",
+      "Cave divers trust the line more than their own eyes. That's the problem."
+    ],
+    thumbnails: [
+      "THE SECOND LINE",
+      "Arrows pointed IN",
+      "40 minutes of air"
+    ]
+  },
+  {
+    id: "ss-nightshift",
+    category: "Scary Story",
+    title: "The night shift keeps a list",
+    image: { glyph: "🏥", from: "#0d1018", to: "#5a4a7a" },
+    premise: "Every hospital has unofficial rules the day shift never hears about. At St. Alder's, the night nurses keep theirs taped inside a supply-closet door — seven rules, handwritten, added to one at a time over forty years. A new nurse just found out why rule four exists.",
+    tags: ["hospital", "night shift", "rules", "scary story"],
+    safety: "Fictional 'rules' horror story set in an invented hospital. No real institutions, patients, or medical events depicted.",
+    hooks: [
+      "Hospital night shifts have rules the day shift never learns. Rule four is why nurses quit.",
+      "The list is handwritten. Seven rules. Forty years of handwriting. One pen never came back.",
+      "Her trainer said: 'If the fourth-floor call bell rings twice, you send the FLOAT nurse.' She asked why. Nobody laughed."
+    ],
+    beats: [
+      "Her first night shift, the charge nurse walks her to a supply closet and points at a paper taped inside the door. Seven handwritten rules, different pens, different decades. 'Read it. Don't photograph it. It stays in the closet.'",
+      "Most are almost normal. Rule two: count the wheelchairs by the east elevator — there are four; if there are five, take the stairs. Rule six: the vending machine on three is allowed to eat your dollar. Let it.",
+      "Rule four is the one underlined twice: if room 4B's call bell rings twice in a row, you do not answer it yourself — you send whoever is floating that night. 4B has been a storage room since 1987. The bell was disconnected in 1987. It rings maybe twice a year.",
+      "At 3:12 AM in her fourth week, the board lights up: 4B. Then again. She's alone at the station — no float tonight. The rules don't cover that. So she does the thing the list was written to prevent: she goes to see, and the door to 4B is already open.",
+      "Inside: shelving, dust, and a call-bell cable hanging loose exactly as it has for forty years — nowhere near a button. She reports it. The charge nurse doesn't ask what she saw. She just hands her a pen and says, 'You get to write rule eight.'"
+    ],
+    shotList: [
+      "Hook: a long empty hospital corridor at night, half the fluorescent lights off, one flickering at the far end.",
+      "Close-up: a yellowed handwritten list taped inside a metal supply-closet door, seven rules in different inks.",
+      "Detail shot: a row of four wheelchairs by an elevator in low light, a fifth shape in shadow at the end.",
+      "The nurses' station at 3 AM: a call-board lighting up '4B', a young nurse's face lit from below by the panel.",
+      "POV walking slowly toward a door standing ajar at the end of a dark storage corridor, flashlight beam trembling.",
+      "Closer: an old pen held out over the list, one blank space under rule seven, hand hesitating."
+    ],
+    captions: [
+      "Night-shift rules aren't in the handbook. They're in the closet. 🏥",
+      "Rule 4: never answer 4B yourself. There's no rule for being alone.",
+      "Forty years of handwriting. She gets to write rule eight."
+    ],
+    thumbnails: [
+      "RULE FOUR",
+      "The bell rang twice",
+      "Night shift rules"
+    ]
+  },
+  {
+    id: "ss-stairs",
+    category: "Scary Story",
+    title: "The staircase in the woods",
+    image: { glyph: "🌲", from: "#0c1410", to: "#3b4368" },
+    premise: "Search-and-rescue volunteers walk grid patterns through wilderness nobody visits. They all report the same thing eventually: a staircase, freestanding, immaculate, miles from any road. The briefing covers it in one line: mark the coordinates, keep walking.",
+    tags: ["forest", "search and rescue", "hiking", "scary story"],
+    safety: "Fictional story in the campfire/internet-legend tradition (freestanding stairs in the woods). No real SAR teams, cases, or missing persons referenced.",
+    hooks: [
+      "Search-and-rescue teams have a one-line briefing about stairs in the woods: mark it, don't climb it.",
+      "Twelve miles from the nearest road, he found a staircase. Carpeted. Clean. Standing alone.",
+      "The weird part isn't the stairs. It's that his GPS logged him standing there for 51 minutes. He remembers 5."
+    ],
+    beats: [
+      "His first season on volunteer search-and-rescue, the briefing is mostly boring: grid spacing, whistle signals, hydration. Then the old-timer running it says, without looking up: 'If you find stairs, log the location and keep moving.' Nobody asks. He assumes it's a joke.",
+      "Two summers later he's sweeping a ravine twelve miles from the nearest trailhead when the trees open up. A staircase. Freestanding, like a house was lifted off it. Oak banister, carpet runner, no weathering, no leaves on the steps — in a forest that buries everything by October.",
+      "He circles it twice. No foundation, no rot, no bird has touched it. His radio crackles static on a channel that was clear all morning. And the forest around it is quiet in a way forests aren't — no insects, like the volume was turned down in a circle.",
+      "He does what the briefing said: logs the coordinates, takes one photo, keeps walking. At debrief, his GPS track shows him stationary at that clearing for 51 minutes. He remembers five. The photo on his phone shows the clearing, the trees, the carpet-flattened grass — and no stairs.",
+      "The old-timer takes his report without blinking and files it in a folder that is not thin. 'You did it right,' he says. He never says what happens when someone does it wrong. But the grid maps have small red Xs on them, and nobody searches those squares."
+    ],
+    shotList: [
+      "Hook: dense old-growth forest in flat grey light, a clean wooden staircase standing alone in a clearing.",
+      "A search-and-rescue volunteer in an orange vest checking a handheld GPS among huge trees, breath visible.",
+      "Low angle up the staircase: polished banister, carpet runner, treetops where a second floor should be.",
+      "Close-up: a radio in a gloved hand, static bars dancing, the volunteer's eyes fixed on something off-frame.",
+      "Overhead map graphic: a search grid with a handful of squares marked with small red Xs.",
+      "Closer: an old filing folder labeled 'STRUCTURES' dropped onto a desk, thick with decades of reports."
+    ],
+    captions: [
+      "SAR briefing, one line: if you find stairs, keep walking. 🌲",
+      "51 minutes on the GPS. He remembers 5.",
+      "The photo shows the clearing. It doesn't show the stairs."
+    ],
+    thumbnails: [
+      "STAIRS. ALONE.",
+      "Mark it. Don't climb it.",
+      "51 missing minutes"
+    ]
+  },
+  {
+    id: "ss-lookout",
+    category: "Scary Story",
+    title: "The fire lookout's last radio check",
+    image: { glyph: "📻", from: "#141008", to: "#b8563a" },
+    premise: "Fire lookouts spend whole seasons alone in glass towers, checking in by radio twice a day. Dispatch logs every word. Her tower's log for August 14th shows a check-in at 9 PM — routine, calm, her voice. She was asleep by 8.",
+    tags: ["wilderness", "radio", "isolation", "scary story"],
+    safety: "Fictional story set in an invented fire-lookout post. No real agencies, towers, or personnel depicted.",
+    hooks: [
+      "Fire lookouts radio in twice a day. Dispatch has her 9 PM check-in on tape. She was asleep by 8.",
+      "Alone in a glass tower, 40 miles from anyone — and dispatch keeps answering someone who isn't her.",
+      "The recording is her voice. Her call sign. Her cadence. One detail is wrong: it describes tomorrow's weather."
+    ],
+    beats: [
+      "Third season in the tower: 14 feet of glass on a mountain's shoulder, a radio, a logbook, and a horizon she knows by heart. Check-in at 9 AM, check-in at 9 PM, same script every day: call sign, visibility, weather, 'all quiet.'",
+      "In August the storms come and she starts sleeping early. One morning dispatch thanks her for 'last night's report.' She didn't make one. She laughs it off as a logging error — until the supervisor reads it back, and it's her voice on the recording. Her call sign. Her rhythm.",
+      "The reports keep coming, always nights she's asleep, always flawless — except each one describes the NEXT day's weather. Wind shift at noon: correct. Dry lightning on the north ridge: correct, to the hour. Dispatch is getting tomorrow's mountain, one night early.",
+      "She stops sleeping and sits by the radio with the volume up. At 9:02 PM the handset clicks like a throat clearing, and she hears her own voice go out on the channel — calm, easy, mid-report — while her thumb is nowhere near the transmit key. It reads the weather. Then it says something new: 'Smoke visible. Southeast. All quiet.'",
+      "Southeast is the one direction her tower can't see — the ridge blocks it. She logs it anyway. Two days later a crew finds a lightning strike smoldering exactly there, caught so early it never made the news. The voice never transmits again. Her last logbook entry that season isn't a weather line. It's a thank-you."
+    ],
+    shotList: [
+      "Hook: a tiny glass fire-lookout tower on a mountain ridge at dusk, one warm light against a wall of storm clouds.",
+      "Interior: a woman by lantern light at an old radio set, logbook open, endless dark forest beyond the glass.",
+      "Extreme close-up: a radio handset on its hook, the transmit light glowing red, no hand anywhere near it.",
+      "Her face lit by the radio dial at night, eyes wide, listening to her own voice come out of the speaker.",
+      "Dawn wide shot: a thin column of smoke rising from a ridge line, small and early against a pink sky.",
+      "Closer: a weathered logbook page, weather entries in neat handwriting, the last line reading only 'thank you.'"
+    ],
+    captions: [
+      "Dispatch has her 9 PM check-in on tape. She was asleep. 📻",
+      "The voice knew tomorrow's weather. Then it saw smoke.",
+      "Alone in a glass tower — but the radio kept her company."
+    ],
+    thumbnails: [
+      "HER OWN VOICE",
+      "The 9 PM check-in",
+      "It saw the smoke first"
+    ]
+  },
+  {
+    id: "ss-doorbell",
+    category: "Scary Story",
+    title: "The doorbell only records him at 3:33",
+    image: { glyph: "🚪", from: "#0d0d12", to: "#6a5ae0" },
+    premise: "A smart doorbell that triggers on motion, every night, at exactly 3:33 AM. Same figure at the end of the driveway. Every night one step closer. The manufacturer's support team stops replying after she sends the eleventh clip.",
+    tags: ["smart home", "camera", "night", "scary story"],
+    safety: "Fictional suburban horror story. No real products, companies, or events depicted; avoids home-invasion realism in favor of the uncanny.",
+    hooks: [
+      "Her doorbell records a stranger every night at 3:33. Every night, one step closer.",
+      "Motion alerts don't lie. Except hers fire at the same second every night — for something the camera can barely see.",
+      "Clip 1: end of the driveway. Clip 11: close enough to count buttons. Clip 12 is why she moved."
+    ],
+    beats: [
+      "The alert wakes her the first time: MOTION DETECTED, 3:33 AM. The clip shows her empty driveway in grainy night vision — and at the very edge, by the mailbox, a figure standing still. Not walking past. Facing the house. She checks the yard in the morning: nothing.",
+      "It happens again the next night. 3:33 AM exactly — not 3:32, not 3:34. Same figure, same stillness. But tonight he's standing three feet past the mailbox. She scrubs both clips frame by frame. He never moves in either one. He's just... further along.",
+      "Night after night the clips stack up, each one a single step closer, like frames of a film played one per day. Support says it's 'likely a looping firmware artifact.' Then she sends clip eleven — close enough to see coat buttons and that the face is slightly, politely wrong — and support stops replying.",
+      "She stops sleeping through the alert and sits by the window at 3:30 with the lights off. At 3:33 her phone buzzes in her hand: MOTION DETECTED. The driveway below her is empty. It has been empty the whole time. Whatever the camera sees, it doesn't need her eyes to agree.",
+      "Clip twelve is the last one on the account. It isn't the driveway. The lens is looking down the upstairs hallway — a camera she doesn't own, an angle that doesn't exist — at her bedroom door, standing open. She doesn't watch it twice. Some houses you don't sell; you just leave."
+    ],
+    shotList: [
+      "Hook: grainy black-and-white doorbell night footage of a suburban driveway, a still figure at the far edge by a mailbox, timestamp 3:33 AM.",
+      "A woman's face lit only by her phone in a dark bedroom, the motion alert glowing on the screen.",
+      "Split grid of doorbell clips side by side, the same figure incrementally closer in each frame, timestamps identical.",
+      "Extreme close-up of a laptop screen scrubbing footage: a coat button, a face just out of focus, cursor trembling on the pause bar.",
+      "Wide shot: her silhouette at the dark window at 3:33, phone buzzing in hand, the driveway below completely empty.",
+      "Closer: a FOR SALE sign at the end of a driveway at dawn, the doorbell camera above it with its lens taped over."
+    ],
+    captions: [
+      "Every night. 3:33. One step closer. 🚪",
+      "Support stopped replying after clip eleven.",
+      "The last clip wasn't from the driveway."
+    ],
+    thumbnails: [
+      "3:33 AM",
+      "One step closer",
+      "Clip 12"
+    ]
+  },
+
+  /* ---------------- TRUE HISTORY ----------------
+     Narrative category #2: real, documented events told documentary-style.
+     Picture-only by design — the pipeline defaults these to the archival
+     visual style and swaps in true-history CTA + hashtags. Facts must stay
+     accurate; anything debated is flagged in the narration itself. */
+  {
+    id: "th-dancingplague",
+    category: "True History",
+    title: "The town that couldn't stop dancing",
+    image: { glyph: "🩰", from: "#3d2f1a", to: "#8a2431" },
+    premise: "Strasbourg, July 1518. A woman named Frau Troffea steps into the street and starts dancing. She doesn't stop for days — and within a month, hundreds of townspeople are dancing with her, many literally unable to quit. This is one of history's best-documented mass mysteries.",
+    tags: ["medieval", "mystery", "medicine", "true history"],
+    safety: "Real, documented event (Strasbourg dancing plague, 1518). Casualty details from contemporary accounts are debated and framed as such; modern explanation (mass psychogenic illness) presented as the leading theory, not settled fact.",
+    hooks: [
+      "In 1518, a whole town started dancing — and physically couldn't stop.",
+      "The city's cure for a dancing plague? Hire a band. It went exactly as badly as you think.",
+      "One woman started dancing in the street. A month later it was 400 people. This is real."
+    ],
+    beats: [
+      "Strasbourg, July 1518. A woman called Frau Troffea walks out of her house and begins to dance. No music, no festival, no smile. She dances until she collapses from exhaustion, sleeps, gets up — and keeps dancing. After nearly a week, dozens have joined her.",
+      "The city's doctors rule out the stars and blame 'hot blood.' Their prescription: the dancers should dance it out of their systems. The council hires musicians, opens guild halls, even builds a stage. Official policy is now MORE dancing.",
+      "It backfires completely. The music draws in new dancers, and by August, chronicles put the number around 400. Contemporary accounts describe bloody feet, people begging for help mid-dance, and some dancers reportedly dying of strokes and exhaustion — though historians still argue over the death toll.",
+      "The city reverses course: dancing is banned, and in September the remaining dancers are loaded into wagons and taken to a mountain shrine of Saint Vitus to be blessed. Within weeks, the plague fades — as strangely as it began.",
+      "The best modern explanation: mass psychogenic illness — a stress epidemic in a town crushed by famine and disease, where people BELIEVED a dancing curse was possible. The eerie part? It had happened before. At least seven dancing plagues hit the region in the centuries before Strasbourg."
+    ],
+    shotList: [
+      "Hook: a lone woman in rough 16th-century clothes dancing in an empty cobblestone street, medieval townsfolk staring from doorways.",
+      "Candle-lit interior: physicians in dark robes arguing over an open medical folio, a dancing figure visible through the window behind them.",
+      "Wide shot of a crowded medieval square: dozens of exhausted dancers, hired musicians playing on a wooden stage, oil-painting texture.",
+      "Close-up: worn leather shoes and bruised feet still moving on cobblestones, dawn light, long shadows.",
+      "A creaking wagon of slumped dancers winding up a mountain road toward a small stone chapel.",
+      "Closer: an old chronicle page in Latin script beside a single burning candle, quill resting on the desk."
+    ],
+    captions: [
+      "Strasbourg, 1518: the plague you could hear coming — it had a beat. 🩰",
+      "The official cure was a hired band. It made everything worse.",
+      "400 people. Weeks of dancing. Fully documented. Still unsettling."
+    ],
+    thumbnails: [
+      "THE DANCING PLAGUE",
+      "1518: no one could stop",
+      "The cure was a band"
+    ]
+  },
+  {
+    id: "th-emuwar",
+    category: "True History",
+    title: "The war Australia lost to birds",
+    image: { glyph: "🪶", from: "#8a6d2f", to: "#3a6ea5" },
+    premise: "In 1932, Australia sent soldiers with machine guns to fight 20,000 emus destroying wheat farms. The military filed reports, a major commanded the operation, Parliament debated it — and the emus won. Every part of this story is real.",
+    tags: ["australia", "military", "animals", "true history"],
+    safety: "Real, documented event (the 'Emu War', Western Australia, 1932). Told for its absurdity, at the expense of the humans, not the animals; casualty figures are the officially reported ones.",
+    hooks: [
+      "In 1932, Australia declared war on birds. The birds won. This is a real military operation.",
+      "Two machine guns, 10,000 rounds, one major — versus 20,000 emus. Guess who won.",
+      "An actual army major wrote in an actual report that emus could 'face any army in the world.'"
+    ],
+    beats: [
+      "Western Australia, 1932. Twenty thousand emus come marching out of the outback into the wheat fields of Campion — right as struggling farmers, many of them WWI veterans, are trying to bring in a harvest. The farmers ask the government for help. The government sends the army.",
+      "Enter Major Meredith of the Royal Australian Artillery, two Lewis machine guns, and 10,000 rounds of ammunition. The plan: mow down the flocks. First contact, the emus do something no one briefed him on — they scatter into small groups and sprint in every direction at 50 kilometers an hour.",
+      "It gets worse. The gun jams during one ambush. A truck-mounted gun can't shoot straight on the rough ground, and the emus outrun the truck anyway. Observers swear each mob seems to have a lookout bird posted while the others feed. The army is being out-generaled by poultry.",
+      "After about a month, the score: roughly 10,000 rounds fired, fewer than a thousand confirmed emus down, most of the 20,000 still eating wheat. Meredith reports, apparently sincerely, that a unit with the emu's bullet-taking ability could 'face any army in the world.' When Parliament asks if medals will be awarded, the answer given: the medals should go to the emus.",
+      "The military withdraws, defeated by birds — and the actual fix turns out boring: bounties and better fences, which work. The Emu War survives every fact-check thrown at it, and the emu still stands proudly on Australia's coat of arms. It earned it."
+    ],
+    shotList: [
+      "Hook: a line of emus striding through a golden wheat field at dawn, heads high, shot like a war film's opening.",
+      "Sepia archival look: 1930s Australian soldiers in slouch hats setting up a Lewis machine gun on a dusty farm track.",
+      "Action shot: emus sprinting in all directions through scrubland, dust flying, comically fast, low camera angle.",
+      "A vintage truck bouncing over rough paddocks, gunner clinging on, emus effortlessly pulling away ahead.",
+      "Officer at a field desk writing a report by lamplight, map of Western Australia pinned behind him.",
+      "Closer: Australia's coat of arms, slow push-in on the emu, golden light."
+    ],
+    captions: [
+      "1932: Australia vs 20,000 emus. Official military operation. 🪶",
+      "10,000 rounds. The emus held the field.",
+      "The medals, said Parliament, should go to the emus."
+    ],
+    thumbnails: [
+      "THE EMU WAR",
+      "Australia lost. To birds.",
+      "10,000 rounds, 0 victory"
+    ]
+  },
+  {
+    id: "th-carrington",
+    category: "True History",
+    title: "The night the sky caught fire",
+    image: { glyph: "🌌", from: "#151a30", to: "#b8563a" },
+    premise: "September 1859: auroras blaze over Cuba, gold miners get up for breakfast at 1 AM thinking it's dawn, and telegraph offices catch fire as the wires themselves surge with current. The Carrington Event is the biggest solar storm on record — and the reason power-grid planners still lose sleep.",
+    tags: ["space", "sun", "victorian", "true history"],
+    safety: "Real, documented event (the Carrington Event, 1859) with real named observers. Modern-impact figures are estimates from published studies, framed as estimates.",
+    hooks: [
+      "In 1859 the northern lights reached Cuba — and telegraph wires started sparking on their own.",
+      "A British astronomer watched the sun flash white. Seventeen hours later, Earth's sky caught fire.",
+      "Telegraph operators unplugged their batteries — and the messages kept sending. On aurora power."
+    ],
+    beats: [
+      "September 1st, 1859. Richard Carrington, a British astronomer sketching sunspots through his telescope, watches two beads of blinding white light flare on the sun's surface — the first solar flare ever observed. He has no idea a billion-ton cloud of charged particles is now racing toward Earth.",
+      "About seventeen hours later, it hits. Auroras erupt so far south they're seen over Cuba and Colombia. In the Rocky Mountains, the glow is so bright that gold miners get up and start cooking breakfast, convinced it's morning. People read newspapers by the light of the sky at midnight.",
+      "Then the wires go strange. The world's brand-new telegraph network — Victorian internet — starts surging: operators get shocked at their keys, pylons throw sparks, and telegraph paper catches fire in offices on two continents.",
+      "Strangest of all: some operators disconnect their batteries — and keep transmitting anyway. The Boston operator asks Portland how they're sending with no power. The aurora's current in the wires is running the line by itself. That exchange is preserved in the historical record.",
+      "In 1859, the damage was singed telegraph offices. Run the same storm today and studies put the bill in the trillions — transformers, satellites, GPS, power grids, months of blackout. And in July 2012, a Carrington-class blast crossed Earth's orbit... through the spot we'd occupied nine days earlier. The sun isn't done."
+    ],
+    shotList: [
+      "Hook: violent red and green auroras blazing over a Victorian city skyline, gaslights below, people staring upward in the street.",
+      "A bearded Victorian astronomer at a brass telescope, one eye to the eyepiece, sunlight projecting a sunspot sketch onto paper.",
+      "Miners' camp in the Rockies at night: men in suspenders cooking over a fire under a sky glowing like sunrise.",
+      "Interior telegraph office: an operator jerking his hand back from a sparking brass key, paper tape smoking on the desk.",
+      "Close-up: a disconnected battery on a wooden desk, the telegraph key beside it clicking by itself under aurora light through the window.",
+      "Modern contrast shot: a city power grid at dusk seen from above, then a slow fade of entire districts going dark."
+    ],
+    captions: [
+      "1859: auroras in Cuba, sparks in the wires, fire in the sky. 🌌",
+      "They unplugged the batteries. The telegraph kept sending.",
+      "The biggest solar storm on record — and 2012 was a near miss."
+    ],
+    thumbnails: [
+      "THE SKY CAUGHT FIRE",
+      "1859's solar storm",
+      "It almost hit in 2012"
+    ]
+  },
+  {
+    id: "th-marathon1904",
+    category: "True History",
+    title: "The most cursed race ever run",
+    image: { glyph: "🏃", from: "#8a6d2f", to: "#b8563a" },
+    premise: "The 1904 Olympic marathon in St. Louis: 90-degree heat, one working water stop, a winner carried across the line on rat poison and brandy, a 'champion' who did 11 miles by car, and a Cuban postman who paused mid-race for a nap. Every detail is documented.",
+    tags: ["olympics", "sports", "1900s", "true history"],
+    safety: "Real, documented event (1904 Olympic marathon, St. Louis). Comic tone at the expense of the organizers, whose choices caused the chaos; the strychnine 'doping' is framed as the dangerous medical ignorance it was.",
+    hooks: [
+      "The 1904 Olympic marathon was so cursed the winner crossed the line on rat poison. Documented.",
+      "One water stop. 90-degree heat. Dust clouds from cars. The Olympics designed a disaster on purpose.",
+      "The first man across the finish line did 11 miles of the marathon in a car. He almost got the gold."
+    ],
+    beats: [
+      "St. Louis, August 1904. Thirty-two men line up for the Olympic marathon in 90-degree heat, on dust roads where officials' cars drive AHEAD of the runners, kicking grit into their lungs. The race organizer has deliberately kept water scarce — he wants to study dehydration. This is the starting point.",
+      "First across the line is American Fred Lorz, fresh as a daisy — because after cramping at mile nine, he'd hopped into a car for eleven miles, waved at spectators from the passenger seat, then jogged the rest. He's nearly crowned before the truth lands. His defense: it was a joke.",
+      "The real leader, Thomas Hicks, is meanwhile being kept upright by his handlers with the cutting-edge sports science of 1904: doses of strychnine — yes, the rat poison, then used as a stimulant — mixed with brandy and egg whites. He hallucinates, begs to lie down, and is all but carried across the line. He wins.",
+      "Further back, Cuban postman Félix Carvajal — racing in cut-down trousers after losing his money on the way to St. Louis — chats with spectators, detours into an orchard for some apples that turn out to be bad, stops for a nap to settle his stomach... and STILL finishes fourth. Also on the course: Len Taunyane of South Africa, chased nearly a mile off route by aggressive dogs. He finishes ninth.",
+      "Of thirty-two starters, fourteen finish, and the near-fatal shambles forces the Olympics to take marathons seriously — water, supervision, actual rules. Every marathon aid station you've ever seen is, in a way, an apology for St. Louis 1904."
+    ],
+    shotList: [
+      "Hook: sepia archival look of runners in 1900s singlets disappearing into a dust cloud kicked up by an early automobile on a dirt road.",
+      "A grinning athlete waving from the passenger seat of a 1904 open-top car while exhausted runners plod behind.",
+      "Two handlers in flat caps supporting a glassy-eyed runner between them, one holding a brandy bottle and a spoon.",
+      "A small mustachioed runner in cut-off trousers asleep under an orchard tree, apples scattered, race number still pinned on.",
+      "A runner sprinting off a country road with two farm dogs at his heels, wheat fields, period photograph texture.",
+      "Closer: a battered 1904 gold medal on a wooden table next to an antique brown medicine bottle, single overhead light."
+    ],
+    captions: [
+      "St. Louis 1904: the marathon that had everything except water. 🏃",
+      "Winner: strychnine and brandy. Runner-up story: a mid-race nap. Fourth place.",
+      "Every aid station is an apology for this race."
+    ],
+    thumbnails: [
+      "THE CURSED MARATHON",
+      "Rat poison at mile 20",
+      "He napped. Came 4th."
+    ]
+  },
+  {
+    id: "th-wojtek",
+    category: "True History",
+    title: "The bear who served in the army",
+    image: { glyph: "🐻", from: "#3d2f1a", to: "#2d8a6e" },
+    premise: "Wojtek was a Syrian brown bear bought as a cub by Polish soldiers in 1942. To get him aboard a troop ship, they enlisted him — rank: private. At Monte Cassino he carried crates of artillery shells through an active battle. His unit put him on their badge. All of it is true.",
+    tags: ["ww2", "animals", "poland", "true history"],
+    safety: "Real, documented story (Wojtek, 22nd Artillery Supply Company, Polish II Corps). Wartime setting handled respectfully; focuses on the soldiers' bond with the bear, no combat gore.",
+    hooks: [
+      "In WWII, the Polish army enlisted a bear. Rank: private. Job: carrying artillery shells. True story.",
+      "The troop ship said soldiers only. So they made the bear a soldier.",
+      "There's a WWII unit whose official badge is a bear carrying an artillery shell. Here's why."
+    ],
+    beats: [
+      "Iran, 1942. Polish soldiers newly released from Soviet camps are trekking toward the front when they meet a boy with an orphaned bear cub. They trade him food and a pocket knife for it. The cub rides in a supply truck, is raised on condensed milk from a vodka bottle, and gets a name: Wojtek — 'happy warrior.'",
+      "Wojtek grows into a 200-kilo soldier's mascot who wrestles the men, rides shotgun in trucks, drinks the occasional beer ration, and — his one bad habit — eats cigarettes. When the unit ships out for Italy in 1944, the port's rule is firm: no mascots, personnel only. So the Polish II Corps formally enlists him. Private Wojtek now has a rank, a paybook, and a place on the manifest.",
+      "Then comes Monte Cassino, one of the war's most brutal battles. Ammunition has to move uphill under fire, crate after crate. Witnesses from his company describe Wojtek watching the men, then standing up, holding out his forearms — and spending the battle carrying heavy crates of shells alongside them. The unit swears he never dropped one.",
+      "His company is so proud that they redesign their official emblem: a bear carrying an artillery shell. It goes on their trucks, their uniforms, their letters. Wojtek is promoted to corporal — genuinely on the books of the 22nd Artillery Supply Company.",
+      "After the war, Wojtek retires to Edinburgh Zoo, where old Polish comrades visit for decades — calling to him in Polish, tossing him the odd cigarette over the fence, some say jumping in for a wrestle. Statues of him now stand in Edinburgh and Kraków: a private, a corporal, and by every account, a good soldier."
+    ],
+    shotList: [
+      "Hook: archival-style shot of a brown bear standing upright among smiling WWII soldiers in field uniforms beside a supply truck.",
+      "Warm dusty scene: young soldiers bottle-feeding a small bear cub from a glass bottle at a desert camp, mountains behind.",
+      "A grown bear seated in the back of an open army truck among kit bags, soldiers laughing, Mediterranean coast road.",
+      "Dramatic hillside: the bear upright, forearms wrapped around a wooden ammunition crate, soldiers hauling crates alongside, smoke on the ridge.",
+      "Close-up: a painted unit emblem on a truck door — a bear carrying an artillery shell — weathered and chipped.",
+      "Closer: the bronze statue of Wojtek in Edinburgh's Princes Street Gardens, an old man in a beret resting a hand on its paw."
+    ],
+    captions: [
+      "Private Wojtek: enlisted 1944, promoted to corporal, never dropped a crate. 🐻",
+      "The port said soldiers only. So the bear became a soldier.",
+      "His unit's badge is still a bear carrying a shell."
+    ],
+    thumbnails: [
+      "PRIVATE BEAR",
+      "He enlisted in 1944",
+      "Never dropped a crate"
+    ]
+  },
+
   /* ---------------- USER-REQUESTED TEST SCENARIOS ---------------- */
   {
     id: "pc-remote",
@@ -1163,6 +1578,34 @@ const seedBank = {
     "What if hibernation was contagious?",
     "What if a lighthouse kept running with no keeper — and no bill?",
     "What if your name sounded different to everyone who says it?"
+  ],
+  "Scary Story": [
+    "The dive log that ends mid-sentence",
+    "A ranger's list of things you don't do after dark",
+    "The apartment above yours that isn't on the lease",
+    "Every photo of the lake house has one extra window",
+    "The night bus that makes one extra stop",
+    "The babysitter's note: he's already asleep, don't check",
+    "The storage unit paid up forty years in advance",
+    "Mile markers on a highway that doesn't exist",
+    "The voicemail your own number keeps leaving you",
+    "A lighthouse logbook with two sets of handwriting",
+    "The elevator stops at a floor the building doesn't have",
+    "The trail cameras only ever catch it leaving"
+  ],
+  "True History": [
+    "The war two cities fought over a wooden bucket",
+    "The wave of molasses that ran faster than a man",
+    "The tree that legally owns itself",
+    "The shortest war in history lasted 38 minutes",
+    "The soldier who kept fighting WWII until 1974",
+    "The pig that nearly started a US-British war",
+    "The parachuting beavers of Idaho",
+    "1816: the year without a summer",
+    "Operation Paul Bunyan: an army versus one tree",
+    "The London bridge that was sold to Arizona",
+    "The cat that co-authored a physics paper",
+    "The tulips that cost more than houses"
   ]
 };
 
@@ -1350,12 +1793,35 @@ function renderCategoryChips() {
   });
 }
 
+/* One-click "render the whole category": shown while a category filter is
+   active; exports a single multi-slot queue the watcher renders in one run. */
+function renderBatchRow() {
+  const row = $("batchRenderRow");
+  if (!row) return;
+  row.innerHTML = "";
+  const cat = state.category;
+  const n = cat === "All" ? 0 : allScenarios().filter(s => s.category === cat).length;
+  row.hidden = !n;
+  if (!n) return;
+  row.appendChild(el("button", {
+    type: "button",
+    class: "btn btn-wide",
+    text: `🎬 Render all ${n} ${cat} scenario${n === 1 ? "" : "s"}`,
+    onclick: () => {
+      if (!confirm(`Export all ${n} ${cat} scenario${n === 1 ? "" : "s"} as one render queue?\nThe watcher renders them back-to-back — a few minutes each, free.`)) return;
+      exportCategoryForRender(cat);
+      announce(`Exported ${n} ${cat} package${n === 1 ? "" : "s"} in one queue — the watcher takes it from here.`);
+    }
+  }));
+}
+
 function renderLibrary() {
   const grid = $("scenarioGrid");
   grid.innerHTML = "";
   const matches = filteredScenarios();
   $("libraryCount").textContent = `${matches.length} of ${allScenarios().length} scenarios`;
   $("libraryEmpty").hidden = matches.length > 0;
+  renderBatchRow();
 
   matches.forEach(s => {
     const card = el("button", {
@@ -1467,11 +1933,13 @@ function buildPackage(scenario, options) {
   const voice = VOICES.find(v => v.id === options.voice) || VOICES[0];
 
   const beats = scenario.beats.slice(0, runtime.beats);
+  const cta = CATEGORY_CTA[scenario.category] || NEUTRAL_CTA;
+  const hypeLead = HYPE_LEAD[scenario.category] || "That's the timeline — tell me where it breaks.";
   const outro = voice.id === "hype"
-    ? `That's the timeline — tell me where it breaks. ${NEUTRAL_CTA}`
+    ? `${hypeLead} ${cta}`
     : voice.id === "deadpan"
-      ? `Anyway. ${NEUTRAL_CTA}`
-      : `Sit with that one for a second. ${NEUTRAL_CTA}`;
+      ? `Anyway. ${cta}`
+      : `Sit with that one for a second. ${cta}`;
 
   // Captions stay clean; the render's post kit adds hashtags per platform.
   const captions = scenario.captions.slice();
@@ -1685,6 +2153,20 @@ function exportForRender(pkg) {
   };
   // "whatifstudio-" prefix is what the Downloads watcher looks for.
   downloadFile("whatifstudio-queue-" + slugify(pkg.title) + ".json", JSON.stringify(payload, null, 2));
+}
+
+/* Batch export: every scenario in a category becomes one slot of a single
+   queue file, so the watcher renders the whole category back-to-back.
+   Uses the current Package Settings (runtime + voice) for every package. */
+function exportCategoryForRender(category) {
+  const scenarios = allScenarios().filter(s => s.category === category);
+  if (!scenarios.length) return 0;
+  const payload = {
+    app: "what-if-studio", format: 1, exportedAt: new Date().toISOString(),
+    items: scenarios.map((s, i) => ({ slot: i + 1, status: "planned", notes: "", package: buildPackage(s, state.options) }))
+  };
+  downloadFile("whatifstudio-queue-" + slugify(category) + "-all.json", JSON.stringify(payload, null, 2));
+  return scenarios.length;
 }
 
 /* ============================================================
@@ -1987,6 +2469,348 @@ function bindBuilder() {
     announce("Custom scenario deleted.");
   });
 }
+
+/* ============================================================
+   14c. STUDIO ASSISTANT HOST
+   The chat UI and generic brains live in assistant.js (shared
+   by every page). This section is the Studio-specific "host":
+   the app context, the offline command parser, and the action
+   whitelist - never anything destructive (no reset, no delete).
+   ============================================================ */
+
+function voiceLabel(id) {
+  const v = VOICES.find(v => v.id === (id || state.options.voice));
+  return v ? v.label : id;
+}
+
+/* Snapshot of what the user is looking at - sent with every AI request
+   and used to answer "what's selected?" style questions offline. */
+function assistantContext() {
+  const scenario = getScenario(state.selectedId);
+  return {
+    selectedScenario: scenario ? {
+      title: scenario.title,
+      category: scenario.category,
+      custom: Boolean(scenario.custom),
+      beats: scenario.beats.length
+    } : null,
+    packageGenerated: Boolean(state.pkg),
+    runtime: state.options.runtime,
+    voice: voiceLabel(),
+    searchQuery: state.search,
+    categoryFilter: state.category,
+    libraryTotal: allScenarios().length,
+    customScenarios: state.customScenarios.length,
+    lastSeed: state.seed ? `${state.seed.category}: ${state.seed.text}` : null,
+    storageMode: storage.mode,
+    categories: CATEGORIES,
+    runtimes: RUNTIMES.map(r => r.id),
+    voices: VOICES.map(v => v.label)
+  };
+}
+
+/* "scary stories" -> "Scary Story": match a spoken category name,
+   plural-tolerant, ignoring filler words like "videos" or "category". */
+function resolveCategoryName(text) {
+  const norm = s => s.toLowerCase().replace(/[""''\/]/g, " ")
+    .replace(/\b(videos?|scenarios?|shorts?|ones?|category)\b/g, " ")
+    .replace(/ies\b/g, "y").replace(/([a-z])s\b/g, "$1")
+    .replace(/\s+/g, " ").trim();
+  const rem = norm(text);
+  if (!rem) return null;
+  return CATEGORIES.slice().sort((a, b) => b.length - a.length)
+    .find(c => { const cl = norm(c); return cl === rem || rem.includes(cl); }) || null;
+}
+
+/* Loose title match: "open the moon one" should find the Moon scenario. */
+function findScenarioByTitle(text) {
+  const stop = new Set(["the", "a", "an", "one", "that", "scenario", "video", "what", "if", "about"]);
+  const words = String(text).toLowerCase().replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/).filter(w => w && !stop.has(w));
+  if (!words.length) return null;
+  let best = null, bestScore = 0;
+  allScenarios().forEach(s => {
+    const hay = (s.title + " " + s.tags.join(" ")).toLowerCase();
+    const score = words.reduce((n, w) => n + (hay.includes(w) ? 1 : 0), 0);
+    if (score > bestScore) { best = s; bestScore = score; }
+  });
+  return bestScore >= Math.max(1, Math.ceil(words.length / 2)) ? best : null;
+}
+
+/* Story categories keep the topic as a plain narrative title; what-if
+   categories phrase it as the signature question. (CATEGORY_CTA's keys
+   are exactly the story categories.) */
+function assistantTitleFor(raw, category) {
+  const clean = raw.replace(/[.?!]+$/, "");
+  if (CATEGORY_CTA[category]) return clean.charAt(0).toUpperCase() + clean.slice(1);
+  return /^what\s+if\b/i.test(raw) ? raw : `What if ${clean}?`;
+}
+
+/* Create a custom scenario without opening the dialog. Uses the same AI
+   draft service as "Write it for me"; falls back to the prefilled builder
+   when the dashboard is offline. */
+async function assistantCreateScenario(args) {
+  let raw = String(args.title || "").trim().replace(/\s+/g, " ");
+  if (!raw) return "Give me a topic — e.g. “make a video about haunted vending machines”.";
+  const category = CATEGORIES.includes(args.category) ? args.category : "Speculative";
+  const title = assistantTitleFor(raw, category);
+  let draft;
+  try {
+    draft = await draftScenarioWithAI(title, category, state.options.runtime);
+  } catch (err) {
+    $("newScenarioBtn").click();
+    $("bTitle").value = title;
+    return err && err.message === "dashboard-offline"
+      ? "The AI writer needs the Studio helper running — I opened the builder with your title instead. Fill in the beats yourself, or start “Start-What-If-Studio” and click “Write it for me”."
+      : "The writing service hiccuped — I opened the builder with your title. Try “Write it for me” again in a moment.";
+  }
+  const scenario = scaffoldScenario({
+    title,
+    category,
+    glyph: draft.emoji,
+    premise: draft.premise,
+    tags: draft.tags,
+    beats: draft.beats
+  });
+  state.customScenarios.push(scenario);
+  persist();
+  state.category = "All";
+  state.search = "";
+  $("searchInput").value = "";
+  renderCategoryChips();
+  renderLibrary();
+  selectScenario(scenario.id);
+  if (args.render) {
+    $("generateBtn").click();
+    return `Created “${scenario.title}” (draft by ${draft.engine}) and exported it for render — the watcher takes it from here. Everything is editable if you want another cut.`;
+  }
+  return `Added “${scenario.title}” to your library (draft by ${draft.engine}) and opened it. Review the beats, then say “generate” to send it to render.`;
+}
+
+/* Whitelisted actions - the only things chat (local or AI) can do.
+   Each returns a human status line. */
+async function runAssistantAction(action) {
+  const args = (action && action.args) || {};
+  switch (action && action.name) {
+    case "select_scenario": {
+      const s = findScenarioByTitle(String(args.title || ""));
+      if (!s) return `I couldn't find a scenario matching “${String(args.title || "").slice(0, 60)}” — try “search ${String(args.title || "").split(/\s+/)[0] || "…"}” to browse.`;
+      selectScenario(s.id);
+      return `Opened “${s.title}” (${s.category}). Say “generate” to build and export it.`;
+    }
+    case "search": {
+      if (args.category && CATEGORIES.includes(args.category)) state.category = args.category;
+      else if (args.category === "All") state.category = "All";
+      state.search = String(args.query || "").slice(0, 80);
+      $("searchInput").value = state.search;
+      renderCategoryChips();
+      renderLibrary();
+      const n = filteredScenarios().length;
+      return n
+        ? `Showing ${n} scenario${n === 1 ? "" : "s"}${state.search ? ` for “${state.search}”` : ""}${state.category !== "All" ? ` in ${state.category}` : ""}. Tell me which to open.`
+        : "No matches — try different words, or say “make a video about …” and I'll draft a new one.";
+    }
+    case "set_options": {
+      const parts = [];
+      const rt = Number(args.runtime);
+      if (RUNTIMES.some(r => r.id === rt)) {
+        state.options.runtime = rt;
+        if (getScenario(state.selectedId)) renderRuntimeControl();
+        syncBuilderRuntime();
+        parts.push(`runtime ${rt === 180 ? "3 min" : rt + "s"}`);
+      }
+      const vid = String(args.voice || "").toLowerCase();
+      const voice = VOICES.find(v => v.id === vid || v.label.toLowerCase().includes(vid));
+      if (voice && vid) {
+        state.options.voice = voice.id;
+        const sel = $("voiceSelect");
+        if (sel.options.length) sel.value = voice.id;
+        parts.push(`voice ${voice.label}`);
+      }
+      return parts.length
+        ? `Done — ${parts.join(", ")}. This applies to the next package you generate.`
+        : "I can set runtime to 30s, 60s, 90s or 3 min, and the voice to Calm, High-Energy or Deadpan.";
+    }
+    case "generate": {
+      const scenario = getScenario(state.selectedId);
+      if (!scenario) return "Pick a scenario first — say “open …” with a title, or “make a video about …” for a new one.";
+      $("generateBtn").click();
+      return `Generated “${scenario.title}” (${state.options.runtime === 180 ? "3 min" : state.options.runtime + "s"}, ${voiceLabel()}) and downloaded the render queue — the watcher picks it up from Downloads.`;
+    }
+    case "export": {
+      if (!state.pkg) {
+        const scenario = getScenario(state.selectedId);
+        if (!scenario) return "Nothing to export yet — open a scenario and say “generate” first.";
+        state.pkg = buildPackage(scenario, state.options);
+        state.activeTab = 0;
+        renderPackage();
+      }
+      const format = String(args.format || "json").toLowerCase();
+      if (format === "txt") { $("exportTxtBtn").click(); return "Exported the package as .txt."; }
+      if (format === "srt") { $("exportSrtBtn").click(); return "Exported the subtitles as .srt."; }
+      $("exportJsonBtn").click();
+      return "Exported the render .json — the watcher will pick it up from Downloads.";
+    }
+    case "new_seed": {
+      nextSeed();
+      return `Here's a fresh angle — ${state.seed.category}: ${state.seed.text} Say “make a video about it” and I'll draft it.`;
+    }
+    case "create_scenario":
+      return assistantCreateScenario(args);
+    case "render_category": {
+      const cat = CATEGORIES.includes(args.category) ? args.category
+        : resolveCategoryName(String(args.category || ""));
+      if (!cat) return "Tell me which category — e.g. “render all scary stories” or “render all true history”.";
+      const n = exportCategoryForRender(cat);
+      if (!n) return `There are no scenarios in ${cat} yet.`;
+      return `Exported all ${n} ${cat} scenario${n === 1 ? "" : "s"} as one render queue (${state.options.runtime === 180 ? "3 min" : state.options.runtime + "s"}, ${voiceLabel()}) — the watcher renders them back-to-back, a few minutes each.`;
+    }
+    case "navigate": {
+      const page = String(args.page || "").toLowerCase();
+      if (page.startsWith("video")) { $("navVideosBtn").click(); return "Checking the dashboard and heading to Videos…"; }
+      if (page.startsWith("produce")) { $("navProduceBtn").click(); return "Checking the dashboard and heading to Produce…"; }
+      if (page.startsWith("spend")) { $("navSpendBtn").click(); return "Checking the dashboard and heading to Spend…"; }
+      if (page.startsWith("help") || page.startsWith("how")) { $("navHelpBtn").click(); return "Opening the how-to guide…"; }
+      if (page.startsWith("studio")) return "You're already in the Studio.";
+      return "I can take you to Videos, Produce, Spend, or the How-to guide.";
+    }
+    default:
+      return null;
+  }
+}
+
+const ASSISTANT_CAPABILITIES =
+  "I can drive the studio for you — try:\n" +
+  "• “open the black hole scenario”\n" +
+  "• “make a 90s deadpan video about haunted elevators”\n" +
+  "• “set the voice to high-energy” / “make it 3 min”\n" +
+  "• “generate” (build + export the selected scenario)\n" +
+  "• “search history” or “show scary ones”\n" +
+  "• “render all scary stories” (one queue, the watcher renders the whole category)\n" +
+  "• “give me an idea”, “go to produce”, “export srt”\n" +
+  "• “is my video done?” (render status + newest videos)\n" +
+  "• “give me the caption for my newest video” (post kit, ready to copy)\n" +
+  "• “mark it posted” once a video has gone out\n" +
+  "…and ask me anything about how the app or the render pipeline works.";
+
+/* Local intent parsing - fast, free, and works offline. Returns
+   { action, reply } or null (which hands off to the AI tier). */
+function parseIntent(raw) {
+  const text = raw.trim();
+  const t = text.toLowerCase().replace(/[""'']/g, "");
+  if (!t) return null;
+
+  if (/what('?s| is) (selected|open|loaded)|current (settings|status|setup)|^status$/.test(t)) {
+    const c = assistantContext();
+    return { reply: (c.selectedScenario
+      ? `You have “${c.selectedScenario.title}” open (${c.selectedScenario.category}${c.selectedScenario.custom ? ", custom" : ""}).`
+      : "Nothing is selected yet.")
+      + ` Settings: ${c.runtime === 180 ? "3 min" : c.runtime + "s"}, ${c.voice}. Library: ${c.libraryTotal} scenarios (${c.customScenarios} custom).`
+      + (c.packageGenerated ? " A package is generated and ready to export." : "") };
+  }
+
+  const nav = t.match(/^(?:go to|take me to|open|show me|show)\s+(?:the\s+)?(videos?|produce|spend|help|how[- ]to|dashboard|guide)\b/);
+  if (nav) {
+    const page = /help|how|guide/.test(nav[1]) ? "help" : (nav[1] === "dashboard" ? "videos" : nav[1]);
+    return { action: { name: "navigate", args: { page } } };
+  }
+
+  if (/^(?:give me |get me |i need )?(?:a |another |new |fresh )?(?:seed|idea|angle|inspiration)\b/.test(t) ||
+      /new scenario seed/.test(t))
+    return { action: { name: "new_seed", args: {} } };
+
+  // Settings: runtime and/or voice in one message ("make it a 90s hype video").
+  const rtMatch = t.match(/\b(30|60|90|180)\s*s?(?:ec(?:ond)?s?)?\b/) || (/\b3\s*min/.test(t) ? ["", "180"] : null);
+  const voiceMatch = t.match(/\b(calm|hype|high[\s-]?energy|deadpan)\b/);
+  const settingsIntent = /\b(set|change|switch|use|make it|runtime|length|voice|style)\b/.test(t);
+  if (settingsIntent && (rtMatch || voiceMatch) && !/\babout\b/.test(t)) {
+    const args = {};
+    if (rtMatch) args.runtime = Number(rtMatch[1]);
+    if (voiceMatch) args.voice = voiceMatch[1].startsWith("high") ? "hype" : voiceMatch[1];
+    return { action: { name: "set_options", args } };
+  }
+
+  if (/^(generate|render|export for render|make (?:the|this) video|build (?:the |this )?package|send it|do it|go|ship it)\W*$/.test(t))
+    return { action: { name: "generate", args: {} } };
+
+  const exp = t.match(/^export\b.*?\b(txt|srt|json|text|subtitles?)\b|^(?:download|save)\b.*\b(txt|srt|json)\b/);
+  if (exp) {
+    const f = (exp[1] || exp[2] || "json").replace("text", "txt").replace(/subtitles?/, "srt");
+    return { action: { name: "export", args: { format: f } } };
+  }
+  if (/^export\W*$/.test(t)) return { action: { name: "export", args: { format: "json" } } };
+
+  // Batch: "render all scary stories" -> one multi-slot queue for the watcher.
+  const batch = t.match(/^(?:render|generate|export|make|build|queue)\s+(?:all|every|the whole|the entire)\s+(.+)$/);
+  if (batch) {
+    const rem = batch[1];
+    const cat = /^(?:of\s+)?(?:them|these|those|it|this|the)?\s*category\W*$|^(?:of\s+)?(?:them|these|those)\W*$/.test(rem)
+      ? (state.category !== "All" ? state.category : null)
+      : resolveCategoryName(rem);
+    if (cat) return { action: { name: "render_category", args: { category: cat } } };
+  }
+
+  // Creation: "make a video about X", "make a scary story about X",
+  // or a bare "what if ...?" premise.
+  const create = t.match(/^(?:make|create|write|draft|build)(?:\s+me)?(?:\s+(?:a|an|another|new))?\s*(?:\d+\s*s?|3\s*min)?\s*(?:calm|hype|high[\s-]?energy|deadpan)?\s*(?:scary|creepy|horror|spooky|true history|history|historical)?\s*(?:scenario|video|short|story|one)?\s*(?:about|on|called|for|:)\s*(.+)$/);
+  if (create || /^what\s+if\s+.+/.test(t)) {
+    const topic = create ? create[1] : text;
+    const render = /\b(and )?(render|export|ship|send) it\b|right now/.test(t);
+    // "…and render it" is an instruction, not part of the title.
+    const title = topic.replace(/[\s,]*\b(?:and\s+)?(?:render|export|ship|send)\s+it\W*$|[\s,]*\bright now\W*$/, "").trim();
+    const args = { title, render };
+    if (rtMatch || voiceMatch) {
+      // Apply inline settings before drafting.
+      const opts = {};
+      if (rtMatch) opts.runtime = Number(rtMatch[1]);
+      if (voiceMatch) opts.voice = voiceMatch[1].startsWith("high") ? "hype" : voiceMatch[1];
+      runAssistantAction({ name: "set_options", args: opts });
+    }
+    // Longest name first so "true history" isn't shadowed by "History".
+    let cat = CATEGORIES.slice().sort((a, b) => b.length - a.length)
+      .find(c => t.includes(c.toLowerCase()));
+    if (!cat && /\b(scary|creepy|horror|spooky)\b/.test(t)) cat = "Scary Story";
+    // A plain "history video about rome" wants the documentary category;
+    // "history" stays the what-if flavor only for what-if questions.
+    if (cat === "History" && !/^what\s+if\b/.test(args.title)) cat = "True History";
+    if (cat) args.category = cat;
+    return { action: { name: "create_scenario", args } };
+  }
+
+  const search = t.match(/^(?:search|find|filter|show)\s+(?:for\s+|me\s+)?(.+)$/);
+  if (search) {
+    const q = search[1].replace(/\s*(scenarios?|ones?|videos?)$/, "").trim();
+    const cat = CATEGORIES.find(c => q.toLowerCase() === c.toLowerCase() ||
+      (q.length > 3 && c.toLowerCase().startsWith(q.toLowerCase())));
+    if (/^(all|everything)$/.test(q)) return { action: { name: "search", args: { query: "", category: "All" } } };
+    return { action: { name: "search", args: cat ? { query: "", category: cat } : { query: q } } };
+  }
+
+  const open = t.match(/^(?:open|select|load|pick|choose)\s+(.+)$/);
+  if (open) {
+    if (findScenarioByTitle(open[1])) return { action: { name: "select_scenario", args: { title: open[1] } } };
+    return { action: { name: "search", args: { query: open[1].replace(/^the\s+/, "") } } };
+  }
+
+  // A message that closely matches a library title ("the moon one").
+  if (t.split(/\s+/).length <= 6) {
+    const s = findScenarioByTitle(t);
+    if (s) return { action: { name: "select_scenario", args: { title: t } } };
+  }
+
+  return null;
+}
+
+/* Register this page as the assistant's host. assistant.js (loaded after
+   this file) builds the chat UI, handles smalltalk/FAQ/AI tiers, and calls
+   back into these for everything Studio-specific. */
+window.assistantHost = {
+  page: "studio",
+  capabilities: ASSISTANT_CAPABILITIES,
+  getContext: assistantContext,
+  parseIntent,
+  runAction: runAssistantAction
+};
 
 /* ============================================================
    15. WIRING
