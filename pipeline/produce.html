@@ -301,6 +301,12 @@ $id("pkgSelect").addEventListener("change", async (e) => {
     eng.appendChild(o);
   });
   if ([...eng.options].some(o => o.value === keep)) eng.value = keep;
+  // Pre-pick the category's own look (dark for Scary Story, archival for
+  // True History, cinematic otherwise) - still changeable by hand.
+  const styleSel = $id("imgStyle");
+  if (info.category_style && [...styleSel.options].some(o => o.value === info.category_style)) {
+    styleSel.value = info.category_style;
+  }
   applyVisMode();
   $id("optEleven").checked = info.elevenlabs;
   $id("optEleven").disabled = !info.elevenlabs;

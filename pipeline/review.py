@@ -1163,6 +1163,10 @@ class Handler(BaseHTTPRequestHandler):
                     "video_models": video_models(),
                     "observed_prices": observed_prices(),
                     "title": pkg.get("title"),
+                    "category": pkg.get("category", ""),
+                    # The category's default AI-image look (dark, archival, ...)
+                    # so the style dropdown can pre-pick it per package.
+                    "category_style": mv.branding_for(pkg)["style"],
                     "dir": d.name,
                     "prompts": prompts,
                     # The narration line spoken over each beat - same order
