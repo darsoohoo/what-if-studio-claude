@@ -110,6 +110,9 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
   <span class="side-nav-item current" aria-current="page">
     <span class="side-nav-icon" aria-hidden="true">🎞️</span><span class="side-nav-label">Produce</span>
   </span>
+  <button type="button" id="navResultsBtn" class="side-nav-item side-nav-link">
+    <span class="side-nav-icon" aria-hidden="true">📊</span><span class="side-nav-label">Results</span>
+  </button>
   <button type="button" id="navSpendBtn" class="side-nav-item side-nav-link">
     <span class="side-nav-icon" aria-hidden="true">💰</span><span class="side-nav-label">Spend</span>
   </button>
@@ -236,6 +239,7 @@ let sn = null; try { sn = localStorage.getItem("wis.navCollapsed"); } catch (e) 
 setNavCollapsed(sn === null ? matchMedia("(max-width: 700px)").matches : sn === "1", false);
 $id("navVideosBtn").addEventListener("click", () => { location.href = "/"; });
 $id("navSpendBtn").addEventListener("click", () => { location.href = "/spend"; });
+$id("navResultsBtn").addEventListener("click", () => { location.href = "/results"; });
 $id("navHelpBtn").addEventListener("click", () => { location.href = "/help"; });
 $id("navStudioBtn").addEventListener("click", () => {
   if (history.length > 1) history.back();
