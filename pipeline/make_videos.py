@@ -91,18 +91,46 @@ AI_STYLES = {
 AI_IMAGE_HOST = "https://image.pollinations.ai/prompt/"
 
 # Category branding: story categories get their own burned-in follow card,
-# anchor hashtag, and default AI-visual style. Anything not listed renders
-# with the classic what-if brand. Keys mirror CATEGORIES in app.js.
-DEFAULT_BRANDING = {"cta": "FOLLOW FOR THE NEXT WHAT-IF", "anchor": "#whatif", "style": "cinematic"}
+# anchor hashtag, default AI-visual style, and title-card/cover typography.
+# Anything not listed renders with the classic what-if brand. Keys mirror
+# CATEGORIES in app.js. font = a .ttf in pipeline/assets; font_name = the
+# family name INSIDE that ttf (libass matches by family, not filename).
+# title_color is ASS &HAABBGGRR&; thumb_color is ffmpeg 0xRRGGBB.
+DEFAULT_BRANDING = {
+    "cta": "FOLLOW FOR THE NEXT WHAT-IF", "anchor": "#whatif", "style": "cinematic",
+    "font": None, "font_name": CAPTION_FONT_NAME,
+    "title_color": r"&H0000D4FF&", "thumb_color": "0xF5C400",       # signature yellow
+}
 CATEGORY_BRANDING = {
-    "Scary Story":  {"cta": "FOLLOW FOR MORE SCARY STORIES", "anchor": "#scarystories", "style": "dark"},
-    "True History": {"cta": "FOLLOW FOR MORE TRUE HISTORY", "anchor": "#history", "style": "archival"},
+    "Scary Story": {
+        "cta": "FOLLOW FOR MORE SCARY STORIES", "anchor": "#scarystories", "style": "dark",
+        "font": "Creepster-Regular.ttf", "font_name": "Creepster",
+        "title_color": r"&H002D31D2&", "thumb_color": "0xD2312D",   # blood red
+    },
+    "True History": {
+        "cta": "FOLLOW FOR MORE TRUE HISTORY", "anchor": "#history", "style": "archival",
+        "font": "IMFellEnglishSC-Regular.ttf", "font_name": "IM FELL English SC",
+        "title_color": r"&H007AC9E8&", "thumb_color": "0xE8C97A",   # parchment gold
+    },
 }
 
 
 def branding_for(pkg):
-    """The CTA/anchor/style branding for a package's category."""
-    return CATEGORY_BRANDING.get((pkg or {}).get("category", ""), DEFAULT_BRANDING)
+    """The full branding (CTA/anchor/style/typography) for a package's category."""
+    brand = dict(DEFAULT_BRANDING)
+    brand.update(CATEGORY_BRANDING.get((pkg or {}).get("category", ""), {}))
+    return brand
+
+
+def brand_font(pkg):
+    """(path, family) of the category's display font; falls back to the
+    caption font when the category has none or its .ttf is missing."""
+    brand = branding_for(pkg)
+    if brand["font"]:
+        path = ASSETS / brand["font"]
+        if path.exists():
+            return path, brand["font_name"]
+    return None, CAPTION_FONT_NAME
 
 # Modern caption look (ASS): white words, spoken word pops to yellow.
 CAP_WHITE = r"&H00FFFFFF&"
@@ -392,7 +420,11 @@ def sanitize_card_text(text):
 
 def words_to_ass(words, pkg=None, total=None):
     """Modern captions: short phrases; the spoken word pops yellow + scales.
-    Also lays a title card over the hook and a follow-card over the outro."""
+    Also lays a title card over the hook and a follow-card over the outro.
+    Title/CTA cards use the category's display font and color; the spoken
+    captions stay in the caption font for readability."""
+    _, title_font = brand_font(pkg)
+    title_color = branding_for(pkg)["title_color"]
     header = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {WIDTH}
@@ -404,8 +436,8 @@ YCbCr Matrix: TV.709
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Cap,{CAPTION_FONT_NAME},{CAP_FONTSIZE},{CAP_WHITE},{CAP_WHITE},&H00101010,&H90000000,0,0,0,0,100,100,1,0,1,7,2,5,60,60,0,1
-Style: Title,{CAPTION_FONT_NAME},112,{CAP_HL},{CAP_HL},&H00101010,&H90000000,0,0,0,0,100,100,1,0,1,9,3,8,70,70,360,1
-Style: CTA,{CAPTION_FONT_NAME},62,{CAP_WHITE},{CAP_WHITE},&H00101010,&H90000000,0,0,0,0,100,100,1,0,1,6,2,8,90,90,430,1
+Style: Title,{title_font},112,{title_color},{title_color},&H00101010,&H90000000,0,0,0,0,100,100,1,0,1,9,3,8,70,70,360,1
+Style: CTA,{title_font},62,{CAP_WHITE},{CAP_WHITE},&H00101010,&H90000000,0,0,0,0,100,100,1,0,1,6,2,8,90,90,430,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -1349,7 +1381,12 @@ def wrap_title(text, max_chars=16):
 
 def render_thumbnail(ffmpeg, visual, pkg, out_path, tmp, font_ff):
     """Save a clean cover image: the first visual + the title-card text,
-    with no captions or counters. Ready to upload as the video's thumbnail."""
+    with no captions or counters. Ready to upload as the video's thumbnail.
+    Uses the category's display font (already copied to tmp) and color."""
+    brand_path, _ = brand_font(pkg)
+    if brand_path:
+        font_ff = brand_path.name
+    thumb_color = branding_for(pkg)["thumb_color"]
     lines = wrap_title((pkg.get("thumbnails") or [pkg.get("title", "")])[0])
     fontsize = 128 if len(lines) == 1 else 106
     line_h = fontsize + 22
@@ -1373,7 +1410,7 @@ def render_thumbnail(ffmpeg, visual, pkg, out_path, tmp, font_ff):
     for i, ln in enumerate(lines):
         filters.append(
             f"drawtext=fontfile={font_ff}:text='{esc_drawtext(ln)}':fontsize={fontsize}:"
-            f"fontcolor=0xF5C400:borderw=9:bordercolor=black:x=(w-tw)/2:y={start_y + i * line_h}"
+            f"fontcolor={thumb_color}:borderw=9:bordercolor=black:x=(w-tw)/2:y={start_y + i * line_h}"
         )
     run([ffmpeg, "-y", *inp, "-frames:v", "1", "-vf", ",".join(filters), "-q:v", "3",
          str(out_path)], cwd=tmp)
@@ -1721,6 +1758,9 @@ def main():
                 tmp = Path(tmpname)
                 if CAPTION_FONT_FILE.exists():
                     shutil.copy(CAPTION_FONT_FILE, tmp / CAPTION_FONT_FILE.name)
+                brand_font_path, _ = brand_font(pkg)
+                if brand_font_path:
+                    shutil.copy(brand_font_path, tmp / brand_font_path.name)
 
                 if args.elevenlabs:
                     el_voice_id, el_voice_name = pick_elevenlabs_voice(
