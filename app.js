@@ -1777,12 +1777,35 @@ function renderCategoryChips() {
   });
 }
 
+/* One-click "render the whole category": shown while a category filter is
+   active; exports a single multi-slot queue the watcher renders in one run. */
+function renderBatchRow() {
+  const row = $("batchRenderRow");
+  if (!row) return;
+  row.innerHTML = "";
+  const cat = state.category;
+  const n = cat === "All" ? 0 : allScenarios().filter(s => s.category === cat).length;
+  row.hidden = !n;
+  if (!n) return;
+  row.appendChild(el("button", {
+    type: "button",
+    class: "btn btn-wide",
+    text: `🎬 Render all ${n} ${cat} scenario${n === 1 ? "" : "s"}`,
+    onclick: () => {
+      if (!confirm(`Export all ${n} ${cat} scenario${n === 1 ? "" : "s"} as one render queue?\nThe watcher renders them back-to-back — a few minutes each, free.`)) return;
+      exportCategoryForRender(cat);
+      announce(`Exported ${n} ${cat} package${n === 1 ? "" : "s"} in one queue — the watcher takes it from here.`);
+    }
+  }));
+}
+
 function renderLibrary() {
   const grid = $("scenarioGrid");
   grid.innerHTML = "";
   const matches = filteredScenarios();
   $("libraryCount").textContent = `${matches.length} of ${allScenarios().length} scenarios`;
   $("libraryEmpty").hidden = matches.length > 0;
+  renderBatchRow();
 
   matches.forEach(s => {
     const card = el("button", {
@@ -2114,6 +2137,20 @@ function exportForRender(pkg) {
   };
   // "whatifstudio-" prefix is what the Downloads watcher looks for.
   downloadFile("whatifstudio-queue-" + slugify(pkg.title) + ".json", JSON.stringify(payload, null, 2));
+}
+
+/* Batch export: every scenario in a category becomes one slot of a single
+   queue file, so the watcher renders the whole category back-to-back.
+   Uses the current Package Settings (runtime + voice) for every package. */
+function exportCategoryForRender(category) {
+  const scenarios = allScenarios().filter(s => s.category === category);
+  if (!scenarios.length) return 0;
+  const payload = {
+    app: "what-if-studio", format: 1, exportedAt: new Date().toISOString(),
+    items: scenarios.map((s, i) => ({ slot: i + 1, status: "planned", notes: "", package: buildPackage(s, state.options) }))
+  };
+  downloadFile("whatifstudio-queue-" + slugify(category) + "-all.json", JSON.stringify(payload, null, 2));
+  return scenarios.length;
 }
 
 /* ============================================================
@@ -2456,6 +2493,19 @@ function assistantContext() {
   };
 }
 
+/* "scary stories" -> "Scary Story": match a spoken category name,
+   plural-tolerant, ignoring filler words like "videos" or "category". */
+function resolveCategoryName(text) {
+  const norm = s => s.toLowerCase().replace(/[""''\/]/g, " ")
+    .replace(/\b(videos?|scenarios?|shorts?|ones?|category)\b/g, " ")
+    .replace(/ies\b/g, "y").replace(/([a-z])s\b/g, "$1")
+    .replace(/\s+/g, " ").trim();
+  const rem = norm(text);
+  if (!rem) return null;
+  return CATEGORIES.slice().sort((a, b) => b.length - a.length)
+    .find(c => { const cl = norm(c); return cl === rem || rem.includes(cl); }) || null;
+}
+
 /* Loose title match: "open the moon one" should find the Moon scenario. */
 function findScenarioByTitle(text) {
   const stop = new Set(["the", "a", "an", "one", "that", "scenario", "video", "what", "if", "about"]);
@@ -2591,6 +2641,14 @@ async function runAssistantAction(action) {
     }
     case "create_scenario":
       return assistantCreateScenario(args);
+    case "render_category": {
+      const cat = CATEGORIES.includes(args.category) ? args.category
+        : resolveCategoryName(String(args.category || ""));
+      if (!cat) return "Tell me which category — e.g. “render all scary stories” or “render all true history”.";
+      const n = exportCategoryForRender(cat);
+      if (!n) return `There are no scenarios in ${cat} yet.`;
+      return `Exported all ${n} ${cat} scenario${n === 1 ? "" : "s"} as one render queue (${state.options.runtime === 180 ? "3 min" : state.options.runtime + "s"}, ${voiceLabel()}) — the watcher renders them back-to-back, a few minutes each.`;
+    }
     case "navigate": {
       const page = String(args.page || "").toLowerCase();
       if (page.startsWith("video")) { $("navVideosBtn").click(); return "Checking the dashboard and heading to Videos…"; }
@@ -2612,6 +2670,7 @@ const ASSISTANT_CAPABILITIES =
   "• “set the voice to high-energy” / “make it 3 min”\n" +
   "• “generate” (build + export the selected scenario)\n" +
   "• “search history” or “show scary ones”\n" +
+  "• “render all scary stories” (one queue, the watcher renders the whole category)\n" +
   "• “give me an idea”, “go to produce”, “export srt”\n" +
   "• “is my video done?” (render status + newest videos)\n" +
   "• “give me the caption for my newest video” (post kit, ready to copy)\n" +
@@ -2664,6 +2723,16 @@ function parseIntent(raw) {
     return { action: { name: "export", args: { format: f } } };
   }
   if (/^export\W*$/.test(t)) return { action: { name: "export", args: { format: "json" } } };
+
+  // Batch: "render all scary stories" -> one multi-slot queue for the watcher.
+  const batch = t.match(/^(?:render|generate|export|make|build|queue)\s+(?:all|every|the whole|the entire)\s+(.+)$/);
+  if (batch) {
+    const rem = batch[1];
+    const cat = /^(?:of\s+)?(?:them|these|those|it|this|the)?\s*category\W*$|^(?:of\s+)?(?:them|these|those)\W*$/.test(rem)
+      ? (state.category !== "All" ? state.category : null)
+      : resolveCategoryName(rem);
+    if (cat) return { action: { name: "render_category", args: { category: cat } } };
+  }
 
   // Creation: "make a video about X", "make a scary story about X",
   // or a bare "what if ...?" premise.
