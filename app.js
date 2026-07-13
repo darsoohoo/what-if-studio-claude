@@ -2471,14 +2471,23 @@ function findScenarioByTitle(text) {
   return bestScore >= Math.max(1, Math.ceil(words.length / 2)) ? best : null;
 }
 
+/* Story categories keep the topic as a plain narrative title; what-if
+   categories phrase it as the signature question. (CATEGORY_CTA's keys
+   are exactly the story categories.) */
+function assistantTitleFor(raw, category) {
+  const clean = raw.replace(/[.?!]+$/, "");
+  if (CATEGORY_CTA[category]) return clean.charAt(0).toUpperCase() + clean.slice(1);
+  return /^what\s+if\b/i.test(raw) ? raw : `What if ${clean}?`;
+}
+
 /* Create a custom scenario without opening the dialog. Uses the same AI
    draft service as "Write it for me"; falls back to the prefilled builder
    when the dashboard is offline. */
 async function assistantCreateScenario(args) {
   let raw = String(args.title || "").trim().replace(/\s+/g, " ");
   if (!raw) return "Give me a topic — e.g. “make a video about haunted vending machines”.";
-  const title = /^what\s+if\b/i.test(raw) ? raw : `What if ${raw.replace(/[.?!]+$/, "")}?`;
   const category = CATEGORIES.includes(args.category) ? args.category : "Speculative";
+  const title = assistantTitleFor(raw, category);
   let draft;
   try {
     draft = await draftScenarioWithAI(title, category, state.options.runtime);
@@ -2656,11 +2665,15 @@ function parseIntent(raw) {
   }
   if (/^export\W*$/.test(t)) return { action: { name: "export", args: { format: "json" } } };
 
-  // Creation: "make a video about X", or a bare "what if ...?" premise.
-  const create = t.match(/^(?:make|create|write|draft|build)(?:\s+me)?(?:\s+(?:a|an|another|new))?\s*(?:\d+\s*s?|3\s*min)?\s*(?:calm|hype|high[\s-]?energy|deadpan)?\s*(?:scenario|video|short|one)?\s*(?:about|on|called|for|:)\s*(.+)$/);
+  // Creation: "make a video about X", "make a scary story about X",
+  // or a bare "what if ...?" premise.
+  const create = t.match(/^(?:make|create|write|draft|build)(?:\s+me)?(?:\s+(?:a|an|another|new))?\s*(?:\d+\s*s?|3\s*min)?\s*(?:calm|hype|high[\s-]?energy|deadpan)?\s*(?:scary|creepy|horror|spooky|true history|history|historical)?\s*(?:scenario|video|short|story|one)?\s*(?:about|on|called|for|:)\s*(.+)$/);
   if (create || /^what\s+if\s+.+/.test(t)) {
     const topic = create ? create[1] : text;
-    const args = { title: topic.trim(), render: /\b(and )?(render|export|ship|send) it\b|right now/.test(t) };
+    const render = /\b(and )?(render|export|ship|send) it\b|right now/.test(t);
+    // "…and render it" is an instruction, not part of the title.
+    const title = topic.replace(/[\s,]*\b(?:and\s+)?(?:render|export|ship|send)\s+it\W*$|[\s,]*\bright now\W*$/, "").trim();
+    const args = { title, render };
     if (rtMatch || voiceMatch) {
       // Apply inline settings before drafting.
       const opts = {};
@@ -2668,7 +2681,13 @@ function parseIntent(raw) {
       if (voiceMatch) opts.voice = voiceMatch[1].startsWith("high") ? "hype" : voiceMatch[1];
       runAssistantAction({ name: "set_options", args: opts });
     }
-    const cat = CATEGORIES.find(c => t.includes(c.toLowerCase()));
+    // Longest name first so "true history" isn't shadowed by "History".
+    let cat = CATEGORIES.slice().sort((a, b) => b.length - a.length)
+      .find(c => t.includes(c.toLowerCase()));
+    if (!cat && /\b(scary|creepy|horror|spooky)\b/.test(t)) cat = "Scary Story";
+    // A plain "history video about rome" wants the documentary category;
+    // "history" stays the what-if flavor only for what-if questions.
+    if (cat === "History" && !/^what\s+if\b/.test(args.title)) cat = "True History";
     if (cat) args.category = cat;
     return { action: { name: "create_scenario", args } };
   }

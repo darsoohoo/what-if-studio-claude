@@ -114,7 +114,9 @@
     { k: ["privacy", "tracking", "account", "login", "server"],
       a: "Everything runs locally: no server on the internet, no account, no tracking, no remote content. The optional helper runs only on your machine at 127.0.0.1. Nothing is posted anywhere automatically." },
     { k: ["pages", "videos page", "produce page", "spend page", "sidebar"],
-      a: "The sidebar pages: Studio (build packages), Videos (review + post-kit for finished renders), Produce (per-beat visuals, voices, script edits, re-renders), Spend (API costs), and the How-to guide. Say “go to …” and I'll take you there." }
+      a: "The sidebar pages: Studio (build packages), Videos (review + post-kit for finished renders), Produce (per-beat visuals, voices, script edits, re-renders), Spend (API costs), and the How-to guide. Say “go to …” and I'll take you there." },
+    { k: ["scary story", "scary stories", "true history", "horror", "creepy", "story categories", "categories"],
+      a: "Besides the what-if categories there are two story categories: Scary Story (narrative horror — the trapped diver, the 3:33 doorbell) and True History (real documented events — the dancing plague, the Emu War). Their videos brand themselves automatically: dark or archival visuals, their own title-card fonts, a matching follow card and outro, and the right hashtags in the post kit. On the Studio page, say “make a scary story about …” or “make a true history video about …” and I'll draft it straight into the right category." }
   ];
 
   function kbAnswer(text) {

@@ -355,7 +355,7 @@ CHAT_ACTIONS = """\
 - search {"query": "...", "category": "..."} - filter the library (category optional)
 - set_options {"runtime": 30|60|90|180, "voice": "calm"|"hype"|"deadpan"} - either or both
 - generate {} - build the package for the selected scenario and export it for render
-- create_scenario {"title": "What if ...?", "category": "...", "render": true|false} - AI-draft a brand-new scenario into the library; render=true also generates + exports it
+- create_scenario {"title": "...", "category": "...", "render": true|false} - AI-draft a brand-new scenario into the library; what-if categories get a "What if ...?" question as the title, while the story categories (Scary Story, True History) take a plain narrative title; render=true also generates + exports it
 - export {"format": "txt"|"srt"|"json"} - export the generated package
 - new_seed {} - spin the scenario seed generator for a fresh idea
 - navigate {"page": "studio"|"videos"|"produce"|"spend"|"help"} - open another page
