@@ -86,6 +86,7 @@ AI_STYLES = {
     "3d":          "soft 3d pixar style render, cinematic lighting, expressive characters, high detail, no text, no words, no letters",
     "infographic": "flat design vector illustration, corporate infographic style, soft pastel beige background, simple geometric shapes and characters, clean minimal composition, no text, no words, no letters",
     "dark":        "moody dark atmospheric illustration, deep shadows, single strong light source, eerie but tasteful, high detail, no text, no words, no letters",
+    "archival":    "aged archival photograph blended with classical oil painting, sepia and muted earth tones, dramatic historical scene, subtle film grain, high detail, no text, no words, no letters",
 }
 AI_IMAGE_HOST = "https://image.pollinations.ai/prompt/"
 
@@ -94,7 +95,8 @@ AI_IMAGE_HOST = "https://image.pollinations.ai/prompt/"
 # with the classic what-if brand. Keys mirror CATEGORIES in app.js.
 DEFAULT_BRANDING = {"cta": "FOLLOW FOR THE NEXT WHAT-IF", "anchor": "#whatif", "style": "cinematic"}
 CATEGORY_BRANDING = {
-    "Scary Story": {"cta": "FOLLOW FOR MORE SCARY STORIES", "anchor": "#scarystories", "style": "dark"},
+    "Scary Story":  {"cta": "FOLLOW FOR MORE SCARY STORIES", "anchor": "#scarystories", "style": "dark"},
+    "True History": {"cta": "FOLLOW FOR MORE TRUE HISTORY", "anchor": "#history", "style": "archival"},
 }
 
 
@@ -1437,6 +1439,7 @@ CATEGORY_HASHTAGS = {
     "Unsettling Everyday": ["#creepy", "#unsettling", "#liminal"],
     "Scary/Weird":         ["#creepy", "#scary", "#creepytok"],
     "Scary Story":         ["#horrortok", "#creepypasta", "#scary"],
+    "True History":        ["#historytok", "#historyfacts", "#truestory"],
 }
 
 
@@ -1547,7 +1550,7 @@ def main():
                         help="Generate one free AI image per beat (Pollinations, no account) instead of using backgrounds/")
     parser.add_argument("--ai-style", default=None, choices=sorted(AI_STYLES),
                         help="Look of generated AI visuals (default: the category's own style - "
-                             "dark for Scary Story, cinematic otherwise)")
+                             "dark for Scary Story, archival for True History, cinematic otherwise)")
     parser.add_argument("--ai-cache", default="ai-visuals",
                         help="Cache folder for generated images (default: ai-visuals)")
     parser.add_argument("--charts", action="store_true",

@@ -106,7 +106,7 @@
     { k: ["export", "srt", "txt", "json", "subtitle"],
       a: "After generating in the Studio: Export .txt (full package), .srt (timed subtitles), or .json (the render queue format — export again any time to re-render). Copy buttons grab a section or the whole package." },
     { k: ["seed", "idea", "angle", "inspiration"],
-      a: "“New Scenario Seed” (Studio top bar) rotates through fresh prompts across all 9 categories — including Scary Story premises. Or ask me on the Studio page: “give me an idea” — then “make a video about it”." },
+      a: "“New Scenario Seed” (Studio top bar) rotates through fresh prompts across all 10 categories — including Scary Story and True History premises. Or ask me on the Studio page: “give me an idea” — then “make a video about it”." },
     { k: ["music", "thumbnail", "visuals", "images", "ai visuals", "clips"],
       a: "The render pipeline handles visuals, music, and thumbnails automatically — per-beat visuals, mood-matched music, word-synced captions. The Produce page gives you per-beat control: your own clips, AI images, prompts, and premium AI video." },
     { k: ["how much", "cost", "spend", "money", "is it free"],

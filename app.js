@@ -21,7 +21,8 @@ const CATEGORIES = [
   "Alternate Reality",
   "Unsettling Everyday",
   "Scary/Weird",
-  "Scary Story"
+  "Scary Story",
+  "True History"
 ];
 
 /* Default card colors for custom scenarios, per category. */
@@ -34,7 +35,8 @@ const CATEGORY_COLORS = {
   "Alternate Reality": ["#6a5ae0", "#2d8a6e"],
   "Unsettling Everyday": ["#3b4368", "#2dbf8b"],
   "Scary/Weird": ["#151a30", "#b83a6e"],
-  "Scary Story": ["#120a16", "#8a2431"]
+  "Scary Story": ["#120a16", "#8a2431"],
+  "True History": ["#3d2f1a", "#8a6d2f"]
 };
 
 /* One package works everywhere: the spoken outro uses a platform-neutral CTA,
@@ -43,7 +45,12 @@ const CATEGORY_COLORS = {
    card and anchor hashtag follow the category too — see pipeline). */
 const NEUTRAL_CTA = "Follow for the next what-if.";
 const CATEGORY_CTA = {
-  "Scary Story": "Follow for more scary stories."
+  "Scary Story": "Follow for more scary stories.",
+  "True History": "Follow for more true history."
+};
+const HYPE_LEAD = {
+  "Scary Story": "That's the story — tell me what you'd have done.",
+  "True History": "That's the true story — tell me which part you didn't believe."
 };
 const ASPECT = "9:16 vertical";
 
@@ -64,7 +71,7 @@ const VOICES = [
 const STORAGE_KEY = "whatIfStudio.v1";
 
 /* ============================================================
-   2. SCENARIO BANK — 32 scenarios across 9 categories
+   2. SCENARIO BANK — 37 scenarios across 10 categories
    ============================================================ */
 
 const scenarioBank = [
@@ -1198,6 +1205,207 @@ const scenarioBank = [
     ]
   },
 
+  /* ---------------- TRUE HISTORY ----------------
+     Narrative category #2: real, documented events told documentary-style.
+     Picture-only by design — the pipeline defaults these to the archival
+     visual style and swaps in true-history CTA + hashtags. Facts must stay
+     accurate; anything debated is flagged in the narration itself. */
+  {
+    id: "th-dancingplague",
+    category: "True History",
+    title: "The town that couldn't stop dancing",
+    image: { glyph: "🩰", from: "#3d2f1a", to: "#8a2431" },
+    premise: "Strasbourg, July 1518. A woman named Frau Troffea steps into the street and starts dancing. She doesn't stop for days — and within a month, hundreds of townspeople are dancing with her, many literally unable to quit. This is one of history's best-documented mass mysteries.",
+    tags: ["medieval", "mystery", "medicine", "true history"],
+    safety: "Real, documented event (Strasbourg dancing plague, 1518). Casualty details from contemporary accounts are debated and framed as such; modern explanation (mass psychogenic illness) presented as the leading theory, not settled fact.",
+    hooks: [
+      "In 1518, a whole town started dancing — and physically couldn't stop.",
+      "The city's cure for a dancing plague? Hire a band. It went exactly as badly as you think.",
+      "One woman started dancing in the street. A month later it was 400 people. This is real."
+    ],
+    beats: [
+      "Strasbourg, July 1518. A woman called Frau Troffea walks out of her house and begins to dance. No music, no festival, no smile. She dances until she collapses from exhaustion, sleeps, gets up — and keeps dancing. After nearly a week, dozens have joined her.",
+      "The city's doctors rule out the stars and blame 'hot blood.' Their prescription: the dancers should dance it out of their systems. The council hires musicians, opens guild halls, even builds a stage. Official policy is now MORE dancing.",
+      "It backfires completely. The music draws in new dancers, and by August, chronicles put the number around 400. Contemporary accounts describe bloody feet, people begging for help mid-dance, and some dancers reportedly dying of strokes and exhaustion — though historians still argue over the death toll.",
+      "The city reverses course: dancing is banned, and in September the remaining dancers are loaded into wagons and taken to a mountain shrine of Saint Vitus to be blessed. Within weeks, the plague fades — as strangely as it began.",
+      "The best modern explanation: mass psychogenic illness — a stress epidemic in a town crushed by famine and disease, where people BELIEVED a dancing curse was possible. The eerie part? It had happened before. At least seven dancing plagues hit the region in the centuries before Strasbourg."
+    ],
+    shotList: [
+      "Hook: a lone woman in rough 16th-century clothes dancing in an empty cobblestone street, medieval townsfolk staring from doorways.",
+      "Candle-lit interior: physicians in dark robes arguing over an open medical folio, a dancing figure visible through the window behind them.",
+      "Wide shot of a crowded medieval square: dozens of exhausted dancers, hired musicians playing on a wooden stage, oil-painting texture.",
+      "Close-up: worn leather shoes and bruised feet still moving on cobblestones, dawn light, long shadows.",
+      "A creaking wagon of slumped dancers winding up a mountain road toward a small stone chapel.",
+      "Closer: an old chronicle page in Latin script beside a single burning candle, quill resting on the desk."
+    ],
+    captions: [
+      "Strasbourg, 1518: the plague you could hear coming — it had a beat. 🩰",
+      "The official cure was a hired band. It made everything worse.",
+      "400 people. Weeks of dancing. Fully documented. Still unsettling."
+    ],
+    thumbnails: [
+      "THE DANCING PLAGUE",
+      "1518: no one could stop",
+      "The cure was a band"
+    ]
+  },
+  {
+    id: "th-emuwar",
+    category: "True History",
+    title: "The war Australia lost to birds",
+    image: { glyph: "🪶", from: "#8a6d2f", to: "#3a6ea5" },
+    premise: "In 1932, Australia sent soldiers with machine guns to fight 20,000 emus destroying wheat farms. The military filed reports, a major commanded the operation, Parliament debated it — and the emus won. Every part of this story is real.",
+    tags: ["australia", "military", "animals", "true history"],
+    safety: "Real, documented event (the 'Emu War', Western Australia, 1932). Told for its absurdity, at the expense of the humans, not the animals; casualty figures are the officially reported ones.",
+    hooks: [
+      "In 1932, Australia declared war on birds. The birds won. This is a real military operation.",
+      "Two machine guns, 10,000 rounds, one major — versus 20,000 emus. Guess who won.",
+      "An actual army major wrote in an actual report that emus could 'face any army in the world.'"
+    ],
+    beats: [
+      "Western Australia, 1932. Twenty thousand emus come marching out of the outback into the wheat fields of Campion — right as struggling farmers, many of them WWI veterans, are trying to bring in a harvest. The farmers ask the government for help. The government sends the army.",
+      "Enter Major Meredith of the Royal Australian Artillery, two Lewis machine guns, and 10,000 rounds of ammunition. The plan: mow down the flocks. First contact, the emus do something no one briefed him on — they scatter into small groups and sprint in every direction at 50 kilometers an hour.",
+      "It gets worse. The gun jams during one ambush. A truck-mounted gun can't shoot straight on the rough ground, and the emus outrun the truck anyway. Observers swear each mob seems to have a lookout bird posted while the others feed. The army is being out-generaled by poultry.",
+      "After about a month, the score: roughly 10,000 rounds fired, fewer than a thousand confirmed emus down, most of the 20,000 still eating wheat. Meredith reports, apparently sincerely, that a unit with the emu's bullet-taking ability could 'face any army in the world.' When Parliament asks if medals will be awarded, the answer given: the medals should go to the emus.",
+      "The military withdraws, defeated by birds — and the actual fix turns out boring: bounties and better fences, which work. The Emu War survives every fact-check thrown at it, and the emu still stands proudly on Australia's coat of arms. It earned it."
+    ],
+    shotList: [
+      "Hook: a line of emus striding through a golden wheat field at dawn, heads high, shot like a war film's opening.",
+      "Sepia archival look: 1930s Australian soldiers in slouch hats setting up a Lewis machine gun on a dusty farm track.",
+      "Action shot: emus sprinting in all directions through scrubland, dust flying, comically fast, low camera angle.",
+      "A vintage truck bouncing over rough paddocks, gunner clinging on, emus effortlessly pulling away ahead.",
+      "Officer at a field desk writing a report by lamplight, map of Western Australia pinned behind him.",
+      "Closer: Australia's coat of arms, slow push-in on the emu, golden light."
+    ],
+    captions: [
+      "1932: Australia vs 20,000 emus. Official military operation. 🪶",
+      "10,000 rounds. The emus held the field.",
+      "The medals, said Parliament, should go to the emus."
+    ],
+    thumbnails: [
+      "THE EMU WAR",
+      "Australia lost. To birds.",
+      "10,000 rounds, 0 victory"
+    ]
+  },
+  {
+    id: "th-carrington",
+    category: "True History",
+    title: "The night the sky caught fire",
+    image: { glyph: "🌌", from: "#151a30", to: "#b8563a" },
+    premise: "September 1859: auroras blaze over Cuba, gold miners get up for breakfast at 1 AM thinking it's dawn, and telegraph offices catch fire as the wires themselves surge with current. The Carrington Event is the biggest solar storm on record — and the reason power-grid planners still lose sleep.",
+    tags: ["space", "sun", "victorian", "true history"],
+    safety: "Real, documented event (the Carrington Event, 1859) with real named observers. Modern-impact figures are estimates from published studies, framed as estimates.",
+    hooks: [
+      "In 1859 the northern lights reached Cuba — and telegraph wires started sparking on their own.",
+      "A British astronomer watched the sun flash white. Seventeen hours later, Earth's sky caught fire.",
+      "Telegraph operators unplugged their batteries — and the messages kept sending. On aurora power."
+    ],
+    beats: [
+      "September 1st, 1859. Richard Carrington, a British astronomer sketching sunspots through his telescope, watches two beads of blinding white light flare on the sun's surface — the first solar flare ever observed. He has no idea a billion-ton cloud of charged particles is now racing toward Earth.",
+      "About seventeen hours later, it hits. Auroras erupt so far south they're seen over Cuba and Colombia. In the Rocky Mountains, the glow is so bright that gold miners get up and start cooking breakfast, convinced it's morning. People read newspapers by the light of the sky at midnight.",
+      "Then the wires go strange. The world's brand-new telegraph network — Victorian internet — starts surging: operators get shocked at their keys, pylons throw sparks, and telegraph paper catches fire in offices on two continents.",
+      "Strangest of all: some operators disconnect their batteries — and keep transmitting anyway. The Boston operator asks Portland how they're sending with no power. The aurora's current in the wires is running the line by itself. That exchange is preserved in the historical record.",
+      "In 1859, the damage was singed telegraph offices. Run the same storm today and studies put the bill in the trillions — transformers, satellites, GPS, power grids, months of blackout. And in July 2012, a Carrington-class blast crossed Earth's orbit... through the spot we'd occupied nine days earlier. The sun isn't done."
+    ],
+    shotList: [
+      "Hook: violent red and green auroras blazing over a Victorian city skyline, gaslights below, people staring upward in the street.",
+      "A bearded Victorian astronomer at a brass telescope, one eye to the eyepiece, sunlight projecting a sunspot sketch onto paper.",
+      "Miners' camp in the Rockies at night: men in suspenders cooking over a fire under a sky glowing like sunrise.",
+      "Interior telegraph office: an operator jerking his hand back from a sparking brass key, paper tape smoking on the desk.",
+      "Close-up: a disconnected battery on a wooden desk, the telegraph key beside it clicking by itself under aurora light through the window.",
+      "Modern contrast shot: a city power grid at dusk seen from above, then a slow fade of entire districts going dark."
+    ],
+    captions: [
+      "1859: auroras in Cuba, sparks in the wires, fire in the sky. 🌌",
+      "They unplugged the batteries. The telegraph kept sending.",
+      "The biggest solar storm on record — and 2012 was a near miss."
+    ],
+    thumbnails: [
+      "THE SKY CAUGHT FIRE",
+      "1859's solar storm",
+      "It almost hit in 2012"
+    ]
+  },
+  {
+    id: "th-marathon1904",
+    category: "True History",
+    title: "The most cursed race ever run",
+    image: { glyph: "🏃", from: "#8a6d2f", to: "#b8563a" },
+    premise: "The 1904 Olympic marathon in St. Louis: 90-degree heat, one working water stop, a winner carried across the line on rat poison and brandy, a 'champion' who did 11 miles by car, and a Cuban postman who paused mid-race for a nap. Every detail is documented.",
+    tags: ["olympics", "sports", "1900s", "true history"],
+    safety: "Real, documented event (1904 Olympic marathon, St. Louis). Comic tone at the expense of the organizers, whose choices caused the chaos; the strychnine 'doping' is framed as the dangerous medical ignorance it was.",
+    hooks: [
+      "The 1904 Olympic marathon was so cursed the winner crossed the line on rat poison. Documented.",
+      "One water stop. 90-degree heat. Dust clouds from cars. The Olympics designed a disaster on purpose.",
+      "The first man across the finish line did 11 miles of the marathon in a car. He almost got the gold."
+    ],
+    beats: [
+      "St. Louis, August 1904. Thirty-two men line up for the Olympic marathon in 90-degree heat, on dust roads where officials' cars drive AHEAD of the runners, kicking grit into their lungs. The race organizer has deliberately kept water scarce — he wants to study dehydration. This is the starting point.",
+      "First across the line is American Fred Lorz, fresh as a daisy — because after cramping at mile nine, he'd hopped into a car for eleven miles, waved at spectators from the passenger seat, then jogged the rest. He's nearly crowned before the truth lands. His defense: it was a joke.",
+      "The real leader, Thomas Hicks, is meanwhile being kept upright by his handlers with the cutting-edge sports science of 1904: doses of strychnine — yes, the rat poison, then used as a stimulant — mixed with brandy and egg whites. He hallucinates, begs to lie down, and is all but carried across the line. He wins.",
+      "Further back, Cuban postman Félix Carvajal — racing in cut-down trousers after losing his money on the way to St. Louis — chats with spectators, detours into an orchard for some apples that turn out to be bad, stops for a nap to settle his stomach... and STILL finishes fourth. Also on the course: Len Taunyane of South Africa, chased nearly a mile off route by aggressive dogs. He finishes ninth.",
+      "Of thirty-two starters, fourteen finish, and the near-fatal shambles forces the Olympics to take marathons seriously — water, supervision, actual rules. Every marathon aid station you've ever seen is, in a way, an apology for St. Louis 1904."
+    ],
+    shotList: [
+      "Hook: sepia archival look of runners in 1900s singlets disappearing into a dust cloud kicked up by an early automobile on a dirt road.",
+      "A grinning athlete waving from the passenger seat of a 1904 open-top car while exhausted runners plod behind.",
+      "Two handlers in flat caps supporting a glassy-eyed runner between them, one holding a brandy bottle and a spoon.",
+      "A small mustachioed runner in cut-off trousers asleep under an orchard tree, apples scattered, race number still pinned on.",
+      "A runner sprinting off a country road with two farm dogs at his heels, wheat fields, period photograph texture.",
+      "Closer: a battered 1904 gold medal on a wooden table next to an antique brown medicine bottle, single overhead light."
+    ],
+    captions: [
+      "St. Louis 1904: the marathon that had everything except water. 🏃",
+      "Winner: strychnine and brandy. Runner-up story: a mid-race nap. Fourth place.",
+      "Every aid station is an apology for this race."
+    ],
+    thumbnails: [
+      "THE CURSED MARATHON",
+      "Rat poison at mile 20",
+      "He napped. Came 4th."
+    ]
+  },
+  {
+    id: "th-wojtek",
+    category: "True History",
+    title: "The bear who served in the army",
+    image: { glyph: "🐻", from: "#3d2f1a", to: "#2d8a6e" },
+    premise: "Wojtek was a Syrian brown bear bought as a cub by Polish soldiers in 1942. To get him aboard a troop ship, they enlisted him — rank: private. At Monte Cassino he carried crates of artillery shells through an active battle. His unit put him on their badge. All of it is true.",
+    tags: ["ww2", "animals", "poland", "true history"],
+    safety: "Real, documented story (Wojtek, 22nd Artillery Supply Company, Polish II Corps). Wartime setting handled respectfully; focuses on the soldiers' bond with the bear, no combat gore.",
+    hooks: [
+      "In WWII, the Polish army enlisted a bear. Rank: private. Job: carrying artillery shells. True story.",
+      "The troop ship said soldiers only. So they made the bear a soldier.",
+      "There's a WWII unit whose official badge is a bear carrying an artillery shell. Here's why."
+    ],
+    beats: [
+      "Iran, 1942. Polish soldiers newly released from Soviet camps are trekking toward the front when they meet a boy with an orphaned bear cub. They trade him food and a pocket knife for it. The cub rides in a supply truck, is raised on condensed milk from a vodka bottle, and gets a name: Wojtek — 'happy warrior.'",
+      "Wojtek grows into a 200-kilo soldier's mascot who wrestles the men, rides shotgun in trucks, drinks the occasional beer ration, and — his one bad habit — eats cigarettes. When the unit ships out for Italy in 1944, the port's rule is firm: no mascots, personnel only. So the Polish II Corps formally enlists him. Private Wojtek now has a rank, a paybook, and a place on the manifest.",
+      "Then comes Monte Cassino, one of the war's most brutal battles. Ammunition has to move uphill under fire, crate after crate. Witnesses from his company describe Wojtek watching the men, then standing up, holding out his forearms — and spending the battle carrying heavy crates of shells alongside them. The unit swears he never dropped one.",
+      "His company is so proud that they redesign their official emblem: a bear carrying an artillery shell. It goes on their trucks, their uniforms, their letters. Wojtek is promoted to corporal — genuinely on the books of the 22nd Artillery Supply Company.",
+      "After the war, Wojtek retires to Edinburgh Zoo, where old Polish comrades visit for decades — calling to him in Polish, tossing him the odd cigarette over the fence, some say jumping in for a wrestle. Statues of him now stand in Edinburgh and Kraków: a private, a corporal, and by every account, a good soldier."
+    ],
+    shotList: [
+      "Hook: archival-style shot of a brown bear standing upright among smiling WWII soldiers in field uniforms beside a supply truck.",
+      "Warm dusty scene: young soldiers bottle-feeding a small bear cub from a glass bottle at a desert camp, mountains behind.",
+      "A grown bear seated in the back of an open army truck among kit bags, soldiers laughing, Mediterranean coast road.",
+      "Dramatic hillside: the bear upright, forearms wrapped around a wooden ammunition crate, soldiers hauling crates alongside, smoke on the ridge.",
+      "Close-up: a painted unit emblem on a truck door — a bear carrying an artillery shell — weathered and chipped.",
+      "Closer: the bronze statue of Wojtek in Edinburgh's Princes Street Gardens, an old man in a beret resting a hand on its paw."
+    ],
+    captions: [
+      "Private Wojtek: enlisted 1944, promoted to corporal, never dropped a crate. 🐻",
+      "The port said soldiers only. So the bear became a soldier.",
+      "His unit's badge is still a bear carrying a shell."
+    ],
+    thumbnails: [
+      "PRIVATE BEAR",
+      "He enlisted in 1944",
+      "Never dropped a crate"
+    ]
+  },
+
   /* ---------------- USER-REQUESTED TEST SCENARIOS ---------------- */
   {
     id: "pc-remote",
@@ -1376,6 +1584,12 @@ const seedBank = {
     "A ranger's list of things you don't do after dark",
     "The apartment above yours that isn't on the lease",
     "Every photo of the lake house has one extra window"
+  ],
+  "True History": [
+    "The war two cities fought over a wooden bucket",
+    "The wave of molasses that ran faster than a man",
+    "The tree that legally owns itself",
+    "The shortest war in history lasted 38 minutes"
   ]
 };
 
@@ -1681,9 +1895,7 @@ function buildPackage(scenario, options) {
 
   const beats = scenario.beats.slice(0, runtime.beats);
   const cta = CATEGORY_CTA[scenario.category] || NEUTRAL_CTA;
-  const hypeLead = scenario.category === "Scary Story"
-    ? "That's the story — tell me what you'd have done."
-    : "That's the timeline — tell me where it breaks.";
+  const hypeLead = HYPE_LEAD[scenario.category] || "That's the timeline — tell me where it breaks.";
   const outro = voice.id === "hype"
     ? `${hypeLead} ${cta}`
     : voice.id === "deadpan"
