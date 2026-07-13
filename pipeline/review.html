@@ -174,6 +174,11 @@ function render() {
       el("div", { class: "row" }, [
         el("button", { text: "↑", "aria-label": "Move up", onclick: () => move(i, -1), ...(i === 0 ? { disabled: "" } : {}) }),
         el("button", { text: "↓", "aria-label": "Move down", onclick: () => move(i, 1), ...(i === videos.length - 1 ? { disabled: "" } : {}) }),
+        el("span", {
+          class: "meta",
+          text: new Date(v.mtime * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+          title: "Rendered " + new Date(v.mtime * 1000).toLocaleString(),
+        }),
         el("span", { class: "meta", text: v.size_mb + " MB" }),
         el("span", { style: "flex:1" }),
         upBtn,
