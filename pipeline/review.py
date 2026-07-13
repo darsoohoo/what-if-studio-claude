@@ -44,6 +44,9 @@ STATE_FILE = HERE / "review-notes.json"
 PAGE_FILE = HERE / "review.html"
 PRODUCE_PAGE = HERE / "produce.html"
 SPEND_PAGE = HERE / "spend.html"
+RESULTS_PAGE = HERE / "results.html"
+RESULTS_FILE = HERE / "results.json"
+RESULT_PLATFORMS = ("TikTok", "YT Shorts", "Reels")
 PRODUCE_DIR = HERE / "produce"
 DOWNLOADS = Path.home() / "Downloads"
 PORT = 8765
@@ -64,6 +67,60 @@ def load_state():
 
 def save_state(state):
     STATE_FILE.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def load_results():
+    """Manually logged per-platform performance numbers, keyed by video name."""
+    try:
+        return json.loads(RESULTS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def save_results(results):
+    RESULTS_FILE.write_text(json.dumps(results, indent=2), encoding="utf-8")
+
+
+def video_meta(stem):
+    """Category/runtime/voice for one rendered video: the render's -meta.json
+    sidecar when present, else a title-slug match against archived exports
+    (covers videos rendered before the sidecar existed)."""
+    try:
+        return json.loads((OUTPUT / f"{stem}-meta.json").read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    slug = re.sub(r"-v\d+$", "", re.sub(r"^\d+-", "", stem))
+    files = list(EXPORTS_DIR.glob("*.json")) if EXPORTS_DIR.is_dir() else []
+    for f in files:
+        try:
+            items = json.loads(f.read_text(encoding="utf-8")).get("items") or []
+        except Exception:
+            continue
+        for it in items:
+            pkg = it.get("package") or {}
+            if mv.slugify(pkg.get("title", "")) == slug:
+                return {"title": pkg.get("title", ""), "category": pkg.get("category", ""),
+                        "runtime": pkg.get("runtime"), "voice": pkg.get("voice", ""),
+                        "scenarioId": pkg.get("scenarioId", "")}
+    return {}
+
+
+def results_payload():
+    """Posted videos joined with their render metadata and logged stats."""
+    stats = load_results()
+    out = []
+    for v in list_videos():
+        if not v.get("uploaded"):
+            continue
+        meta = video_meta(Path(v["name"]).stem)
+        out.append({
+            "name": v["name"], "title": v["title"], "thumb": v["thumb"],
+            "uploaded": v["uploaded"],
+            "category": meta.get("category") or "",
+            "runtime": meta.get("runtime"), "voice": meta.get("voice") or "",
+            "stats": stats.get(v["name"], {}),
+        })
+    return {"videos": out, "platforms": list(RESULT_PLATFORMS)}
 
 
 def safe_name(name):
@@ -359,7 +416,7 @@ CHAT_ACTIONS = """\
 - render_category {"category": "..."} - export EVERY scenario in one category as a single multi-slot render queue; the watcher renders them back-to-back
 - export {"format": "txt"|"srt"|"json"} - export the generated package
 - new_seed {} - spin the scenario seed generator for a fresh idea
-- navigate {"page": "studio"|"videos"|"produce"|"spend"|"help"} - open another page
+- navigate {"page": "studio"|"videos"|"produce"|"results"|"spend"|"help"} - open another page
 - check_renders {} - report render progress and the newest finished videos (works on every page)
 - get_post_kit {"video": "newest" or an approximate title} - fetch a finished video's post kit: caption + per-platform hashtags, with a copy button (works on every page)
 - mark_posted {"video": "newest" or an approximate title, "posted": true|false} - flag a finished video as posted (or not), same toggle as the Videos page (works on every page)"""
@@ -368,7 +425,7 @@ CHAT_APP_FACTS = """\
 What If Studio makes short-form "What if?" videos (TikTok / YouTube Shorts / Reels, 9:16 vertical).
 The app is a local static page: scenario library (10 categories - 8 "what if" ones plus two story categories that brand their own renders automatically: Scary Story, narrative horror with dark visuals + a "follow for more scary stories" CTA + horror hashtags, and True History, real documented events with archival visuals + a "follow for more true history" CTA + history hashtags), package settings (runtime 30s/60s/90s/3min; voice Calm/High-Energy/Deadpan), and "Generate + Export for render" which downloads a queue .json. A watcher (started via Start-What-If-Studio.bat) picks that file up from Downloads and renders the full video: TTS voiceover, word-synced captions, per-beat visuals, music, thumbnail, and a post kit with per-platform hashtags. Posting is always manual.
 Custom scenarios: the builder ("+ Create your own scenario") with an AI "Write it for me" draft, all editable, saved in the browser's local storage.
-Dashboard pages (this server, 127.0.0.1:8765): Videos (review renders), Produce (per-beat visuals, voices, re-render), Spend (API costs), Help.
+Dashboard pages (this server, 127.0.0.1:8765): Videos (review renders), Produce (per-beat visuals, voices, re-render), Results (log posted videos' views/likes by hand; rollups by category show what's winning), Spend (API costs), Help.
 Optional API keys, one per file in pipeline/: openai_key.txt (better writing), elevenlabs_key.txt (premium voices), tryinfer_key.txt (paid AI video), pexels_key.txt (stock). Free fallbacks exist for everything.
 Everything runs locally; no accounts, no tracking, no auto-posting. Never promise views, virality, or income."""
 
@@ -1117,6 +1174,12 @@ class Handler(BaseHTTPRequestHandler):
         if self.path.split("?")[0] == "/spend":
             self.send_page(SPEND_PAGE)
             return
+        if self.path.split("?")[0] == "/results":
+            self.send_page(RESULTS_PAGE)
+            return
+        if self.path == "/api/results":
+            self.send_json(results_payload())
+            return
         if self.path == "/api/spend":
             self.send_json(spend_summary())
             return
@@ -1739,6 +1802,37 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json({"error": "bad name"}, 400)
                 return
 
+            if self.path == "/api/results":
+                # Log (or clear) one platform's numbers for a posted video.
+                name = safe_name(data.get("video", ""))
+                platform = data.get("platform")
+                if not name or not (OUTPUT / name).is_file() or platform not in RESULT_PLATFORMS:
+                    self.send_json({"error": "unknown video or platform"}, 400)
+                    return
+
+                def _num(x):
+                    try:
+                        return max(0, int(float(str(x).replace(",", ""))))
+                    except Exception:
+                        return None
+                views, likes = _num(data.get("views")), _num(data.get("likes"))
+                results = load_results()
+                entry = results.setdefault(name, {})
+                if views is None and likes is None:
+                    entry.pop(platform, None)
+                    if not entry:
+                        results.pop(name, None)
+                else:
+                    rec = {"ts": int(time.time())}
+                    if views is not None:
+                        rec["views"] = views
+                    if likes is not None:
+                        rec["likes"] = likes
+                    entry[platform] = rec
+                save_results(results)
+                self.send_json({"ok": True, "stats": results.get(name, {})})
+                return
+
             if self.path == "/api/delete":
                 name = safe_name(data.get("name", ""))
                 src = (OUTPUT / name) if name else None
@@ -1747,7 +1841,8 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 TRASH.mkdir(parents=True, exist_ok=True)
                 moved = []
-                for sib in (src, OUTPUT / f"{src.stem}-thumb.jpg", OUTPUT / f"{src.stem}-post.txt"):
+                for sib in (src, OUTPUT / f"{src.stem}-thumb.jpg", OUTPUT / f"{src.stem}-post.txt",
+                            OUTPUT / f"{src.stem}-meta.json"):
                     if sib.is_file():
                         shutil.move(str(sib), str(TRASH / sib.name))
                         moved.append(sib.name)

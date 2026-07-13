@@ -1866,6 +1866,14 @@ def main():
             credit = music_credit_for(music, args.music)
             (out_dir / f"{slug}-post.txt").write_text(
                 post_kit_text(pkg, item, hook_index, credit, thumb_made, stock_authors), encoding="utf-8")
+            # Sidecar metadata so the dashboard's Results page can roll up
+            # performance by category/runtime/voice without parsing post kits.
+            (out_dir / f"{slug}-meta.json").write_text(json.dumps({
+                "title": pkg.get("title", ""), "category": pkg.get("category", ""),
+                "scenarioId": pkg.get("scenarioId", ""), "runtime": pkg.get("runtime"),
+                "voice": pkg.get("voice", ""), "hook": hook_index + 1,
+                "renderedAt": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            }, indent=2), encoding="utf-8")
             extras = f"{slug}-post.txt" + (f" + {slug}-thumb.jpg" if thumb_made else "")
             print(f"  done: {out_path.name} + {extras}\n")
         except Exception as exc:

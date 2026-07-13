@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>What If Studeos — Results</title>
+<style>
+:root {
+  --bg: #0b0d14; --bg-raised: #131624; --bg-inset: #0e1120;
+  --border: #262b40; --border-strong: #3a4160;
+  --text: #e8eaf2; --text-dim: #9aa1b9; --text-faint: #7d87a3;
+  --accent: #8b7bff; --accent-strong: #a99bff; --good: #4cd6a4; --danger: #ff7a8a;
+  --sidenav-w: 190px;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding-left: var(--sidenav-w); background: var(--bg); color: var(--text); font: 15px/1.5 "Segoe UI", system-ui, sans-serif; }
+body.nav-collapsed { --sidenav-w: 54px; }
+.side-nav { position: fixed; top: 0; left: 0; bottom: 0; width: var(--sidenav-w); display: flex; flex-direction: column; gap: 4px; padding: 10px 8px; background: var(--bg-inset); border-right: 1px solid var(--border); z-index: 40; transition: width 150ms ease; overflow: hidden; }
+.side-nav-toggle { font: inherit; font-size: 17px; width: 38px; height: 38px; margin-bottom: 8px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--bg-raised); color: var(--text-dim); cursor: pointer; flex: none; }
+.side-nav-toggle:hover { color: var(--accent-strong); border-color: var(--accent); }
+.side-nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 8px; font-size: 13.5px; font-weight: 600; color: var(--text-dim); white-space: nowrap; }
+.side-nav-item.current { color: var(--text); background: rgba(139,123,255,0.14); border-left: 3px solid var(--accent); padding-left: 7px; }
+.side-nav-link { font: inherit; border: none; background: none; cursor: pointer; text-align: left; width: 100%; }
+.side-nav-link:hover { color: var(--accent-strong); background: var(--bg-raised); }
+.side-nav-icon { flex: none; width: 20px; text-align: center; }
+body.nav-collapsed .side-nav-label { display: none; }
+body.nav-collapsed .side-nav-item { justify-content: center; padding: 9px 0; }
+body.nav-collapsed .side-nav-item.current { padding-left: 0; border-left-width: 0; border-bottom: 3px solid var(--accent); }
+header { padding: 20px 24px 4px; }
+h1 { margin: 0; font-size: 20px; }
+.sub { color: var(--text-dim); font-size: 13px; margin: 4px 0 0; }
+main { padding: 8px 24px 48px; max-width: 1100px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-top: 16px; }
+.card { background: var(--bg-raised); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+.card .label { color: var(--text-faint); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+.card .value { font-size: 26px; font-weight: 700; margin-top: 4px; }
+.card .note { color: var(--text-faint); font-size: 11.5px; margin-top: 2px; }
+section { background: var(--bg-raised); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-top: 16px; overflow-x: auto; }
+h2 { margin: 0 0 10px; font-size: 15px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; color: var(--text-faint); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.05em; padding: 4px 8px; border-bottom: 1px solid var(--border); }
+td { padding: 6px 8px; border-bottom: 1px solid var(--border); color: var(--text-dim); vertical-align: middle; }
+td.num, th.num { text-align: right; white-space: nowrap; color: var(--text); }
+.vtitle { color: var(--text); font-weight: 600; max-width: 260px; }
+.badge { display: inline-block; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent-strong); border: 1px solid var(--border-strong); border-radius: 20px; padding: 1px 8px; margin-top: 2px; }
+input.stat { width: 76px; font: inherit; font-size: 12.5px; color: var(--text); background: var(--bg-inset); border: 1px solid var(--border-strong); border-radius: 6px; padding: 4px 6px; text-align: right; }
+input.stat:focus { outline: 2px solid var(--accent-strong); border-color: var(--accent); }
+input.stat.saved { border-color: var(--good); }
+.plat-pair { display: flex; gap: 4px; align-items: center; white-space: nowrap; }
+.plat-pair .heart { color: var(--text-faint); font-size: 11px; }
+.hint { color: var(--text-faint); font-size: 12.5px; margin: 10px 0 0; }
+.empty { color: var(--text-faint); padding: 12px 0; }
+:focus-visible { outline: 3px solid var(--accent-strong); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<nav class="side-nav" aria-label="Studio pages">
+  <button type="button" id="navToggle" class="side-nav-toggle" aria-label="Collapse menu" aria-expanded="true">☰</button>
+  <button type="button" id="navStudioBtn" class="side-nav-item side-nav-link">
+    <span class="side-nav-icon" aria-hidden="true">✦</span><span class="side-nav-label">Studio</span>
+  </button>
+  <button type="button" id="navVideosBtn" class="side-nav-item side-nav-link">
+    <span class="side-nav-icon" aria-hidden="true">🎬</span><span class="side-nav-label">Videos</span>
+  </button>
+  <button type="button" id="navProduceBtn" class="side-nav-item side-nav-link">
+    <span class="side-nav-icon" aria-hidden="true">🎞️</span><span class="side-nav-label">Produce</span>
+  </button>
+  <span class="side-nav-item current" aria-current="page">
+    <span class="side-nav-icon" aria-hidden="true">📊</span><span class="side-nav-label">Results</span>
+  </span>
+  <button type="button" id="navSpendBtn" class="side-nav-item side-nav-link">
+    <span class="side-nav-icon" aria-hidden="true">💰</span><span class="side-nav-label">Spend</span>
+  </button>
+  <button type="button" id="navHelpBtn" class="side-nav-item side-nav-link">
+    <span class="side-nav-icon" aria-hidden="true">❓</span><span class="side-nav-label">How to</span>
+  </button>
+</nav>
+
+<header>
+  <h1>Results</h1>
+  <p class="sub">How your posted videos are doing — paste in each video's view/like counts every few days, and the rollups show which categories and formats are winning. Everything stays local.</p>
+</header>
+
+<main>
+  <div class="cards">
+    <div class="card"><div class="label">Posted videos</div><div class="value" id="cPosted">0</div><div class="note">marked on the Videos page</div></div>
+    <div class="card"><div class="label">Total views logged</div><div class="value" id="cViews">0</div></div>
+    <div class="card"><div class="label">Best category</div><div class="value" id="cBest">—</div><div class="note" id="cBestNote"></div></div>
+  </div>
+
+  <section>
+    <h2>By category</h2>
+    <table><thead><tr><th>Category</th><th class="num">Posted</th><th class="num">With numbers</th><th class="num">Total views</th><th class="num">Avg views / video</th><th class="num">Like rate</th></tr></thead><tbody id="catRows"></tbody></table>
+    <p class="empty" id="catEmpty" hidden>Log some numbers below and the category comparison appears here.</p>
+  </section>
+
+  <section>
+    <h2>Posted videos</h2>
+    <table>
+      <thead><tr><th>Video</th><th>Posted</th><th>TikTok</th><th>YT Shorts</th><th>Reels</th><th class="num">Total views</th></tr></thead>
+      <tbody id="vidRows"></tbody>
+    </table>
+    <p class="empty" id="vidEmpty" hidden>No posted videos yet — render, post, then flag them with “Posted” on the <a href="/" style="color:var(--accent-strong)">Videos page</a> and they show up here.</p>
+    <p class="hint">Each platform has two boxes: views and ♥ likes. Numbers save when you leave the box (commas are fine). Re-enter them any time — the latest value wins. Clear both boxes to remove a platform's entry.</p>
+  </section>
+</main>
+
+<script>
+const $id = (x) => document.getElementById(x);
+const fmt = (n) => Number(n || 0).toLocaleString("en-US");
+
+/* ---------- sidebar (same behavior as the other pages) ---------- */
+function setNavCollapsed(c, persist = true) {
+  document.body.classList.toggle("nav-collapsed", c);
+  const t = $id("navToggle");
+  t.setAttribute("aria-expanded", String(!c));
+  t.setAttribute("aria-label", c ? "Expand menu" : "Collapse menu");
+  if (persist) { try { localStorage.setItem("wis.navCollapsed", c ? "1" : "0"); } catch (e) {} }
+}
+$id("navToggle").addEventListener("click", () => setNavCollapsed(!document.body.classList.contains("nav-collapsed")));
+let sn = null; try { sn = localStorage.getItem("wis.navCollapsed"); } catch (e) {}
+setNavCollapsed(sn === null ? matchMedia("(max-width: 700px)").matches : sn === "1", false);
+$id("navVideosBtn").addEventListener("click", () => { location.href = "/"; });
+$id("navProduceBtn").addEventListener("click", () => { location.href = "/produce"; });
+$id("navSpendBtn").addEventListener("click", () => { location.href = "/spend"; });
+$id("navHelpBtn").addEventListener("click", () => { location.href = "/help"; });
+$id("navStudioBtn").addEventListener("click", () => {
+  if (history.length > 1) history.back();
+  else alert("Your Studio is index.html — open it from the project folder (or Start-What-If-Studio.bat).");
+});
+
+/* ---------- data ---------- */
+let DATA = { videos: [], platforms: [] };
+
+function vidViews(v) {
+  return DATA.platforms.reduce((n, p) => n + ((v.stats[p] || {}).views || 0), 0);
+}
+function vidLikes(v) {
+  return DATA.platforms.reduce((n, p) => n + ((v.stats[p] || {}).likes || 0), 0);
+}
+
+function renderCards() {
+  $id("cPosted").textContent = DATA.videos.length;
+  $id("cViews").textContent = fmt(DATA.videos.reduce((n, v) => n + vidViews(v), 0));
+  const cats = rollup().filter(c => c.views > 0).sort((a, b) => b.avg - a.avg);
+  $id("cBest").textContent = cats.length ? cats[0].category : "—";
+  $id("cBestNote").textContent = cats.length ? `${fmt(Math.round(cats[0].avg))} avg views/video` : "log views to compare";
+}
+
+function rollup() {
+  const by = {};
+  DATA.videos.forEach(v => {
+    const cat = v.category || "Unknown";
+    const r = by[cat] || (by[cat] = { category: cat, posted: 0, logged: 0, views: 0, likes: 0 });
+    r.posted += 1;
+    const views = vidViews(v);
+    if (views > 0 || vidLikes(v) > 0) r.logged += 1;
+    r.views += views;
+    r.likes += vidLikes(v);
+  });
+  Object.values(by).forEach(r => { r.avg = r.logged ? r.views / r.logged : 0; });
+  return Object.values(by);
+}
+
+function renderCats() {
+  const rows = rollup().sort((a, b) => b.views - a.views);
+  const body = $id("catRows");
+  body.innerHTML = "";
+  const any = rows.some(r => r.views > 0);
+  $id("catEmpty").hidden = any;
+  if (!any) return;
+  rows.forEach(r => {
+    const tr = document.createElement("tr");
+    const rate = r.views ? (100 * r.likes / r.views).toFixed(1) + "%" : "—";
+    tr.innerHTML = `<td>${r.category}</td><td class="num">${r.posted}</td><td class="num">${r.logged}</td>` +
+      `<td class="num">${fmt(r.views)}</td><td class="num">${fmt(Math.round(r.avg))}</td><td class="num">${rate}</td>`;
+    body.appendChild(tr);
+  });
+}
+
+function statInput(v, platform, field, value) {
+  const inp = document.createElement("input");
+  inp.className = "stat";
+  inp.type = "text";
+  inp.inputMode = "numeric";
+  inp.placeholder = field === "views" ? "views" : "♥";
+  inp.setAttribute("aria-label", `${v.title} — ${platform} ${field}`);
+  if (value !== undefined && value !== null) inp.value = fmt(value);
+  inp.addEventListener("change", async () => {
+    const row = v.stats[platform] || {};
+    const upd = { views: row.views, likes: row.likes, [field]: inp.value.trim() === "" ? null : inp.value };
+    const r = await fetch("/api/results", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ video: v.name, platform, views: upd.views, likes: upd.likes }),
+    }).then(x => x.json()).catch(() => ({ error: "offline" }));
+    if (r && !r.error) {
+      v.stats = r.stats || {};
+      inp.classList.add("saved");
+      setTimeout(() => inp.classList.remove("saved"), 1200);
+      renderCards(); renderCats(); refreshTotals();
+    }
+  });
+  return inp;
+}
+
+const totalCells = new Map();
+function refreshTotals() {
+  DATA.videos.forEach(v => {
+    const cell = totalCells.get(v.name);
+    if (cell) cell.textContent = fmt(vidViews(v));
+  });
+}
+
+function renderVideos() {
+  const body = $id("vidRows");
+  body.innerHTML = "";
+  totalCells.clear();
+  $id("vidEmpty").hidden = DATA.videos.length > 0;
+  DATA.videos.forEach(v => {
+    const tr = document.createElement("tr");
+    const t = document.createElement("td");
+    t.className = "vtitle";
+    t.textContent = v.title;
+    if (v.category) {
+      const b = document.createElement("div");
+      const extras = [v.category, v.runtime ? (v.runtime === 180 ? "3 min" : v.runtime + "s") : null].filter(Boolean);
+      b.innerHTML = `<span class="badge">${extras.join(" · ")}</span>`;
+      t.appendChild(b);
+    }
+    tr.appendChild(t);
+    const when = document.createElement("td");
+    when.textContent = v.uploaded ? new Date(v.uploaded * 1000).toLocaleDateString() : "—";
+    tr.appendChild(when);
+    DATA.platforms.forEach(p => {
+      const td = document.createElement("td");
+      const pair = document.createElement("div");
+      pair.className = "plat-pair";
+      pair.appendChild(statInput(v, p, "views", (v.stats[p] || {}).views));
+      const h = document.createElement("span"); h.className = "heart"; h.textContent = "♥";
+      pair.appendChild(h);
+      pair.appendChild(statInput(v, p, "likes", (v.stats[p] || {}).likes));
+      td.appendChild(pair);
+      tr.appendChild(td);
+    });
+    const tot = document.createElement("td");
+    tot.className = "num";
+    tot.textContent = fmt(vidViews(v));
+    totalCells.set(v.name, tot);
+    tr.appendChild(tot);
+    body.appendChild(tr);
+  });
+}
+
+async function load() {
+  try {
+    DATA = await (await fetch("/api/results")).json();
+  } catch (e) {
+    $id("vidEmpty").hidden = false;
+    return;
+  }
+  renderCards(); renderCats(); renderVideos();
+}
+load();
+</script>
+<script src="/assistant.js" defer></script>
+</body>
+</html>
