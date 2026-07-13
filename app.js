@@ -1583,13 +1583,29 @@ const seedBank = {
     "The dive log that ends mid-sentence",
     "A ranger's list of things you don't do after dark",
     "The apartment above yours that isn't on the lease",
-    "Every photo of the lake house has one extra window"
+    "Every photo of the lake house has one extra window",
+    "The night bus that makes one extra stop",
+    "The babysitter's note: he's already asleep, don't check",
+    "The storage unit paid up forty years in advance",
+    "Mile markers on a highway that doesn't exist",
+    "The voicemail your own number keeps leaving you",
+    "A lighthouse logbook with two sets of handwriting",
+    "The elevator stops at a floor the building doesn't have",
+    "The trail cameras only ever catch it leaving"
   ],
   "True History": [
     "The war two cities fought over a wooden bucket",
     "The wave of molasses that ran faster than a man",
     "The tree that legally owns itself",
-    "The shortest war in history lasted 38 minutes"
+    "The shortest war in history lasted 38 minutes",
+    "The soldier who kept fighting WWII until 1974",
+    "The pig that nearly started a US-British war",
+    "The parachuting beavers of Idaho",
+    "1816: the year without a summer",
+    "Operation Paul Bunyan: an army versus one tree",
+    "The London bridge that was sold to Arizona",
+    "The cat that co-authored a physics paper",
+    "The tulips that cost more than houses"
   ]
 };
 
