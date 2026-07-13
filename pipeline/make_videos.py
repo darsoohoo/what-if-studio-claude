@@ -89,6 +89,19 @@ AI_STYLES = {
 }
 AI_IMAGE_HOST = "https://image.pollinations.ai/prompt/"
 
+# Category branding: story categories get their own burned-in follow card,
+# anchor hashtag, and default AI-visual style. Anything not listed renders
+# with the classic what-if brand. Keys mirror CATEGORIES in app.js.
+DEFAULT_BRANDING = {"cta": "FOLLOW FOR THE NEXT WHAT-IF", "anchor": "#whatif", "style": "cinematic"}
+CATEGORY_BRANDING = {
+    "Scary Story": {"cta": "FOLLOW FOR MORE SCARY STORIES", "anchor": "#scarystories", "style": "dark"},
+}
+
+
+def branding_for(pkg):
+    """The CTA/anchor/style branding for a package's category."""
+    return CATEGORY_BRANDING.get((pkg or {}).get("category", ""), DEFAULT_BRANDING)
+
 # Modern caption look (ASS): white words, spoken word pops to yellow.
 CAP_WHITE = r"&H00FFFFFF&"
 CAP_HL = r"&H0000D4FF&"      # bright yellow (ASS is &HAABBGGRR)
@@ -422,7 +435,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     if total and total > 12:
         cta_start = max(0.0, total - CTA_SECONDS)
         fx = r"{\fad(250,0)}"
-        lines.append(f"Dialogue: 1,{ass_time(cta_start)},{ass_time(total + 0.3)},CTA,,0,0,0,,{fx}FOLLOW FOR THE NEXT WHAT-IF")
+        lines.append(f"Dialogue: 1,{ass_time(cta_start)},{ass_time(total + 0.3)},CTA,,0,0,0,,{fx}{branding_for(pkg)['cta']}")
 
     return header + "\n".join(lines) + "\n"
 
@@ -1048,7 +1061,7 @@ def generate_infer_videos(pkg, segments, key, model, task, duration, cache_root,
                     print(f"    beat {i + 1}: animating your attached image ({ref.name})")
                 except Exception as exc:
                     print(f"    beat {i + 1}: couldn't read attached image ({exc})")
-            frame_prompt = ai_prompt_for_segment(pkg, i, len(segments), AI_STYLES["cinematic"])
+            frame_prompt = ai_prompt_for_segment(pkg, i, len(segments), AI_STYLES[branding_for(pkg)["style"]])
             image_url = pollinations_image_url(frame_prompt, seed=(i + 1) * 17)
             if _prewarm_url(image_url):
                 attempts.append(("image-to-video", {**base_input, "image_url": image_url}))
@@ -1423,6 +1436,7 @@ CATEGORY_HASHTAGS = {
     "Alternate Reality":   ["#alternatehistory", "#multiverse"],
     "Unsettling Everyday": ["#creepy", "#unsettling", "#liminal"],
     "Scary/Weird":         ["#creepy", "#scary", "#creepytok"],
+    "Scary Story":         ["#horrortok", "#creepypasta", "#scary"],
 }
 
 
@@ -1440,7 +1454,7 @@ def hashtags_for(platform, pkg):
     """A tiered tag set for one platform: broad + format + community anchors,
     then category-niche and scenario-specific topic tags, deduped and capped."""
     conf = PLATFORM_TAGS.get(platform, {"format": "", "community": "", "cap": 6})
-    ordered = ["#whatif", conf["format"], conf["community"]]
+    ordered = [branding_for(pkg)["anchor"], conf["format"], conf["community"]]
     ordered += CATEGORY_HASHTAGS.get(pkg.get("category", ""), [])
     ordered += _scenario_hashtags(pkg)
     seen, tags = set(), []
@@ -1531,8 +1545,9 @@ def main():
     parser.add_argument("--music", default="music", help="Folder of background music (optional)")
     parser.add_argument("--ai-visuals", action="store_true",
                         help="Generate one free AI image per beat (Pollinations, no account) instead of using backgrounds/")
-    parser.add_argument("--ai-style", default="cinematic", choices=sorted(AI_STYLES),
-                        help="Look of generated AI visuals (default: cinematic)")
+    parser.add_argument("--ai-style", default=None, choices=sorted(AI_STYLES),
+                        help="Look of generated AI visuals (default: the category's own style - "
+                             "dark for Scary Story, cinematic otherwise)")
     parser.add_argument("--ai-cache", default="ai-visuals",
                         help="Cache folder for generated images (default: ai-visuals)")
     parser.add_argument("--charts", action="store_true",
@@ -1667,7 +1682,7 @@ def main():
     elif args.stock:
         print(f"Visuals: Pexels stock video per beat (cache: {args.stock_cache})")
     elif args.ai_visuals:
-        print(f"Visuals: free AI images per beat (style: {args.ai_style}, cache: {args.ai_cache})")
+        print(f"Visuals: free AI images per beat (style: {args.ai_style or 'per-category'}, cache: {args.ai_cache})")
     else:
         print(f"Visuals: {len(visuals)} file(s) in '{args.backgrounds}'"
               + (" (one clip per beat)" if len(visuals) > 1 else " (single background)" if visuals else " (animated gradient)"))
@@ -1718,6 +1733,7 @@ def main():
 
                 item_visuals = visuals
                 stock_authors = set()
+                item_style = args.ai_style or branding_for(pkg)["style"]
                 if args.infer:
                     print(f"  generating AI video with {args.infer_model}...")
                     item_visuals = generate_infer_videos(pkg, segments, infer_key, args.infer_model,
@@ -1726,13 +1742,13 @@ def main():
                 elif args.infer_images:
                     print(f"  generating AI images with {args.infer_images}...")
                     item_visuals = generate_infer_images(pkg, len(segments), infer_key, args.infer_images,
-                                                         args.ai_style, args.infer_images_cache)
+                                                         item_style, args.infer_images_cache)
                 elif args.stock:
                     print("  fetching Pexels stock footage...")
                     item_visuals = fetch_stock_visuals(pkg, segments, stock_key, args.stock_cache, stock_authors)
                 elif args.ai_visuals:
-                    print(f"  generating AI visuals ({args.ai_style})...")
-                    item_visuals = generate_ai_visuals(pkg, len(segments), args.ai_style, args.ai_cache)
+                    print(f"  generating AI visuals ({item_style})...")
+                    item_visuals = generate_ai_visuals(pkg, len(segments), item_style, args.ai_cache)
 
                 # Per-beat video overrides from the Produce page: a beat whose
                 # radio says "video" plays that uploaded clip in EVERY mode

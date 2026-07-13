@@ -217,11 +217,29 @@ RUNTIME_BEAT_WORDS = {
 
 def draft_prompt(title, category, runtime=60):
     words, pace = RUNTIME_BEAT_WORDS.get(runtime, RUNTIME_BEAT_WORDS[60])
+    shape = (
+        'reply with ONLY minified JSON, no markdown fences, exactly this shape: '
+        '{"premise":"...","beats":["...","...","...","...","..."],"tags":["...","...","..."],"emoji":"..."} '
+    )
+    if category == "Scary Story":
+        # Narrative horror, told straight - not a "What if?" explainer.
+        return (
+            "You write scripts for short-form scary-story videos (TikTok horror narration: "
+            "true-feeling, first-person or documentary tone, dread over gore). "
+            f'For the story "{title}", ' + shape +
+            "Rules: premise = 2-3 sentences setting the scene and hinting at what's wrong. "
+            f"beats = exactly 5 spoken story beats, {words} words each, no stage directions: "
+            f"({pace}) "
+            "1 the ordinary setup, 2 the first wrong detail, 3 the point of no return, "
+            "4 the reveal or escalation, 5 a final line that lingers after the video ends. "
+            "Present tense, concrete sensory details (sounds, timestamps, textures), a specific "
+            "person doing something in every beat. Fictional but grounded - no real victims, "
+            "no gore, no jump-scare cliches. "
+            "tags = 3-5 lowercase topic words. emoji = one fitting emoji."
+        )
     return (
         'You write scripts for short-form "What if?" videos (TikTok explainer style). '
-        f'For the question "{title}" (category: {category}), reply with ONLY minified JSON, '
-        'no markdown fences, exactly this shape: '
-        '{"premise":"...","beats":["...","...","...","...","..."],"tags":["...","...","..."],"emoji":"..."} '
+        f'For the question "{title}" (category: {category}), ' + shape +
         "Rules: premise = 2-3 vivid sentences setting up why this is fascinating. "
         f"beats = exactly 5 spoken-narration beats, {words} words each, no stage directions: "
         f"({pace}) "
@@ -330,7 +348,7 @@ CHAT_ACTIONS = """\
 
 CHAT_APP_FACTS = """\
 What If Studio makes short-form "What if?" videos (TikTok / YouTube Shorts / Reels, 9:16 vertical).
-The app is a local static page: scenario library (8 categories), package settings (runtime 30s/60s/90s/3min; voice Calm/High-Energy/Deadpan), and "Generate + Export for render" which downloads a queue .json. A watcher (started via Start-What-If-Studio.bat) picks that file up from Downloads and renders the full video: TTS voiceover, word-synced captions, per-beat visuals, music, thumbnail, and a post kit with per-platform hashtags. Posting is always manual.
+The app is a local static page: scenario library (9 categories - 8 "what if" ones plus Scary Story, a narrative-horror category whose videos automatically get dark visuals, a "follow for more scary stories" CTA, and horror hashtags), package settings (runtime 30s/60s/90s/3min; voice Calm/High-Energy/Deadpan), and "Generate + Export for render" which downloads a queue .json. A watcher (started via Start-What-If-Studio.bat) picks that file up from Downloads and renders the full video: TTS voiceover, word-synced captions, per-beat visuals, music, thumbnail, and a post kit with per-platform hashtags. Posting is always manual.
 Custom scenarios: the builder ("+ Create your own scenario") with an AI "Write it for me" draft, all editable, saved in the browser's local storage.
 Dashboard pages (this server, 127.0.0.1:8765): Videos (review renders), Produce (per-beat visuals, voices, re-render), Spend (API costs), Help.
 Optional API keys, one per file in pipeline/: openai_key.txt (better writing), elevenlabs_key.txt (premium voices), tryinfer_key.txt (paid AI video), pexels_key.txt (stock). Free fallbacks exist for everything.

@@ -20,7 +20,8 @@ const CATEGORIES = [
   "Internet Mystery",
   "Alternate Reality",
   "Unsettling Everyday",
-  "Scary/Weird"
+  "Scary/Weird",
+  "Scary Story"
 ];
 
 /* Default card colors for custom scenarios, per category. */
@@ -32,12 +33,18 @@ const CATEGORY_COLORS = {
   "Internet Mystery": ["#2d8a6e", "#151a30"],
   "Alternate Reality": ["#6a5ae0", "#2d8a6e"],
   "Unsettling Everyday": ["#3b4368", "#2dbf8b"],
-  "Scary/Weird": ["#151a30", "#b83a6e"]
+  "Scary/Weird": ["#151a30", "#b83a6e"],
+  "Scary Story": ["#120a16", "#8a2431"]
 };
 
 /* One package works everywhere: the spoken outro uses a platform-neutral CTA,
-   and per-platform hashtags come from the render's post kit, not the package. */
+   and per-platform hashtags come from the render's post kit, not the package.
+   Story categories carry their own follow line (the render's burned-in CTA
+   card and anchor hashtag follow the category too — see pipeline). */
 const NEUTRAL_CTA = "Follow for the next what-if.";
+const CATEGORY_CTA = {
+  "Scary Story": "Follow for more scary stories."
+};
 const ASPECT = "9:16 vertical";
 
 const RUNTIMES = [
@@ -57,7 +64,7 @@ const VOICES = [
 const STORAGE_KEY = "whatIfStudio.v1";
 
 /* ============================================================
-   2. SCENARIO BANK — 24 scenarios, 3 per category
+   2. SCENARIO BANK — 32 scenarios across 9 categories
    ============================================================ */
 
 const scenarioBank = [
@@ -991,6 +998,206 @@ const scenarioBank = [
     ]
   },
 
+  /* ---------------- SCARY STORY ----------------
+     Narrative category: true-feeling short horror told straight, no "what if"
+     framing. Picture-only by design — the pipeline defaults these to the
+     dark visual style and swaps in scary-story CTA + hashtags. */
+  {
+    id: "ss-lastdive",
+    category: "Scary Story",
+    title: "The dive was planned for 40 minutes",
+    image: { glyph: "🤿", from: "#0a1420", to: "#8a2431" },
+    premise: "A cave diver follows his own guideline into a flooded cave system he's mapped a dozen times. The line is right where he left it. The problem is what's clipped to it — a marker he didn't place, pointing the wrong way.",
+    tags: ["cave diving", "survival", "underwater", "scary story"],
+    safety: "Fictional story inspired by real cave-diving accident reports. No real victims or incidents depicted; dive-safety details kept realistic, not instructional.",
+    hooks: [
+      "Cave divers have a rule: the line is life. He found a second line — and it wasn't his.",
+      "40 minutes of air. 35 minutes of cave. The math worked until the silt came down.",
+      "The last thing his dive log says is 'passage wider than mapped.' It isn't."
+    ],
+    beats: [
+      "He drops below the surface at 9:04 AM, alone, the way he's done a dozen times. His guideline runs into the dark like a thread through a needle. Plan: 40 minutes, 300 feet back, touch the old gate grate, turn around.",
+      "At the squeeze — the point where his tanks scrape both walls — he notices it. A line marker clipped to his guideline, the plastic arrow kind divers use to point the way OUT. Except this arrow points deeper in. He didn't clip it there. Nobody dives this cave.",
+      "He tells himself it's old, left from a survey years ago. Then his fin catches the floor and the silt comes up like smoke filling a room. Visibility goes from sixty feet to zero in eight seconds. Now the line in his hand is the only thing that's real.",
+      "He follows it by touch, breathing slow, counting knots — and his glove finds a second marker. Then a third. All pointing deeper. And under his fingers, the line changes: his braided nylon becomes something older, stiffer. He is no longer holding his own line.",
+      "He backtracks hand over hand and surfaces at 9:51 with 200 psi to spare. That afternoon he pulls his gear up and finds every arrow on the recovered line pointing the right way — toward the exit. Whatever line he was holding down there, it wasn't the one he pulled out."
+    ],
+    shotList: [
+      "Hook: a lone diver's silhouette descending into a flooded cave mouth, flashlight beam swallowed by black water.",
+      "Close-up: a gloved hand following a thin guideline through a narrow rock squeeze, tanks scraping stone.",
+      "Macro shot: a plastic line arrow clipped to the guideline, pointing into darkness, caught in the flashlight beam.",
+      "Zero visibility: a wall of brown silt blooming through the beam, a hand gripping the line the only visible thing.",
+      "Surface shot: the diver's head breaking calm water in a dark cave pool, gasping, dawn light from the entrance.",
+      "Closer: coiled recovered dive line on wet stone, all arrows pointing one way, one frame held too long."
+    ],
+    captions: [
+      "The line is life. So whose line was he holding? 🤿",
+      "40 minutes of air. And arrows pointing the wrong way.",
+      "Cave divers trust the line more than their own eyes. That's the problem."
+    ],
+    thumbnails: [
+      "THE SECOND LINE",
+      "Arrows pointed IN",
+      "40 minutes of air"
+    ]
+  },
+  {
+    id: "ss-nightshift",
+    category: "Scary Story",
+    title: "The night shift keeps a list",
+    image: { glyph: "🏥", from: "#0d1018", to: "#5a4a7a" },
+    premise: "Every hospital has unofficial rules the day shift never hears about. At St. Alder's, the night nurses keep theirs taped inside a supply-closet door — seven rules, handwritten, added to one at a time over forty years. A new nurse just found out why rule four exists.",
+    tags: ["hospital", "night shift", "rules", "scary story"],
+    safety: "Fictional 'rules' horror story set in an invented hospital. No real institutions, patients, or medical events depicted.",
+    hooks: [
+      "Hospital night shifts have rules the day shift never learns. Rule four is why nurses quit.",
+      "The list is handwritten. Seven rules. Forty years of handwriting. One pen never came back.",
+      "Her trainer said: 'If the fourth-floor call bell rings twice, you send the FLOAT nurse.' She asked why. Nobody laughed."
+    ],
+    beats: [
+      "Her first night shift, the charge nurse walks her to a supply closet and points at a paper taped inside the door. Seven handwritten rules, different pens, different decades. 'Read it. Don't photograph it. It stays in the closet.'",
+      "Most are almost normal. Rule two: count the wheelchairs by the east elevator — there are four; if there are five, take the stairs. Rule six: the vending machine on three is allowed to eat your dollar. Let it.",
+      "Rule four is the one underlined twice: if room 4B's call bell rings twice in a row, you do not answer it yourself — you send whoever is floating that night. 4B has been a storage room since 1987. The bell was disconnected in 1987. It rings maybe twice a year.",
+      "At 3:12 AM in her fourth week, the board lights up: 4B. Then again. She's alone at the station — no float tonight. The rules don't cover that. So she does the thing the list was written to prevent: she goes to see, and the door to 4B is already open.",
+      "Inside: shelving, dust, and a call-bell cable hanging loose exactly as it has for forty years — nowhere near a button. She reports it. The charge nurse doesn't ask what she saw. She just hands her a pen and says, 'You get to write rule eight.'"
+    ],
+    shotList: [
+      "Hook: a long empty hospital corridor at night, half the fluorescent lights off, one flickering at the far end.",
+      "Close-up: a yellowed handwritten list taped inside a metal supply-closet door, seven rules in different inks.",
+      "Detail shot: a row of four wheelchairs by an elevator in low light, a fifth shape in shadow at the end.",
+      "The nurses' station at 3 AM: a call-board lighting up '4B', a young nurse's face lit from below by the panel.",
+      "POV walking slowly toward a door standing ajar at the end of a dark storage corridor, flashlight beam trembling.",
+      "Closer: an old pen held out over the list, one blank space under rule seven, hand hesitating."
+    ],
+    captions: [
+      "Night-shift rules aren't in the handbook. They're in the closet. 🏥",
+      "Rule 4: never answer 4B yourself. There's no rule for being alone.",
+      "Forty years of handwriting. She gets to write rule eight."
+    ],
+    thumbnails: [
+      "RULE FOUR",
+      "The bell rang twice",
+      "Night shift rules"
+    ]
+  },
+  {
+    id: "ss-stairs",
+    category: "Scary Story",
+    title: "The staircase in the woods",
+    image: { glyph: "🌲", from: "#0c1410", to: "#3b4368" },
+    premise: "Search-and-rescue volunteers walk grid patterns through wilderness nobody visits. They all report the same thing eventually: a staircase, freestanding, immaculate, miles from any road. The briefing covers it in one line: mark the coordinates, keep walking.",
+    tags: ["forest", "search and rescue", "hiking", "scary story"],
+    safety: "Fictional story in the campfire/internet-legend tradition (freestanding stairs in the woods). No real SAR teams, cases, or missing persons referenced.",
+    hooks: [
+      "Search-and-rescue teams have a one-line briefing about stairs in the woods: mark it, don't climb it.",
+      "Twelve miles from the nearest road, he found a staircase. Carpeted. Clean. Standing alone.",
+      "The weird part isn't the stairs. It's that his GPS logged him standing there for 51 minutes. He remembers 5."
+    ],
+    beats: [
+      "His first season on volunteer search-and-rescue, the briefing is mostly boring: grid spacing, whistle signals, hydration. Then the old-timer running it says, without looking up: 'If you find stairs, log the location and keep moving.' Nobody asks. He assumes it's a joke.",
+      "Two summers later he's sweeping a ravine twelve miles from the nearest trailhead when the trees open up. A staircase. Freestanding, like a house was lifted off it. Oak banister, carpet runner, no weathering, no leaves on the steps — in a forest that buries everything by October.",
+      "He circles it twice. No foundation, no rot, no bird has touched it. His radio crackles static on a channel that was clear all morning. And the forest around it is quiet in a way forests aren't — no insects, like the volume was turned down in a circle.",
+      "He does what the briefing said: logs the coordinates, takes one photo, keeps walking. At debrief, his GPS track shows him stationary at that clearing for 51 minutes. He remembers five. The photo on his phone shows the clearing, the trees, the carpet-flattened grass — and no stairs.",
+      "The old-timer takes his report without blinking and files it in a folder that is not thin. 'You did it right,' he says. He never says what happens when someone does it wrong. But the grid maps have small red Xs on them, and nobody searches those squares."
+    ],
+    shotList: [
+      "Hook: dense old-growth forest in flat grey light, a clean wooden staircase standing alone in a clearing.",
+      "A search-and-rescue volunteer in an orange vest checking a handheld GPS among huge trees, breath visible.",
+      "Low angle up the staircase: polished banister, carpet runner, treetops where a second floor should be.",
+      "Close-up: a radio in a gloved hand, static bars dancing, the volunteer's eyes fixed on something off-frame.",
+      "Overhead map graphic: a search grid with a handful of squares marked with small red Xs.",
+      "Closer: an old filing folder labeled 'STRUCTURES' dropped onto a desk, thick with decades of reports."
+    ],
+    captions: [
+      "SAR briefing, one line: if you find stairs, keep walking. 🌲",
+      "51 minutes on the GPS. He remembers 5.",
+      "The photo shows the clearing. It doesn't show the stairs."
+    ],
+    thumbnails: [
+      "STAIRS. ALONE.",
+      "Mark it. Don't climb it.",
+      "51 missing minutes"
+    ]
+  },
+  {
+    id: "ss-lookout",
+    category: "Scary Story",
+    title: "The fire lookout's last radio check",
+    image: { glyph: "📻", from: "#141008", to: "#b8563a" },
+    premise: "Fire lookouts spend whole seasons alone in glass towers, checking in by radio twice a day. Dispatch logs every word. Her tower's log for August 14th shows a check-in at 9 PM — routine, calm, her voice. She was asleep by 8.",
+    tags: ["wilderness", "radio", "isolation", "scary story"],
+    safety: "Fictional story set in an invented fire-lookout post. No real agencies, towers, or personnel depicted.",
+    hooks: [
+      "Fire lookouts radio in twice a day. Dispatch has her 9 PM check-in on tape. She was asleep by 8.",
+      "Alone in a glass tower, 40 miles from anyone — and dispatch keeps answering someone who isn't her.",
+      "The recording is her voice. Her call sign. Her cadence. One detail is wrong: it describes tomorrow's weather."
+    ],
+    beats: [
+      "Third season in the tower: 14 feet of glass on a mountain's shoulder, a radio, a logbook, and a horizon she knows by heart. Check-in at 9 AM, check-in at 9 PM, same script every day: call sign, visibility, weather, 'all quiet.'",
+      "In August the storms come and she starts sleeping early. One morning dispatch thanks her for 'last night's report.' She didn't make one. She laughs it off as a logging error — until the supervisor reads it back, and it's her voice on the recording. Her call sign. Her rhythm.",
+      "The reports keep coming, always nights she's asleep, always flawless — except each one describes the NEXT day's weather. Wind shift at noon: correct. Dry lightning on the north ridge: correct, to the hour. Dispatch is getting tomorrow's mountain, one night early.",
+      "She stops sleeping and sits by the radio with the volume up. At 9:02 PM the handset clicks like a throat clearing, and she hears her own voice go out on the channel — calm, easy, mid-report — while her thumb is nowhere near the transmit key. It reads the weather. Then it says something new: 'Smoke visible. Southeast. All quiet.'",
+      "Southeast is the one direction her tower can't see — the ridge blocks it. She logs it anyway. Two days later a crew finds a lightning strike smoldering exactly there, caught so early it never made the news. The voice never transmits again. Her last logbook entry that season isn't a weather line. It's a thank-you."
+    ],
+    shotList: [
+      "Hook: a tiny glass fire-lookout tower on a mountain ridge at dusk, one warm light against a wall of storm clouds.",
+      "Interior: a woman by lantern light at an old radio set, logbook open, endless dark forest beyond the glass.",
+      "Extreme close-up: a radio handset on its hook, the transmit light glowing red, no hand anywhere near it.",
+      "Her face lit by the radio dial at night, eyes wide, listening to her own voice come out of the speaker.",
+      "Dawn wide shot: a thin column of smoke rising from a ridge line, small and early against a pink sky.",
+      "Closer: a weathered logbook page, weather entries in neat handwriting, the last line reading only 'thank you.'"
+    ],
+    captions: [
+      "Dispatch has her 9 PM check-in on tape. She was asleep. 📻",
+      "The voice knew tomorrow's weather. Then it saw smoke.",
+      "Alone in a glass tower — but the radio kept her company."
+    ],
+    thumbnails: [
+      "HER OWN VOICE",
+      "The 9 PM check-in",
+      "It saw the smoke first"
+    ]
+  },
+  {
+    id: "ss-doorbell",
+    category: "Scary Story",
+    title: "The doorbell only records him at 3:33",
+    image: { glyph: "🚪", from: "#0d0d12", to: "#6a5ae0" },
+    premise: "A smart doorbell that triggers on motion, every night, at exactly 3:33 AM. Same figure at the end of the driveway. Every night one step closer. The manufacturer's support team stops replying after she sends the eleventh clip.",
+    tags: ["smart home", "camera", "night", "scary story"],
+    safety: "Fictional suburban horror story. No real products, companies, or events depicted; avoids home-invasion realism in favor of the uncanny.",
+    hooks: [
+      "Her doorbell records a stranger every night at 3:33. Every night, one step closer.",
+      "Motion alerts don't lie. Except hers fire at the same second every night — for something the camera can barely see.",
+      "Clip 1: end of the driveway. Clip 11: close enough to count buttons. Clip 12 is why she moved."
+    ],
+    beats: [
+      "The alert wakes her the first time: MOTION DETECTED, 3:33 AM. The clip shows her empty driveway in grainy night vision — and at the very edge, by the mailbox, a figure standing still. Not walking past. Facing the house. She checks the yard in the morning: nothing.",
+      "It happens again the next night. 3:33 AM exactly — not 3:32, not 3:34. Same figure, same stillness. But tonight he's standing three feet past the mailbox. She scrubs both clips frame by frame. He never moves in either one. He's just... further along.",
+      "Night after night the clips stack up, each one a single step closer, like frames of a film played one per day. Support says it's 'likely a looping firmware artifact.' Then she sends clip eleven — close enough to see coat buttons and that the face is slightly, politely wrong — and support stops replying.",
+      "She stops sleeping through the alert and sits by the window at 3:30 with the lights off. At 3:33 her phone buzzes in her hand: MOTION DETECTED. The driveway below her is empty. It has been empty the whole time. Whatever the camera sees, it doesn't need her eyes to agree.",
+      "Clip twelve is the last one on the account. It isn't the driveway. The lens is looking down the upstairs hallway — a camera she doesn't own, an angle that doesn't exist — at her bedroom door, standing open. She doesn't watch it twice. Some houses you don't sell; you just leave."
+    ],
+    shotList: [
+      "Hook: grainy black-and-white doorbell night footage of a suburban driveway, a still figure at the far edge by a mailbox, timestamp 3:33 AM.",
+      "A woman's face lit only by her phone in a dark bedroom, the motion alert glowing on the screen.",
+      "Split grid of doorbell clips side by side, the same figure incrementally closer in each frame, timestamps identical.",
+      "Extreme close-up of a laptop screen scrubbing footage: a coat button, a face just out of focus, cursor trembling on the pause bar.",
+      "Wide shot: her silhouette at the dark window at 3:33, phone buzzing in hand, the driveway below completely empty.",
+      "Closer: a FOR SALE sign at the end of a driveway at dawn, the doorbell camera above it with its lens taped over."
+    ],
+    captions: [
+      "Every night. 3:33. One step closer. 🚪",
+      "Support stopped replying after clip eleven.",
+      "The last clip wasn't from the driveway."
+    ],
+    thumbnails: [
+      "3:33 AM",
+      "One step closer",
+      "Clip 12"
+    ]
+  },
+
   /* ---------------- USER-REQUESTED TEST SCENARIOS ---------------- */
   {
     id: "pc-remote",
@@ -1163,6 +1370,12 @@ const seedBank = {
     "What if hibernation was contagious?",
     "What if a lighthouse kept running with no keeper — and no bill?",
     "What if your name sounded different to everyone who says it?"
+  ],
+  "Scary Story": [
+    "The dive log that ends mid-sentence",
+    "A ranger's list of things you don't do after dark",
+    "The apartment above yours that isn't on the lease",
+    "Every photo of the lake house has one extra window"
   ]
 };
 
@@ -1467,11 +1680,15 @@ function buildPackage(scenario, options) {
   const voice = VOICES.find(v => v.id === options.voice) || VOICES[0];
 
   const beats = scenario.beats.slice(0, runtime.beats);
+  const cta = CATEGORY_CTA[scenario.category] || NEUTRAL_CTA;
+  const hypeLead = scenario.category === "Scary Story"
+    ? "That's the story — tell me what you'd have done."
+    : "That's the timeline — tell me where it breaks.";
   const outro = voice.id === "hype"
-    ? `That's the timeline — tell me where it breaks. ${NEUTRAL_CTA}`
+    ? `${hypeLead} ${cta}`
     : voice.id === "deadpan"
-      ? `Anyway. ${NEUTRAL_CTA}`
-      : `Sit with that one for a second. ${NEUTRAL_CTA}`;
+      ? `Anyway. ${cta}`
+      : `Sit with that one for a second. ${cta}`;
 
   // Captions stay clean; the render's post kit adds hashtags per platform.
   const captions = scenario.captions.slice();
