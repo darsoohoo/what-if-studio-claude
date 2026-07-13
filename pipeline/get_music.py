@@ -47,6 +47,12 @@ TRACKS = {
         "Wallpaper",
         "Monkeys Spinning Monkeys",
     ],
+    # True History: period instruments for the documentary feel.
+    "period": [
+        "Suonatore di Liuto",
+        "Teller of the Tales",
+        "Lord of the Land",
+    ],
 }
 
 CREDIT_TEMPLATE = ('"{title}" Kevin MacLeod (incompetech.com). '

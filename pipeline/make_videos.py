@@ -76,6 +76,8 @@ MOOD_BY_CATEGORY = {
     "Speculative": "wonder",
     "History": "wonder",
     "Pop Culture": "upbeat",
+    "Scary Story": "eerie",
+    "True History": "period",
 }
 MUSIC_VOLUME = 0.12
 
