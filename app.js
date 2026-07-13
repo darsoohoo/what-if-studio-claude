@@ -2670,9 +2670,10 @@ async function runAssistantAction(action) {
       if (page.startsWith("video")) { $("navVideosBtn").click(); return "Checking the dashboard and heading to Videos…"; }
       if (page.startsWith("produce")) { $("navProduceBtn").click(); return "Checking the dashboard and heading to Produce…"; }
       if (page.startsWith("spend")) { $("navSpendBtn").click(); return "Checking the dashboard and heading to Spend…"; }
+      if (page.startsWith("result")) { $("navResultsBtn").click(); return "Checking the dashboard and heading to Results…"; }
       if (page.startsWith("help") || page.startsWith("how")) { $("navHelpBtn").click(); return "Opening the how-to guide…"; }
       if (page.startsWith("studio")) return "You're already in the Studio.";
-      return "I can take you to Videos, Produce, Spend, or the How-to guide.";
+      return "I can take you to Videos, Produce, Results, Spend, or the How-to guide.";
     }
     default:
       return null;
@@ -2709,7 +2710,7 @@ function parseIntent(raw) {
       + (c.packageGenerated ? " A package is generated and ready to export." : "") };
   }
 
-  const nav = t.match(/^(?:go to|take me to|open|show me|show)\s+(?:the\s+)?(videos?|produce|spend|help|how[- ]to|dashboard|guide)\b/);
+  const nav = t.match(/^(?:go to|take me to|open|show me|show)\s+(?:the\s+)?(videos?|produce|spend|results?|help|how[- ]to|dashboard|guide)\b/);
   if (nav) {
     const page = /help|how|guide/.test(nav[1]) ? "help" : (nav[1] === "dashboard" ? "videos" : nav[1]);
     return { action: { name: "navigate", args: { page } } };
@@ -2901,6 +2902,7 @@ function bindGlobalActions() {
   $("navVideosBtn").addEventListener("click", () => goToDashboard(""));
   $("navProduceBtn").addEventListener("click", () => goToDashboard("produce"));
   $("navSpendBtn").addEventListener("click", () => goToDashboard("spend"));
+  $("navResultsBtn").addEventListener("click", () => goToDashboard("results"));
   $("navHelpBtn").addEventListener("click", () => { window.location.href = "help.html"; });
 
   bindArrowNav($("categoryChips"), ".chip", (item) => item.click());

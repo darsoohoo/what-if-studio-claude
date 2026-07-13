@@ -136,6 +136,9 @@ details p { color: var(--text-dim); font-size: 13px; margin: 8px 0 2px; }
   <button type="button" id="navProduceBtn" class="side-nav-item side-nav-link">
     <span class="side-nav-icon" aria-hidden="true">🎞️</span><span class="side-nav-label">Produce</span>
   </button>
+  <button type="button" id="navResultsBtn" class="side-nav-item side-nav-link">
+    <span class="side-nav-icon" aria-hidden="true">📊</span><span class="side-nav-label">Results</span>
+  </button>
   <button type="button" id="navSpendBtn" class="side-nav-item side-nav-link">
     <span class="side-nav-icon" aria-hidden="true">💰</span><span class="side-nav-label">Spend</span>
   </button>
@@ -280,6 +283,17 @@ details p { color: var(--text-dim); font-size: 13px; margin: 8px 0 2px; }
   </section>
 
   <section>
+    <h2><span class="n">7</span>Log the numbers — the Results page</h2>
+    <p class="caption">The feed is the only reviewer that counts. Results turns your posts into the data that decides what to make next.</p>
+    <ul class="steps">
+      <li>After you post, click <b>Mark uploaded</b> on the video's card (Videos page) — that's what puts it on the <b>📊 Results</b> page.</li>
+      <li>Every few days, open <b>Results</b> and paste each video's <b>views</b> and <b>♥ likes</b> per platform into its row (commas are fine; numbers save when you leave the box, and re-entering later just overwrites with the latest).</li>
+      <li>The rollups do the rest: total and average views <b>by category</b>, like rates, and a "best category" card — so you can see whether Scary Story, True History, or the what-ifs deserve more of your time.</li>
+      <li>Everything is typed in by you and stays on your machine — nothing connects to TikTok, YouTube, or Instagram.</li>
+    </ul>
+  </section>
+
+  <section>
     <h2><span class="n">?</span>When something's off</h2>
     <details>
       <summary>"Dashboard offline" or the AI writer won't work</summary>
@@ -344,6 +358,7 @@ async function goDashboard(path) {
 document.getElementById("navVideosBtn").addEventListener("click", () => goDashboard(""));
 document.getElementById("navProduceBtn").addEventListener("click", () => goDashboard("produce"));
 document.getElementById("navSpendBtn").addEventListener("click", () => goDashboard("spend"));
+document.getElementById("navResultsBtn").addEventListener("click", () => goDashboard("results"));
 function showStatus(msg) {
   const el = document.getElementById("navStatus");
   el.textContent = msg;

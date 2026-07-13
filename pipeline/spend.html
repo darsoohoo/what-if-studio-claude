@@ -61,6 +61,9 @@ td.usd, th.usd { text-align: right; white-space: nowrap; color: var(--text); }
   <button type="button" id="navProduceBtn" class="side-nav-item side-nav-link">
     <span class="side-nav-icon" aria-hidden="true">🎞️</span><span class="side-nav-label">Produce</span>
   </button>
+  <button type="button" id="navResultsBtn" class="side-nav-item side-nav-link">
+    <span class="side-nav-icon" aria-hidden="true">📊</span><span class="side-nav-label">Results</span>
+  </button>
   <span class="side-nav-item current" aria-current="page">
     <span class="side-nav-icon" aria-hidden="true">💰</span><span class="side-nav-label">Spend</span>
   </span>
@@ -119,6 +122,7 @@ let sn = null; try { sn = localStorage.getItem("wis.navCollapsed"); } catch (e) 
 setNavCollapsed(sn === null ? matchMedia("(max-width: 700px)").matches : sn === "1", false);
 $id("navVideosBtn").addEventListener("click", () => { location.href = "/"; });
 $id("navProduceBtn").addEventListener("click", () => { location.href = "/produce"; });
+$id("navResultsBtn").addEventListener("click", () => { location.href = "/results"; });
 $id("navHelpBtn").addEventListener("click", () => { location.href = "/help"; });
 $id("navStudioBtn").addEventListener("click", () => {
   if (history.length > 1) history.back();

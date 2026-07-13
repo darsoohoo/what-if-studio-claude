@@ -20,7 +20,7 @@
   /* file:// (the Studio opened directly) talks to the dashboard by
      absolute address; server-hosted pages use their own origin. */
   const API_BASE = window.location.protocol === "file:" ? "http://127.0.0.1:8765" : "";
-  const NAV_TARGETS = { studio: "/studio/", videos: "/", produce: "/produce", spend: "/spend", help: "/help" };
+  const NAV_TARGETS = { studio: "/studio/", videos: "/", produce: "/produce", spend: "/spend", results: "/results", help: "/help" };
 
   /* ---------- built-in dashboard host (no window.assistantHost) ---------- */
 
@@ -29,6 +29,7 @@
     if (path.endsWith("/studio")) return "studio";
     if (path === "/produce") return "produce";
     if (path === "/spend") return "spend";
+    if (path === "/results") return "results";
     if (path === "/help" || /help\.html$/.test(path)) return "help";
     if (/index\.html$/.test(path) && window.location.protocol === "file:") return "studio";
     return "videos";
@@ -56,7 +57,7 @@
       },
       parseIntent(text) {
         const t = text.toLowerCase();
-        const nav = t.match(/^(?:go to|take me to|open|show me|show)\s+(?:the\s+)?(studio|videos?|produce|spend|help|how[- ]to|guide)\b/);
+        const nav = t.match(/^(?:go to|take me to|open|show me|show)\s+(?:the\s+)?(studio|videos?|produce|spend|results?|help|how[- ]to|guide)\b/);
         if (nav) return { action: { name: "navigate", args: { page: nav[1] } } };
         if (/what('?s| is) (this|here)|which page|where am i/.test(t)) {
           return { reply: `You're on the ${page[0].toUpperCase() + page.slice(1)} page. Ask me anything about it, or say “go to …” to move around.` };
@@ -69,8 +70,9 @@
           let key = String(args.page || "").toLowerCase();
           if (/help|how|guide/.test(key)) key = "help";
           if (key.startsWith("video")) key = "videos";
+          if (key.startsWith("result")) key = "results";
           const target = NAV_TARGETS[key];
-          if (!target) return "I can go to Studio, Videos, Produce, Spend, or Help.";
+          if (!target) return "I can go to Studio, Videos, Produce, Results, Spend, or Help.";
           if (key === page) return "You're already there.";
           window.location.href = target;
           return `Heading to ${key[0].toUpperCase() + key.slice(1)}…`;
@@ -113,8 +115,10 @@
       a: "The app and the default pipeline are free (free TTS, free image generation). Paid extras are opt-in via keys: OpenAI writing, ElevenLabs voices, Infer AI video. The Spend page tracks what the paid services cost you." },
     { k: ["privacy", "tracking", "account", "login", "server"],
       a: "Everything runs locally: no server on the internet, no account, no tracking, no remote content. The optional helper runs only on your machine at 127.0.0.1. Nothing is posted anywhere automatically." },
-    { k: ["pages", "videos page", "produce page", "spend page", "sidebar"],
-      a: "The sidebar pages: Studio (build packages), Videos (review + post-kit for finished renders), Produce (per-beat visuals, voices, script edits, re-renders), Spend (API costs), and the How-to guide. Say “go to …” and I'll take you there." },
+    { k: ["pages", "videos page", "produce page", "spend page", "results page", "sidebar"],
+      a: "The sidebar pages: Studio (build packages), Videos (review + post-kit for finished renders), Produce (per-beat visuals, voices, script edits, re-renders), Results (log each posted video's views/likes and see which categories win), Spend (API costs), and the How-to guide. Say “go to …” and I'll take you there." },
+    { k: ["results", "views", "likes", "performance", "which category", "winning", "analytics", "track"],
+      a: "The Results page (sidebar → 📊 Results) tracks how posted videos perform: it lists every video you've marked as posted, you paste in its view/like counts per platform every few days, and the rollups show total and average views by category plus like rates — so the numbers, not guesswork, decide what to make more of. Everything is typed in by you and stays local; nothing connects to the platforms." },
     { k: ["render all", "batch", "whole category", "every scenario", "all of them", "back-to-back"],
       a: "You can render a whole category in one go: on the Studio page pick a category filter and click “🎬 Render all N …” (or tell me “render all scary stories”). It exports ONE queue file with every scenario as its own slot, and the watcher renders them back-to-back — a few minutes each, free, using your current runtime and voice settings. Finished videos stack up on the Videos page." },
     { k: ["scary story", "scary stories", "true history", "horror", "creepy", "story categories", "categories"],
