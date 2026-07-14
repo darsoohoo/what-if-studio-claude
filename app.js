@@ -1034,8 +1034,9 @@ const scenarioBank = [
       "Close-up: a gloved hand following a thin guideline through a narrow rock squeeze, tanks scraping stone.",
       "Macro shot: a plastic line arrow clipped to the guideline, pointing into darkness, caught in the flashlight beam.",
       "Zero visibility: a wall of brown silt blooming through the beam, a hand gripping the line the only visible thing.",
-      "Surface shot: the diver's head breaking calm water in a dark cave pool, gasping, dawn light from the entrance.",
-      "Closer: coiled recovered dive line on wet stone, all arrows pointing one way, one frame held too long."
+      "Pitch-black water: a gloved hand frozen on the guideline, a second and a third plastic arrow clipped ahead of it, the line under the glove visibly older and stiffer.",
+      "Closer: coiled recovered dive line on wet stone, all arrows pointing one way, one frame held too long.",
+      "Surface shot: the diver's head breaking calm water in a dark cave pool, gasping, dawn light from the entrance."
     ],
     captions: [
       "The line is life. So whose line was he holding? 🤿",
@@ -1072,9 +1073,10 @@ const scenarioBank = [
       "Hook: a long empty hospital corridor at night, half the fluorescent lights off, one flickering at the far end.",
       "Close-up: a yellowed handwritten list taped inside a metal supply-closet door, seven rules in different inks.",
       "Detail shot: a row of four wheelchairs by an elevator in low light, a fifth shape in shadow at the end.",
-      "The nurses' station at 3 AM: a call-board lighting up '4B', a young nurse's face lit from below by the panel.",
+      "A dark hospital door numbered 4B at the end of a storage corridor, dusty shelving visible through its little window, a disconnected call-bell wire hanging beside the frame.",
       "POV walking slowly toward a door standing ajar at the end of a dark storage corridor, flashlight beam trembling.",
-      "Closer: an old pen held out over the list, one blank space under rule seven, hand hesitating."
+      "Closer: an old pen held out over the list, one blank space under rule seven, hand hesitating.",
+      "The nurses' station at 3 AM: a call-board lighting up '4B', a young nurse's face lit from below by the panel."
     ],
     captions: [
       "Night-shift rules aren't in the handbook. They're in the closet. 🏥",
@@ -1109,11 +1111,12 @@ const scenarioBank = [
     ],
     shotList: [
       "Hook: dense old-growth forest in flat grey light, a clean wooden staircase standing alone in a clearing.",
-      "A search-and-rescue volunteer in an orange vest checking a handheld GPS among huge trees, breath visible.",
+      "A dusty ranger-station briefing room, volunteers in orange vests taking notes, a grey-haired coordinator speaking without looking up from his grid map.",
       "Low angle up the staircase: polished banister, carpet runner, treetops where a second floor should be.",
       "Close-up: a radio in a gloved hand, static bars dancing, the volunteer's eyes fixed on something off-frame.",
-      "Overhead map graphic: a search grid with a handful of squares marked with small red Xs.",
-      "Closer: an old filing folder labeled 'STRUCTURES' dropped onto a desk, thick with decades of reports."
+      "A handheld GPS screen showing a 51-minute stationary gap in the track log, lying beside a phone photo of an empty clearing with no stairs in it.",
+      "Closer: an old filing folder labeled 'STRUCTURES' dropped onto a desk, thick with decades of reports.",
+      "Overhead map graphic: a search grid with a handful of squares marked with small red Xs."
     ],
     captions: [
       "SAR briefing, one line: if you find stairs, keep walking. 🌲",
@@ -1149,8 +1152,9 @@ const scenarioBank = [
     shotList: [
       "Hook: a tiny glass fire-lookout tower on a mountain ridge at dusk, one warm light against a wall of storm clouds.",
       "Interior: a woman by lantern light at an old radio set, logbook open, endless dark forest beyond the glass.",
-      "Extreme close-up: a radio handset on its hook, the transmit light glowing red, no hand anywhere near it.",
       "Her face lit by the radio dial at night, eyes wide, listening to her own voice come out of the speaker.",
+      "A dispatch transcript dated tomorrow lying beside the radio set, a pencil resting on it, storm light moving through the tower glass.",
+      "Extreme close-up: a radio handset on its hook, the transmit light glowing red, no hand anywhere near it.",
       "Dawn wide shot: a thin column of smoke rising from a ridge line, small and early against a pink sky.",
       "Closer: a weathered logbook page, weather entries in neat handwriting, the last line reading only 'thank you.'"
     ],
@@ -1189,9 +1193,10 @@ const scenarioBank = [
       "Hook: a dead-centered symmetrical shot down a suburban street of identical sage-green houses, one front door standing open at the far end.",
       "A smiling real-estate agent in the doorway holding a brochure, framed perfectly by the doorframe, expression a little too calm, looking straight into the lens.",
       "Wide static shot through a windshield: the same house seen at the end of three different turns, GPS screen glowing with a road that spirals.",
-      "Bright cheerful daylight kitchen, groceries neatly lined up on the counter, every label facing forward, no one in frame.",
+      "Dawn down a row of identical porches: every front door carrying the same small chalk mark, dinner steam rising behind one lit window.",
       "Close-up: an open guest book, hundreds of signatures, one pair repeated down the page in slowly aging ink.",
-      "Closer: the couple standing unnaturally still on their porch, waving at someone off-frame, their smiles held one beat too long."
+      "Closer: the couple standing unnaturally still on their porch, waving at someone off-frame, their smiles held one beat too long.",
+      "Bright cheerful daylight kitchen, groceries neatly lined up on the counter, every label facing forward, no one in frame."
     ],
     captions: [
       "Every road out curves politely back. 🏘️",
@@ -1226,11 +1231,12 @@ const scenarioBank = [
     ],
     shotList: [
       "Hook: identical husbands in identical coats walking down a curved suburban street in perfect step, dawn light, shot dead-centered and symmetrical.",
+      "A moving van outside a lake-blue house, a welcome basket waiting on the porch with a tea tin front and center, the street behind it impossibly tidy.",
       "A woman at a sunny kitchen table looking directly into the camera over a teacup, expression composed a beat too carefully.",
-      "Wide static shot of a cheerful cul-de-sac at dusk: every porch light snapping on in the same frame, every curtain closing at once.",
       "Two workers in matching polos painting a kitchen wall yellow in bright daylight while a woman stands unnaturally still in the doorway, cup in hand.",
       "Close-up: a manila folder of typed evaluation forms, a red RENEWED stamp, three deep, slightly overlapping.",
-      "Closer: her reflection in a hallway mirror practicing a smile, the reflection settling half a second after she does."
+      "Closer: her reflection in a hallway mirror practicing a smile, the reflection settling half a second after she does.",
+      "Wide static shot of a cheerful cul-de-sac at dusk: every porch light snapping on in the same frame, every curtain closing at once."
     ],
     captions: [
       "The welcome basket knew her favorite tea. 🏭",
@@ -1269,7 +1275,8 @@ const scenarioBank = [
       "Dead-centered symmetrical shot of a suburban billboard towering over identical rooftops, a workman on a ladder changing it in the dark.",
       "Bright daylight supermarket endcap of comfort items arranged too perfectly, a lone shopping cart standing unnaturally still in the aisle.",
       "Close-up: a 1962 plat map labeled PANEL SIX, a consent form beneath it with a faded signature and an empty checkbox.",
-      "Closer: a woman drying dishes at night, speaking calmly toward the ceiling of an empty kitchen, the window behind her one shade too dark."
+      "Closer: a woman drying dishes at night, speaking calmly toward the ceiling of an empty kitchen, the window behind her one shade too dark.",
+      "The corner store at closing time, lights going off aisle by aisle, one shelf left spotlit with a single unfamiliar product facing the door."
     ],
     captions: [
       "She made up a brand. It was on the shelf by Friday. 🛒",
@@ -1305,9 +1312,10 @@ const scenarioBank = [
     shotList: [
       "Hook: grainy black-and-white doorbell night footage of a suburban driveway, a still figure at the far edge by a mailbox, timestamp 3:33 AM.",
       "A woman's face lit only by her phone in a dark bedroom, the motion alert glowing on the screen.",
-      "Split grid of doorbell clips side by side, the same figure incrementally closer in each frame, timestamps identical.",
       "Extreme close-up of a laptop screen scrubbing footage: a coat button, a face just out of focus, cursor trembling on the pause bar.",
+      "Split grid of doorbell clips side by side, the same figure incrementally closer in each frame, timestamps identical.",
       "Wide shot: her silhouette at the dark window at 3:33, phone buzzing in hand, the driveway below completely empty.",
+      "Grainy night-vision footage looking down an upstairs hallway toward a bedroom door standing open, timestamp 3:33 AM, the frame trembling slightly.",
       "Closer: a FOR SALE sign at the end of a driveway at dawn, the doorbell camera above it with its lens taped over."
     ],
     captions: [
@@ -1349,10 +1357,11 @@ const scenarioBank = [
     ],
     shotList: [
       "Hook: a lone woman in rough 16th-century clothes dancing in an empty cobblestone street, medieval townsfolk staring from doorways.",
+      "A cobblestone lane where a dozen townsfolk have joined a dancing woman, faces exhausted, onlookers crossing themselves in doorways.",
       "Candle-lit interior: physicians in dark robes arguing over an open medical folio, a dancing figure visible through the window behind them.",
       "Wide shot of a crowded medieval square: dozens of exhausted dancers, hired musicians playing on a wooden stage, oil-painting texture.",
-      "Close-up: worn leather shoes and bruised feet still moving on cobblestones, dawn light, long shadows.",
       "A creaking wagon of slumped dancers winding up a mountain road toward a small stone chapel.",
+      "A modern historian's desk: the 1518 chronicle open under a lamp beside spread research papers, one line highlighted, centuries touching.",
       "Closer: an old chronicle page in Latin script beside a single burning candle, quill resting on the desk."
     ],
     captions: [
@@ -1392,7 +1401,8 @@ const scenarioBank = [
       "Action shot: emus sprinting in all directions through scrubland, dust flying, comically fast, low camera angle.",
       "A vintage truck bouncing over rough paddocks, gunner clinging on, emus effortlessly pulling away ahead.",
       "Officer at a field desk writing a report by lamplight, map of Western Australia pinned behind him.",
-      "Closer: Australia's coat of arms, slow push-in on the emu, golden light."
+      "Closer: Australia's coat of arms, slow push-in on the emu, golden light.",
+      "Golden hour: a lone emu standing tall in the wheat, looking straight down the lens, utterly unbothered."
     ],
     captions: [
       "1932: Australia vs 20,000 emus. Official military operation. 🪶",
@@ -1431,7 +1441,8 @@ const scenarioBank = [
       "Miners' camp in the Rockies at night: men in suspenders cooking over a fire under a sky glowing like sunrise.",
       "Interior telegraph office: an operator jerking his hand back from a sparking brass key, paper tape smoking on the desk.",
       "Close-up: a disconnected battery on a wooden desk, the telegraph key beside it clicking by itself under aurora light through the window.",
-      "Modern contrast shot: a city power grid at dusk seen from above, then a slow fade of entire districts going dark."
+      "Modern contrast shot: a city power grid at dusk seen from above, then a slow fade of entire districts going dark.",
+      "The sun in extreme close-up, one small bright scar flaring on its surface, silent and patient."
     ],
     captions: [
       "1859: auroras in Cuba, sparks in the wires, fire in the sky. 🌌",
@@ -1466,10 +1477,11 @@ const scenarioBank = [
     ],
     shotList: [
       "Hook: sepia archival look of runners in 1900s singlets disappearing into a dust cloud kicked up by an early automobile on a dirt road.",
+      "Sepia start line: thirty-two runners in 1904 singlets under a brutal noon sun, officials' motorcars idling ahead of them, dust already rising.",
       "A grinning athlete waving from the passenger seat of a 1904 open-top car while exhausted runners plod behind.",
       "Two handlers in flat caps supporting a glassy-eyed runner between them, one holding a brandy bottle and a spoon.",
       "A small mustachioed runner in cut-off trousers asleep under an orchard tree, apples scattered, race number still pinned on.",
-      "A runner sprinting off a country road with two farm dogs at his heels, wheat fields, period photograph texture.",
+      "A modern marathon aid station in bright daylight: volunteers holding out an endless row of water cups as runners stream past.",
       "Closer: a battered 1904 gold medal on a wooden table next to an antique brown medicine bottle, single overhead light."
     ],
     captions: [
@@ -1506,10 +1518,11 @@ const scenarioBank = [
     shotList: [
       "Hook: archival-style shot of a brown bear standing upright among smiling WWII soldiers in field uniforms beside a supply truck.",
       "Warm dusty scene: young soldiers bottle-feeding a small bear cub from a glass bottle at a desert camp, mountains behind.",
-      "A grown bear seated in the back of an open army truck among kit bags, soldiers laughing, Mediterranean coast road.",
+      "A gangway queue at a Mediterranean port: soldiers boarding a troop ship with a full-grown bear standing in line among them, an officer stamping papers.",
       "Dramatic hillside: the bear upright, forearms wrapped around a wooden ammunition crate, soldiers hauling crates alongside, smoke on the ridge.",
       "Close-up: a painted unit emblem on a truck door — a bear carrying an artillery shell — weathered and chipped.",
-      "Closer: the bronze statue of Wojtek in Edinburgh's Princes Street Gardens, an old man in a beret resting a hand on its paw."
+      "Closer: the bronze statue of Wojtek in Edinburgh's Princes Street Gardens, an old man in a beret resting a hand on its paw.",
+      "A grown bear seated in the back of an open army truck among kit bags, soldiers laughing, Mediterranean coast road."
     ],
     captions: [
       "Private Wojtek: enlisted 1944, promoted to corporal, never dropped a crate. 🐻",
