@@ -299,8 +299,10 @@ def draft_prompt(title, category, runtime=60):
             "5 a final line with a double meaning that lingers after the video ends. "
             "Present tense, concrete sensory details (sounds, timestamps, textures), a specific "
             "person doing something in every beat. Root the fear in something human - grief, "
-            "guilt, conformity, being watched, needing to belong, who gets believed - shown, "
-            "never preached. Fictional but grounded - no real victims, no gore, no "
+            "guilt, conformity, being watched, needing to belong, who gets believed, or a life "
+            "that turns out to be curated for you - shown, never preached. Too-perfect places "
+            "(planned suburbs, company towns, wellness communities, lives staged like showrooms) "
+            "are welcome sources of dread. Fictional but grounded - no real victims, no gore, no "
             "jump-scare cliches. "
             "tags = 3-5 lowercase topic words. emoji = one fitting emoji."
         )
@@ -480,10 +482,12 @@ def morning_titles(recent, count):
         "no gore, never phrased as a 'what if' question. Favor the social-thriller "
         "register - a familiar everyday setting (a job, a family ritual, an app, a "
         "neighborhood) hiding one quietly wrong thing, where the scare could turn out "
-        "to say something about people. "
+        "to say something about people. Too-perfect places are welcome too: planned "
+        "suburbs, company towns, wellness communities, lives that feel staged. "
         f"Invent {count} fresh, specific story premises as titles of 5-12 words, "
-        "in the register of: 'The dive log that ends mid-sentence' or "
-        "'The new neighbors all wave with the wrong hand'. "
+        "in the register of: 'The dive log that ends mid-sentence', "
+        "'The new neighbors all wave with the wrong hand', or "
+        "'The model home furnished with your childhood photos'. "
         'Reply with ONLY minified JSON, exactly: {"titles":["...","..."]}. '
         + ("Avoid anything similar to these recent ones: " + "; ".join(recent[-30:]) + "."
            if recent else "")
