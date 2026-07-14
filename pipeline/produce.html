@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>What If Studeos — Produce</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <style>
 :root {
   --bg: #0b0d14; --bg-raised: #131624; --bg-inset: #0e1120;
@@ -131,6 +132,10 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
     <h2><span class="step">1</span>Pick a package</h2>
     <select id="pkgSelect"><option value="">Loading…</option></select>
     <p class="hint">These come from your queue exports. Export a queue in the Studio and it appears here.</p>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap">
+      <button type="button" id="morningBtn">🌅 Draft 3 fresh scary scenarios</button>
+      <span class="hint" id="morningStatus" style="margin:0"></span>
+    </div>
   </section>
 
   <div id="flow" hidden>
@@ -170,6 +175,7 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
             <option value="3d">3D animated</option>
             <option value="infographic">Infographic</option>
             <option value="dark">Dark / moody</option>
+            <option value="eerie">Eerie / social-thriller</option>
             <option value="archival">Archival / historical</option>
           </select>
         </label>
@@ -241,10 +247,7 @@ $id("navVideosBtn").addEventListener("click", () => { location.href = "/"; });
 $id("navSpendBtn").addEventListener("click", () => { location.href = "/spend"; });
 $id("navResultsBtn").addEventListener("click", () => { location.href = "/results"; });
 $id("navHelpBtn").addEventListener("click", () => { location.href = "/help"; });
-$id("navStudioBtn").addEventListener("click", () => {
-  if (history.length > 1) history.back();
-  else alert("Your Studio is index.html — open it from the project folder (or Start-What-If-Studio.bat).");
-});
+$id("navStudioBtn").addEventListener("click", () => { location.href = "/studio/"; });
 
 /* ---------- step 1: packages ---------- */
 async function loadQueues() {
@@ -1227,7 +1230,39 @@ function setRenderStatus(msg, cls) {
 }
 $id("openVideosBtn").addEventListener("click", () => { location.href = "/"; });
 
+/* ---------- morning batch: fresh scary drafts on demand ---------- */
+async function morningStatus() {
+  try {
+    const m = await api("/api/morning");
+    if (m.titles && m.titles.length) {
+      $id("morningStatus").textContent =
+        `Today's batch (${m.titles.length}): ${m.titles.join(" · ")} — pick them above.`;
+    } else {
+      $id("morningStatus").textContent =
+        `Fresh ${m.config.category} drafts appear here every morning after ${m.config.hour}:00 while the studio is running — or click the button.`;
+    }
+  } catch (e) { /* dashboard hiccup - button still works */ }
+}
+$id("morningBtn").addEventListener("click", async () => {
+  const btn = $id("morningBtn");
+  btn.disabled = true;
+  $id("morningStatus").textContent = "Drafting 3 fresh scary scenarios… (about half a minute)";
+  try {
+    const r = await api("/api/morning/run", {});
+    if (r.error) throw new Error(r.error);
+    $id("morningStatus").textContent = r.made.length
+      ? `Drafted: ${r.made.join(" · ")} — loading them into the package list…`
+      : "The writers are busy — try again in a minute.";
+    await loadQueues();
+    morningStatus();
+  } catch (e) {
+    $id("morningStatus").textContent = "Drafting failed: " + e.message;
+  }
+  btn.disabled = false;
+});
+
 loadQueues();
+morningStatus();
 </script>
 <script src="/assistant.js"></script>
 </body>

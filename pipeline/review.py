@@ -37,6 +37,7 @@ STUDIO_TYPES = {
     ".html": "text/html; charset=utf-8",
     ".css": "text/css; charset=utf-8",
     ".js": "application/javascript; charset=utf-8",
+    ".svg": "image/svg+xml",
 }
 OUTPUT = HERE / "output"
 TRASH = OUTPUT / "trash"
@@ -279,19 +280,28 @@ def draft_prompt(title, category, runtime=60):
         '{"premise":"...","beats":["...","...","...","...","..."],"tags":["...","...","..."],"emoji":"..."} '
     )
     if category == "Scary Story":
-        # Narrative horror, told straight - not a "What if?" explainer.
+        # Narrative horror in the modern social-thriller register (the
+        # Get Out / Twilight Zone school): the scare hides inside something
+        # human, and the reveal reframes everything that came before.
         return (
             "You write scripts for short-form scary-story videos (TikTok horror narration: "
-            "true-feeling, first-person or documentary tone, dread over gore). "
+            "true-feeling, first-person or documentary tone, dread over gore) in the register "
+            "of modern social-thriller horror: an ordinary person in a familiar world notices "
+            "one quietly wrong detail, and the truth underneath says something real about "
+            "people. "
             f'For the story "{title}", ' + shape +
             "Rules: premise = 2-3 sentences setting the scene and hinting at what's wrong. "
             f"beats = exactly 5 spoken story beats, {words} words each, no stage directions: "
             f"({pace}) "
-            "1 the ordinary setup, 2 the first wrong detail, 3 the point of no return, "
-            "4 the reveal or escalation, 5 a final line that lingers after the video ends. "
+            "1 the ordinary setup with one detail slightly off, 2 the wrong detail becomes "
+            "impossible to unsee, 3 the point of no return, 4 the reveal that RECONTEXTUALIZES "
+            "everything before it - the horror was hiding in plain sight the whole time, "
+            "5 a final line with a double meaning that lingers after the video ends. "
             "Present tense, concrete sensory details (sounds, timestamps, textures), a specific "
-            "person doing something in every beat. Fictional but grounded - no real victims, "
-            "no gore, no jump-scare cliches. "
+            "person doing something in every beat. Root the fear in something human - grief, "
+            "guilt, conformity, being watched, needing to belong, who gets believed - shown, "
+            "never preached. Fictional but grounded - no real victims, no gore, no "
+            "jump-scare cliches. "
             "tags = 3-5 lowercase topic words. emoji = one fitting emoji."
         )
     if category == "True History":
@@ -403,6 +413,173 @@ def ai_draft(title, category, runtime=60):
     return ai_draft_pollinations(title, category, runtime)
 
 
+# ---------------- morning batch ----------------
+# While the dashboard is running, draft a few fresh Scary Story packages
+# each morning so Produce has per-beat prompts ready to copy into tryinfer
+# Studio. Drafting ONLY - nothing is rendered, billed to tryinfer, or
+# posted by itself. State in pipeline/morning-log.json (gitignored).
+
+MORNING = {"count": 3, "category": "Scary Story", "runtime": 90, "hour": 6}
+MORNING_LOG = HERE / "morning-log.json"
+SCARY_COLORS = {"from": "#120a16", "to": "#8a2431"}
+_morning_lock = threading.Lock()
+
+# Offline fallback titles if both writers are unreachable.
+MORNING_SEEDS = [
+    "The carpool app matched her with a car that has no driver",
+    "The window cleaner who waved from the 14th floor of a 12-story building",
+    "The overnight ferry that docks twice",
+    "The last voicemail says to stop looking for him",
+    "The house sitter's list ends with a rule that is crossed out",
+    "The elevator inspector who never signs floor nine",
+    "The campsite log everyone signs on the way in but not out",
+    "The subway announcement that names you",
+    "The motel room phone that only dials room 8",
+    "The snowplow driver who keeps clearing a road that leads nowhere",
+    "The neighbor's porch light that blinks in patterns",
+    "The night fisherman who reels in his own tackle box",
+]
+
+
+def load_morning_log():
+    try:
+        return json.loads(MORNING_LOG.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _ai_text(prompt):
+    """One small completion: OpenAI when a key exists, else Pollinations."""
+    key = openai_key()
+    if key:
+        body = json.dumps({
+            "model": OPENAI_MODEL,
+            "messages": [{"role": "user", "content": prompt}],
+            "response_format": {"type": "json_object"},
+            "temperature": 1.0,
+            "max_tokens": 300,
+        }).encode("utf-8")
+        req = urllib.request.Request(OPENAI_API, data=body, method="POST", headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "User-Agent": "WhatIfStudio-review/1.0",
+        })
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        return data["choices"][0]["message"]["content"]
+    url = TEXT_AI + quote(prompt) + f"?seed={int(time.time())}"
+    req = urllib.request.Request(url, headers={"User-Agent": "WhatIfStudio-review/1.0"})
+    with urllib.request.urlopen(req, timeout=90) as resp:
+        return resp.read().decode("utf-8", "replace")
+
+
+def morning_titles(recent, count):
+    """Fresh scary-story titles from the AI, avoiding recent repeats."""
+    prompt = (
+        "You name short-form scary-story videos: narrative dread, real-feeling, "
+        "no gore, never phrased as a 'what if' question. Favor the social-thriller "
+        "register - a familiar everyday setting (a job, a family ritual, an app, a "
+        "neighborhood) hiding one quietly wrong thing, where the scare could turn out "
+        "to say something about people. "
+        f"Invent {count} fresh, specific story premises as titles of 5-12 words, "
+        "in the register of: 'The dive log that ends mid-sentence' or "
+        "'The new neighbors all wave with the wrong hand'. "
+        'Reply with ONLY minified JSON, exactly: {"titles":["...","..."]}. '
+        + ("Avoid anything similar to these recent ones: " + "; ".join(recent[-30:]) + "."
+           if recent else "")
+    )
+    try:
+        raw = _ai_text(prompt)
+        start, end = raw.find("{"), raw.rfind("}")
+        titles = [str(t).strip() for t in json.loads(raw[start:end + 1]).get("titles", [])
+                  if str(t).strip()]
+        seen = {r.lower() for r in recent}
+        titles = [t for t in titles if t.lower() not in seen][:count]
+        if titles:
+            return titles
+    except Exception as exc:
+        print(f"morning batch: title generation failed ({exc}); using the seed list")
+    seen = {r.lower() for r in recent}
+    pool = [s for s in MORNING_SEEDS if s.lower() not in seen] or list(MORNING_SEEDS)
+    return pool[:count]
+
+
+def scaffold_scary_package(title, draft, runtime):
+    """A full render-ready package from an AI draft (server-side sibling of
+    the app's buildPackage, fixed to the Scary Story house style)."""
+    first = draft["premise"].split(". ")[0].rstrip(".") + "."
+    return {
+        "scenarioId": "morning-" + mv.slugify(title)[:28],
+        "title": title,
+        "category": "Scary Story",
+        "colors": dict(SCARY_COLORS),
+        "platform": "Any",
+        "aspect": "9:16 vertical",
+        "runtime": runtime,
+        "runtimeLabel": "3 min" if runtime == 180 else f"{runtime}s",
+        "pacingNote": "Room to breathe: let the dread land.",
+        "voice": "Calm Narrator",
+        "direction": "Low, steady, confident. Let pauses do the scaring. Never rush the payoff line.",
+        "premise": draft["premise"],
+        "safety": "Fictional scary story - dread over gore, no real victims depicted.",
+        "tags": draft.get("tags") or ["scary story"],
+        "hooks": [first],
+        "beats": draft["beats"],
+        "outro": "Sit with that one for a second. Follow for more scary stories.",
+        "captions": [title, "Wait for the last line."],
+        "thumbnails": [" ".join(title.split()[:4]).upper()],
+        "generatedAt": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    }
+
+
+def morning_batch(force=False):
+    """Draft today's scary packages into exports/ (once per day unless forced)."""
+    with _morning_lock:
+        log = load_morning_log()
+        today = time.strftime("%Y-%m-%d")
+        if log.get("date") == today and not force:
+            return {"date": today, "made": [], "titles": log.get("titles", []), "already": True}
+        recent = log.get("history", [])
+        made = []
+        for title in morning_titles(recent, MORNING["count"]):
+            try:
+                draft = ai_draft(title, MORNING["category"], MORNING["runtime"])
+                pkg = scaffold_scary_package(title, draft, MORNING["runtime"])
+                EXPORTS_DIR.mkdir(exist_ok=True)
+                name = (f"whatifstudio-queue-morning-{mv.slugify(title)[:40]}"
+                        f"-{time.strftime('%Y%m%d-%H%M%S')}.json")
+                (EXPORTS_DIR / name).write_text(json.dumps({
+                    "app": "what-if-studio", "format": 1,
+                    "exportedAt": pkg["generatedAt"],
+                    "items": [{"slot": 1, "status": "planned", "notes": "", "package": pkg}],
+                }, indent=2), encoding="utf-8")
+                made.append(title)
+            except Exception as exc:
+                print(f"morning batch: '{title}' failed: {exc}")
+        titles = (log.get("titles", []) if log.get("date") == today else []) + made
+        if made:
+            MORNING_LOG.write_text(json.dumps({
+                "date": today, "titles": titles,
+                "history": (recent + made)[-60:],
+            }, indent=2), encoding="utf-8")
+        return {"date": today, "made": made, "titles": titles, "already": False}
+
+
+def morning_loop():
+    """Background timer: fire the batch once a day after MORNING['hour']."""
+    while True:
+        try:
+            log = load_morning_log()
+            if (time.localtime().tm_hour >= MORNING["hour"]
+                    and log.get("date") != time.strftime("%Y-%m-%d")):
+                res = morning_batch()
+                if res["made"]:
+                    print("morning batch: drafted " + " | ".join(res["made"]))
+        except Exception as exc:
+            print(f"morning batch loop: {exc}")
+        time.sleep(600)
+
+
 # ---------------- in-app assistant chat ----------------
 
 # The app executes ONLY these actions (see runAssistantAction in app.js) -
@@ -423,8 +600,9 @@ CHAT_ACTIONS = """\
 
 CHAT_APP_FACTS = """\
 What If Studio makes short-form "What if?" videos (TikTok / YouTube Shorts / Reels, 9:16 vertical).
-The app is a local static page: scenario library (10 categories - 8 "what if" ones plus two story categories that brand their own renders automatically: Scary Story, narrative horror with dark visuals + a "follow for more scary stories" CTA + horror hashtags, and True History, real documented events with archival visuals + a "follow for more true history" CTA + history hashtags), package settings (runtime 30s/60s/90s/3min; voice Calm/High-Energy/Deadpan), and "Generate + Export for render" which downloads a queue .json. A watcher (started via Start-What-If-Studio.bat) picks that file up from Downloads and renders the full video: TTS voiceover, word-synced captions, per-beat visuals, music, thumbnail, and a post kit with per-platform hashtags. Posting is always manual.
+The app is a local static page: scenario library (10 categories - 8 "what if" ones plus two story categories that brand their own renders automatically: Scary Story, social-thriller narrative horror with eerie still-and-symmetrical visuals + a "follow for more scary stories" CTA + horror hashtags, and True History, real documented events with archival visuals + a "follow for more true history" CTA + history hashtags), package settings (runtime 30s/60s/90s/3min; voice Calm/High-Energy/Deadpan), and "Generate + Export for render" which downloads a queue .json. A watcher (started via Start-What-If-Studio.bat) picks that file up from Downloads and renders the full video: TTS voiceover, word-synced captions, per-beat visuals, music, thumbnail, and a post kit with per-platform hashtags. Posting is always manual.
 Custom scenarios: the builder ("+ Create your own scenario") with an AI "Write it for me" draft, all editable, saved in the browser's local storage.
+Morning batch: while the dashboard runs, it drafts 3 fresh 90s Scary Story packages daily after 6:00 (plus a 🌅 on-demand button on Produce); they land in the Produce package dropdown with per-beat prompts ready to copy into tryinfer Studio. Drafting only - nothing renders or posts by itself.
 Dashboard pages (this server, 127.0.0.1:8765): Videos (review renders), Produce (per-beat visuals, voices, re-render), Results (log posted videos' views/likes by hand; rollups by category show what's winning), Spend (API costs), Help.
 Optional API keys, one per file in pipeline/: openai_key.txt (better writing), elevenlabs_key.txt (premium voices), tryinfer_key.txt (paid AI video), pexels_key.txt (stock). Free fallbacks exist for everything.
 Everything runs locally; no accounts, no tracking, no auto-posting. Never promise views, virality, or income."""
@@ -1151,10 +1329,26 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
+        # Bare /studio breaks the app's relative asset URLs (app.js resolves
+        # to /app.js) - bounce to the canonical trailing-slash form.
+        if self.path.split("?")[0] == "/studio":
+            self.send_response(301)
+            self.send_header("Location", "/studio/")
+            self.end_headers()
+            return
         studio = studio_file(self.path)
         if studio:
             ctype = STUDIO_TYPES.get(studio.suffix.lower(), "application/octet-stream")
             self.send_file(studio, ctype)
+            return
+        # The brand favicon, shared by every page (the app's own file sits in
+        # the project root; dashboard pages reference it absolutely).
+        if self.path.split("?")[0] in ("/favicon.svg", "/favicon.ico"):
+            icon = STUDIO / "favicon.svg"
+            if icon.is_file():
+                self.send_file(icon, STUDIO_TYPES[".svg"])
+            else:
+                self.send_json({"error": "favicon not found"}, 404)
             return
         # The shared assistant chat, loaded by every dashboard page (and by
         # help.html, whose relative src resolves here when server-hosted).
@@ -1179,6 +1373,13 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == "/api/results":
             self.send_json(results_payload())
+            return
+        if self.path == "/api/morning":
+            log = load_morning_log()
+            today = time.strftime("%Y-%m-%d")
+            self.send_json({"date": log.get("date"), "today": today,
+                            "titles": log.get("titles", []) if log.get("date") == today else [],
+                            "config": MORNING})
             return
         if self.path == "/api/spend":
             self.send_json(spend_summary())
@@ -1763,6 +1964,16 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": str(exc)}, 400)
             return
 
+        if self.path == "/api/morning/run":
+            # Manual trigger from the Produce page - drafts a fresh batch right
+            # now (on top of today's, if it already ran). Kept OUTSIDE the state
+            # lock: the AI calls take a while and have their own morning lock.
+            try:
+                self.send_json(morning_batch(force=True))
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 500)
+            return
+
         with _lock:
             state = load_state()
 
@@ -1865,6 +2076,9 @@ def main():
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     url = f"http://127.0.0.1:{args.port}"
     print(f"Review dashboard running at {url}  (local-only; Ctrl+C to stop)")
+    threading.Thread(target=morning_loop, daemon=True).start()
+    print(f"Morning batch armed: {MORNING['count']} x {MORNING['runtime']}s "
+          f"{MORNING['category']} drafts daily after {MORNING['hour']}:00 (while running)")
     if args.open:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     try:
