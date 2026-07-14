@@ -32,6 +32,13 @@ TRACKS = {
         "Ossuary 5 - Rest",
         "Ghost Story",
         "Night Vigil",
+        # Creepy soundscapes: drones, music boxes, dark choirs - beds that
+        # sit under quiet-horror narration without fighting it.
+        "The House of Leaves",
+        "Long Note Two",
+        "Come Play with Me",
+        "Gathering Darkness",
+        "Penumbra",
     ],
     "tense": [
         "Lightless Dawn",

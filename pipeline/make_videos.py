@@ -107,6 +107,7 @@ DEFAULT_BRANDING = {
     # want wide tracking and a much lighter outline than bold ones.
     "title_spacing": 1, "title_outline": 9, "title_shadow": 3,
     "cta_outline": 6, "thumb_border": 9,
+    "music_volume": MUSIC_VOLUME,
 }
 CATEGORY_BRANDING = {
     "Scary Story": {
@@ -116,6 +117,8 @@ CATEGORY_BRANDING = {
         "title_color": r"&H00E0E8ED&", "thumb_color": "0xEDE8E0",   # bone white
         "title_spacing": 7, "title_outline": 3, "title_shadow": 2,
         "cta_outline": 3, "thumb_border": 5,
+        # Horror leans on the bed: the creepy track sits a notch louder.
+        "music_volume": 0.16,
     },
     "True History": {
         "cta": "FOLLOW FOR MORE TRUE HISTORY", "anchor": "#history", "style": "archival",
@@ -1465,7 +1468,8 @@ def final_render(ffmpeg, base, pkg, total, has_music, out_path, tmp, clip_audio=
     if has_music and music_files:
         inputs += ["-i", music_files[0].name]
         fade_start = max(0.0, total - 1.5)
-        filters.append(f"[2:a]volume={MUSIC_VOLUME},afade=t=out:st={fade_start:.2f}:d=1.5[m]")
+        filters.append(f"[2:a]volume={branding_for(pkg)['music_volume']},"
+                       f"afade=t=out:st={fade_start:.2f}:d=1.5[m]")
         mix.append("[m]")
     if len(mix) > 1:
         filters.append("".join(mix) + f"amix=inputs={len(mix)}:duration=first:normalize=0[a]")
