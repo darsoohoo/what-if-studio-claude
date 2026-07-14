@@ -1312,9 +1312,10 @@ MOODS = {
     "wholesome": "wholesome - warm, kind, quietly uplifting",
     "inspiring": "inspiring - hopeful, motivating, big-picture wonder",
     "deadpan": "deadpan - flat matter-of-fact delivery that lets the absurdity speak",
-    "trailer": "movie-trailer - short punchy escalating lines that land like cut cards, "
-               "epic stakes, each beat raising the tension another notch, built to a "
-               "final line that hits like a title card",
+    "trailer": "movie-trailer VOICEOVER - short punchy fragments of 2-8 words that land "
+               "like cut cards, one image per fragment, separated by dramatic pauses "
+               "written as ' - ' or '...', the 'In a world' cadence without the cliche, "
+               "epic escalating stakes, built to a final line that hits like a title card",
 }
 
 # Trailer scripts trade the narrator against in-scene character lines - the

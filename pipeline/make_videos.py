@@ -439,7 +439,8 @@ def synthesize_cast(segments, vconf, out_mp3, tmp, ffmpeg, ffprobe, eleven=None)
         part = tmp / f"vc-{idx:02d}.mp3"
         if eleven:
             vid = eleven["narrator_id"] if speaker is None else cast[speaker][1]
-            w = synthesize_elevenlabs(chunk_text, vid, eleven["model"], part, eleven["key"])
+            w = synthesize_elevenlabs(chunk_text, vid, eleven["model"], part, eleven["key"],
+                                      settings=eleven.get("settings"))
         elif speaker is None:
             w = asyncio.run(synthesize(chunk_text, vconf, part))
         else:
@@ -555,15 +556,17 @@ def chars_to_words(chars, starts, ends):
     return words
 
 
-def synthesize_elevenlabs(text, voice_id, model, mp3_path, key):
+def synthesize_elevenlabs(text, voice_id, model, mp3_path, key, settings=None):
     """ElevenLabs TTS with character timestamps -> mp3 + per-word timings,
-    matching the edge-tts word format so captions/charts work unchanged."""
+    matching the edge-tts word format so captions/charts work unchanged.
+    `settings` overrides voice_settings (trailer mode lowers stability for
+    a more dramatic, less even read)."""
     import base64
     url = f"{ELEVENLABS_API}/text-to-speech/{voice_id}/with-timestamps?output_format=mp3_44100_128"
     body = json.dumps({
         "text": text,
         "model_id": model,
-        "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
+        "voice_settings": settings or {"stability": 0.5, "similarity_boost": 0.75},
     }).encode("utf-8")
     req = urllib.request.Request(url, data=body, method="POST", headers={
         "xi-api-key": key,
@@ -2102,6 +2105,12 @@ def main():
             print(f"  earlier render kept - this one saves as {out_path.name}")
 
         vconf = dict(VOICE_MAP.get(pkg.get("voice"), DEFAULT_VOICE))
+        if args.trailer:
+            # Trailer VO delivery: noticeably slower and a touch deeper - the
+            # pauses the trailer-mood script writes (' - ', '...') get room to
+            # land. Character dialogue keeps its own natural pace; explicit
+            # --rate/--pitch below still win.
+            vconf["rate"], vconf["pitch"] = "-15%", "-8Hz"
         if args.voice:
             vconf["voice"] = args.voice
         if args.rate:
@@ -2131,6 +2140,10 @@ def main():
                     shutil.copy(brand_font_path, tmp / brand_font_path.name)
 
                 cast = None
+                # Trailer VO on ElevenLabs: lower stability = a hotter, more
+                # dramatic read instead of the even narration default.
+                el_settings = ({"stability": 0.35, "similarity_boost": 0.75}
+                               if args.trailer else None)
                 if args.elevenlabs:
                     el_voice_id, el_voice_name = pick_elevenlabs_voice(
                         pkg.get("voice", ""), args.el_voice, el_key)
@@ -2139,9 +2152,12 @@ def main():
                             raw_segments, vconf, tmp / "voice.mp3", tmp, ffmpeg, ffprobe,
                             eleven={"key": el_key, "model": args.el_model,
                                     "narrator_id": el_voice_id,
-                                    "voices": elevenlabs_voices(el_key)})
+                                    "voices": elevenlabs_voices(el_key),
+                                    "settings": el_settings})
                     else:
-                        words = synthesize_elevenlabs(text, el_voice_id, args.el_model, tmp / "voice.mp3", el_key)
+                        words = synthesize_elevenlabs(text, el_voice_id, args.el_model,
+                                                      tmp / "voice.mp3", el_key,
+                                                      settings=el_settings)
                     total = probe_duration(ffprobe, tmp / "voice.mp3")
                     print(f"  voice: ElevenLabs {el_voice_name} ({args.el_model}) - {total:.1f}s")
                 else:
