@@ -564,8 +564,15 @@ def openai_key():
 
 def _polish_via_openai(pkg, seg_count, key):
     title = pkg.get("title", "a what-if scenario")
-    notes = "\n".join(f"Clip {i + 1}: {_raw_shot_text(pkg, i, seg_count)}"
-                      for i in range(seg_count))
+    # Pair every clip's shot note with the line the narrator SPEAKS over it -
+    # viewers read captions and image together, so a clip that doesn't match
+    # its words plays as confusion, not mood.
+    spoken = narration_segments(pkg, 0)
+    notes = "\n".join(
+        (f"Clip {i + 1} (narrator says: \"{spoken[i][:160]}\"): "
+         if i < len(spoken) else f"Clip {i + 1}: ")
+        + _raw_shot_text(pkg, i, seg_count)
+        for i in range(seg_count))
     people_rule = (
         "Put a specific relatable person doing something concrete in nearly every "
         "prompt (reenactment style)." if PEOPLE_BIAS else
@@ -588,8 +595,11 @@ def _polish_via_openai(pkg, seg_count, key):
         f'The clips below form one vertical 9:16 short answering: "{title}". '
         "Rewrite each clip note into ONE vivid visual prompt of 15-35 words: a concrete "
         "subject and action, the setting, a camera angle or movement, and lighting/mood. "
-        "Stay true to the moment each note describes - same scene, richer picture - and "
-        "keep a consistent visual world across all clips. " + style_rule + people_rule + " "
+        "THE PICTURE MUST SHOW WHAT THE NARRATOR IS SAYING over that clip - keep the "
+        "note's scene and make its key object or moment unmistakable on screen. Any "
+        "style or framing device is HOW the shot is framed, never a replacement for "
+        "WHAT it shows. Keep a consistent visual world across all clips. "
+        + style_rule + people_rule + " "
         "Never mention on-screen text, captions, words, letters, numbers, signs, logos or "
         "watermarks. Reply with ONLY minified JSON, no markdown fences: "
         f'{{"prompts":["...", ...]}} with exactly {seg_count} strings in clip order.\n'
