@@ -56,7 +56,8 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
 :focus-visible { outline: 3px solid var(--accent-strong); outline-offset: 2px; }
 
 /* ---- view modes: cards (default) / compact / list ---- */
-.views { display: flex; gap: 4px; margin-left: auto; }
+.views { display: flex; gap: 4px; margin-left: auto; align-items: center; }
+.views select { font: inherit; font-size: 12.5px; font-weight: 600; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--bg-inset); color: var(--text-dim); cursor: pointer; margin-right: 6px; }
 .viewbtn { font-size: 14px; padding: 5px 10px; color: var(--text-dim); }
 .viewbtn[aria-pressed="true"] { color: var(--accent-strong); border-color: var(--accent); background: rgba(139, 123, 255, 0.12); }
 main.view-compact { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
@@ -100,7 +101,14 @@ main.view-list textarea, main.view-list details, main.view-list .saved { display
 <header>
   <h1>Video Review</h1>
   <span class="sub" id="count"></span>
-  <div class="views" role="group" aria-label="View mode">
+  <div class="views" role="group" aria-label="View and sort">
+    <select id="sortSel" title="Sort videos" aria-label="Sort videos">
+      <option value="manual">My order</option>
+      <option value="newest">Newest first</option>
+      <option value="oldest">Oldest first</option>
+      <option value="unposted">Unposted first</option>
+      <option value="title">Title A–Z</option>
+    </select>
     <button type="button" class="viewbtn" data-view="cards" title="Cards — full size with notes and post kits">🔳 Cards</button>
     <button type="button" class="viewbtn" data-view="compact" title="Compact — smaller tiles, more per row">▦ Compact</button>
     <button type="button" class="viewbtn" data-view="list" title="List — one row per video">☰ List</button>
@@ -122,9 +130,28 @@ function applyView(v, persist = true) {
 }
 document.querySelectorAll(".viewbtn").forEach(b =>
   b.addEventListener("click", () => applyView(b.dataset.view)));
-let savedView = "cards";
-try { savedView = localStorage.getItem("wis.videosView") || "cards"; } catch (e) {}
+let savedView = "list";
+try { savedView = localStorage.getItem("wis.videosView") || "list"; } catch (e) {}
 applyView(savedView, false);
+
+/* ---- sort (display only - "My order" is the saved posting order) ---- */
+const SORTS = {
+  manual: null,
+  newest: (a, b) => b.mtime - a.mtime,
+  oldest: (a, b) => a.mtime - b.mtime,
+  unposted: (a, b) => (a.uploaded ? 1 : 0) - (b.uploaded ? 1 : 0) || b.mtime - a.mtime,
+  title: (a, b) => a.title.localeCompare(b.title),
+};
+let sortMode = "manual";
+try { sortMode = localStorage.getItem("wis.videosSort") || "manual"; } catch (e) {}
+if (!Object.hasOwn(SORTS, sortMode)) sortMode = "manual";
+const sortSel = document.getElementById("sortSel");
+sortSel.value = sortMode;
+sortSel.addEventListener("change", () => {
+  sortMode = sortSel.value;
+  try { localStorage.setItem("wis.videosSort", sortMode); } catch (e) {}
+  render();
+});
 
 async function api(path, body) {
   const opts = body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {};
@@ -155,11 +182,10 @@ function move(i, delta) {
   render();
 }
 
-async function removeVideo(i) {
-  const v = videos[i];
+async function removeVideo(v) {
   if (!confirm(`Remove "${v.title}" from the pipeline?\n(It moves to output\\trash — recoverable.)`)) return;
   const res = await api("/api/delete", { name: v.name });
-  if (res.ok) { videos.splice(i, 1); render(); }
+  if (res.ok) { videos = videos.filter(x => x.name !== v.name); render(); }
   else alert("Remove failed: " + (res.error || "unknown"));
 }
 
@@ -180,7 +206,11 @@ function render() {
     videos.length + " video" + (videos.length === 1 ? "" : "s") + " in the pipeline";
   document.getElementById("empty").hidden = videos.length > 0;
 
-  videos.forEach((v, i) => {
+  // A sort other than "My order" only changes the DISPLAY - the saved
+  // posting order is untouched, so the reorder arrows hide until you're
+  // back on "My order".
+  const shown = SORTS[sortMode] ? [...videos].sort(SORTS[sortMode]) : videos;
+  shown.forEach((v, i) => {
     const player = el("video", { controls: "", preload: "none", src: "/files/" + encodeURIComponent(v.name) });
     if (v.thumb) player.poster = "/files/" + encodeURIComponent(v.thumb);
 
@@ -208,8 +238,10 @@ function render() {
       ]),
       player,
       el("div", { class: "row" }, [
-        el("button", { text: "↑", "aria-label": "Move up", onclick: () => move(i, -1), ...(i === 0 ? { disabled: "" } : {}) }),
-        el("button", { text: "↓", "aria-label": "Move down", onclick: () => move(i, 1), ...(i === videos.length - 1 ? { disabled: "" } : {}) }),
+        ...(sortMode === "manual" ? [
+          el("button", { text: "↑", "aria-label": "Move up", onclick: () => move(i, -1), ...(i === 0 ? { disabled: "" } : {}) }),
+          el("button", { text: "↓", "aria-label": "Move down", onclick: () => move(i, 1), ...(i === videos.length - 1 ? { disabled: "" } : {}) }),
+        ] : []),
         el("span", {
           class: "meta",
           text: new Date(v.mtime * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
@@ -218,7 +250,7 @@ function render() {
         el("span", { class: "meta", text: v.size_mb + " MB" }),
         el("span", { style: "flex:1" }),
         upBtn,
-        el("button", { class: "del", text: "Remove", onclick: () => removeVideo(i) }),
+        el("button", { class: "del", text: "Remove", onclick: () => removeVideo(v) }),
       ]),
       note,
       saved,
