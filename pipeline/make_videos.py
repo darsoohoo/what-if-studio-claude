@@ -1897,11 +1897,18 @@ def main():
                     print(f"  generating AI visuals ({item_style})...")
                     item_visuals = generate_ai_visuals(pkg, len(segments), item_style, args.ai_cache)
 
-                # Per-beat video overrides from the Produce page: a beat whose
-                # radio says "video" plays that uploaded clip in EVERY mode
-                # (in --infer the generation for it was already skipped above).
+                # Per-beat reference overrides from the Produce page: a beat
+                # whose radio says "video" plays that uploaded clip in EVERY
+                # mode (in --infer the generation for it was already skipped
+                # above); a beat whose radio says "image" shows the picture
+                # itself with the Ken Burns move in every mode EXCEPT --infer,
+                # where the clip is already animated FROM that image.
                 over = {i: _ref_video(args.backgrounds, i + 1) for i in range(len(segments))
                         if _ref_choice(args.backgrounds, i + 1) == "video"}
+                img_over = {} if args.infer else {
+                    i: _ref_frame(args.backgrounds, i + 1) for i in range(len(segments))
+                    if _ref_choice(args.backgrounds, i + 1) == "image"}
+                over.update(img_over)   # disjoint: one radio choice per beat
                 if over:
                     if item_visuals:
                         per_beat = [item_visuals[i % len(item_visuals)] for i in range(len(segments))]
@@ -1911,7 +1918,10 @@ def main():
                     for i, v in over.items():
                         per_beat[i] = v
                     item_visuals = per_beat
-                    print(f"  visuals: {len(over)} beat(s) play your uploaded video")
+                    vids = len(over) - len(img_over)
+                    notes = ([f"{vids} beat(s) play your uploaded video"] if vids else []) \
+                        + ([f"{len(img_over)} beat(s) show your attached image"] if img_over else [])
+                    print("  visuals: " + ", ".join(notes))
 
                 charts = None
                 if args.charts:

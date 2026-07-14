@@ -189,6 +189,14 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
           </select>
         </label>
       </div>
+      <div class="row" style="margin:4px 0 10px">
+        <label class="opt" title="The voice the two rewrite buttons aim for — script and prompts alike.">🎭 Mood:
+          <select id="moodSel" style="width:auto"></select>
+        </label>
+        <button type="button" id="scriptFromPromptsBtn" title="AI-write the whole spoken script (hook, beats, outro) FROM the visual prompts below, in the selected mood — every line is fitted to what's on screen. The old script stays in 🕘 History.">📝 Script from prompts</button>
+        <button type="button" id="promptsFromScriptBtn" title="AI-write every visual prompt FROM the spoken script, in the selected mood — one shot per line, mood expressed through the imagery. The old prompts stay in 🕘 History.">🎬 Prompts from script</button>
+        <span class="status" id="moodStatus" style="margin:0" role="status" aria-live="polite"></span>
+      </div>
       <div id="manualPrompts">
         <p class="hint" id="manualHint">Manual path — in <a href="https://tryinfer.com" target="_blank" rel="noopener" style="color:var(--accent-strong)">tryinfer Studio</a>: <strong>9:16 vertical · 5s</strong> · your chosen model. Copy each prompt, generate, download — in order, then:</p>
         <div class="row" id="importRow">
@@ -196,7 +204,7 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
           <span class="hint" style="margin:0">oldest first = generation order; each lands on its beat with the radio set to video. Or drop files straight onto the rows (several at once fill consecutive beats).</span>
         </div>
         <p class="status" id="importStatus" role="status" aria-live="polite" style="margin:4px 0 0"></p>
-        <p class="hint">Click any prompt to rewrite it — <strong>Save prompts</strong> keeps your wording for the Copy buttons <em>and</em> the AI modes above. Attach a picture or your own clip to a beat — <strong>＋ image</strong> / <strong>＋ video</strong>, drop a file on the row, or point at a row and paste (<strong>Ctrl+V</strong>). The <strong>radio button</strong> picks which one that beat uses: image = the AI animates from it, video = your clip plays as-is (nothing billed for that beat). <strong>🎥 From image</strong> writes the prompt for you: a video description of the picture.</p>
+        <p class="hint">Click any prompt to rewrite it — <strong>Save prompts</strong> keeps your wording for the Copy buttons <em>and</em> the AI modes above. Attach a picture or your own clip to a beat — <strong>＋ image</strong> / <strong>＋ video</strong>, drop a file on the row, or point at a row and paste (<strong>Ctrl+V</strong>). The <strong>radio button</strong> picks which one that beat uses — and it always ends up in the video: image = the picture IS the beat's visual (shown with gentle motion; in ⚡ AI video mode it's animated as the clip's first frame instead), video = your clip plays as-is (nothing billed for that beat). <strong>🎥 From image</strong> writes the prompt for you: a video description of the picture.</p>
         <div id="prompts"></div>
         <input type="file" id="refFile" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" hidden>
         <input type="file" id="refVidFile" accept=".mp4,video/mp4" hidden>
@@ -539,6 +547,68 @@ function setTone(v) {
   try { localStorage.setItem("wis.enhanceTone", v); } catch (e) {}
   document.querySelectorAll("#prompts select.tone").forEach(s => { s.value = v; });
 }
+
+/* ---------- mood + cross-generation: script <-> prompts ----------
+   One shared mood steers both buttons: 📝 writes the whole spoken script
+   FROM the visual prompts (shots stay, words re-fit to them), 🎬 writes
+   every visual prompt FROM the script (words stay, shots re-imagined).
+   Both save immediately — the old version is always in 🕘 History. */
+const MOODS = [
+  ["eerie", "🕯️ Eerie"],
+  ["funny", "😂 Funny"],
+  ["sarcastic", "🙄 Sarcastic"],
+  ["witty", "🧠 Witty"],
+  ["adventurous", "🧗 Adventurous"],
+  ["dramatic", "🎬 Dramatic"],
+  ["mysterious", "🌫️ Mysterious"],
+  ["wholesome", "🌤️ Wholesome"],
+  ["inspiring", "🚀 Inspiring"],
+  ["deadpan", "😐 Deadpan"],
+];
+(() => {
+  const sel = $id("moodSel");
+  MOODS.forEach(([id, label]) => {
+    const o = document.createElement("option");
+    o.value = id; o.textContent = label;
+    sel.appendChild(o);
+  });
+  try {
+    const m = localStorage.getItem("wis.mood");
+    if (m && MOODS.some(([id]) => id === m)) sel.value = m;
+  } catch (e) {}
+  sel.addEventListener("change", () => {
+    try { localStorage.setItem("wis.mood", sel.value); } catch (e) {}
+  });
+})();
+function moodLabel() {
+  const m = MOODS.find(([id]) => id === $id("moodSel").value);
+  return m ? m[1] : $id("moodSel").value;
+}
+async function moodGenerate(path, busyMsg, doneMsg) {
+  const st = $id("moodStatus");
+  const btns = [$id("scriptFromPromptsBtn"), $id("promptsFromScriptBtn")];
+  btns.forEach(b => { b.disabled = true; });
+  st.className = "status"; st.textContent = busyMsg;
+  try {
+    const r = await api(path, { queue: S.queue, slot: S.slot, mood: $id("moodSel").value });
+    if (r.error) throw new Error(r.error);
+    await refreshAll(false);   // rows re-render from the fresh script/prompts
+    fillScript(S.script);
+    if ($id("histBox").open) loadHistory();
+    st.className = "status good"; st.textContent = doneMsg;
+  } catch (e) {
+    st.className = "status bad"; st.textContent = e.message;
+  }
+  btns.forEach(b => { b.disabled = false; });
+}
+$id("scriptFromPromptsBtn").addEventListener("click", () => moodGenerate(
+  "/api/produce/script-from-prompts",
+  `Writing the script from the prompts (${moodLabel()})… (~half a minute)`,
+  `✓ Script rewritten to fit the prompts (${moodLabel()}) — voice, captions, and post kit follow; the old script is in 🕘 History.`));
+$id("promptsFromScriptBtn").addEventListener("click", () => moodGenerate(
+  "/api/produce/prompts-from-script",
+  `Writing the prompts from the script (${moodLabel()})… (~half a minute)`,
+  `✓ Prompts rewritten from the script (${moodLabel()}) — Copy buttons and AI renders use them now; the old prompts are in 🕘 History.`));
 
 /* ---------- step 2: prompts (click to edit, Save persists) ----------
    The boxes hold the prompt CORE; the style tail (cinematic, 9:16, …) is

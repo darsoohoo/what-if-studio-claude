@@ -522,8 +522,8 @@ def load_morning_log():
     return log
 
 
-def _ai_text(prompt):
-    """One small completion: OpenAI when a key exists, else Pollinations."""
+def _ai_text(prompt, max_tokens=300):
+    """One JSON completion: OpenAI when a key exists, else Pollinations."""
     key = openai_key()
     if key:
         body = json.dumps({
@@ -531,7 +531,7 @@ def _ai_text(prompt):
             "messages": [{"role": "user", "content": prompt}],
             "response_format": {"type": "json_object"},
             "temperature": 1.0,
-            "max_tokens": 300,
+            "max_tokens": max_tokens,
         }).encode("utf-8")
         req = urllib.request.Request(OPENAI_API, data=body, method="POST", headers={
             "Authorization": f"Bearer {key}",
@@ -699,6 +699,7 @@ The app is a local static page: scenario library (10 categories - 8 "what if" on
 Custom scenarios: the builder ("+ Create your own scenario") with an AI "Write it for me" draft, all editable, saved in the browser's local storage.
 Draft batches: while the dashboard runs, it drafts 3 fresh 90s Scary Story packages daily after 6:00, and Produce has two on-demand buttons - 🌅 for 3 more scary scenarios, 💭 for 3 realistic what-ifs (grounded thought experiments from real facts, no monsters or magic); the Clips dropdown next to them picks 7 (default), 9, 12, or 15 clips per video (hook + beats + outro - more clips = faster cuts at the same length, reveal still on the second-to-last beat); everything lands in the Produce package dropdown with per-beat prompts ready to copy into tryinfer Studio. Drafting only - nothing renders or posts by itself.
 Dashboard pages (this server, 127.0.0.1:8765): Videos (review renders), Produce (per-beat visuals, voices, re-render), Results (log posted videos' views/likes by hand; rollups by category show what's winning), Spend (API costs), Help.
+Produce per-beat references: attach an image and/or your own video to any beat; the radio picks which one the beat uses and it ALWAYS lands in the final video - image = the picture is that beat's visual with gentle motion (in AI-video mode it's animated as the clip's first frame instead), video = the clip plays as-is (never billed). A 🎭 Mood dropdown (Eerie, Funny, Sarcastic, Witty, Adventurous, Dramatic, Mysterious, Wholesome, Inspiring, Deadpan) steers two rewrite buttons: "Script from prompts" writes the whole spoken script fitted to the visual prompts, "Prompts from script" re-imagines every visual prompt from the spoken lines; both save with the old version kept in History.
 Optional API keys, one per file in pipeline/: openai_key.txt (better writing), elevenlabs_key.txt (premium voices), tryinfer_key.txt (paid AI video), pexels_key.txt (stock). Free fallbacks exist for everything.
 Everything runs locally; no accounts, no tracking, no auto-posting. Never promise views, virality, or income."""
 
@@ -1211,6 +1212,117 @@ def save_prompts(pkg, prompts):
         (mv.POLISH_CACHE / f"{slug}-{n}seg{variant}.json").write_text(
             json.dumps(prompts, indent=1), encoding="utf-8")
     mv._polish_memo.clear()
+
+
+# The mood the cross-generation buttons write in (script <-> prompts on the
+# Produce page). Keys are what the client sends; values steer the writer.
+MOODS = {
+    "eerie": "eerie and unsettling - quiet dread, one wrong detail, no gore",
+    "funny": "funny - playful, absurd observations, comedic timing",
+    "sarcastic": "sarcastic - dry, biting, eye-rolling delivery",
+    "witty": "witty - clever wordplay and sharp turns of phrase",
+    "adventurous": "adventurous - bold, energetic, expedition excitement",
+    "dramatic": "dramatic - high stakes, cinematic tension",
+    "mysterious": "mysterious - withholding, question-raising, intriguing",
+    "wholesome": "wholesome - warm, kind, quietly uplifting",
+    "inspiring": "inspiring - hopeful, motivating, big-picture wonder",
+    "deadpan": "deadpan - flat matter-of-fact delivery that lets the absurdity speak",
+}
+
+
+def _retry_generate(attempt, tries=3):
+    """Run one generation attempt up to `tries` times - the writers
+    occasionally return the wrong number of lines; a fresh roll usually
+    fixes it. Raises the last error when every try fails."""
+    last = None
+    for _ in range(tries):
+        try:
+            return attempt()
+        except Exception as exc:
+            last = exc
+            print(f"mood generate: retrying ({exc})")
+    raise last
+
+
+def script_from_prompts(pkg, mood):
+    """Write a whole spoken script (hook, beats, outro) FROM the current
+    visual prompts, in the chosen mood - the narration is fitted to what is
+    already on screen, so shots and words agree by construction."""
+    prompts = beat_prompts(pkg)
+    n = len(prompts)
+    if n < 3:
+        raise RuntimeError("this package has no prompts to write from")
+    voice = MOODS.get(mood, MOODS["eerie"])
+    words, _ = beat_word_budget(int(pkg.get("runtime") or 60), n - 2)
+    numbered = "\n".join(f"{i + 1}. {p}" for i, p in enumerate(prompts))
+    prompt = (
+        "You write narration scripts for short-form vertical videos (TikTok style). "
+        f'Video title: "{pkg.get("title", "")}". Below are its {n} visual shots in '
+        "order: shot 1 plays under the opening hook, the last shot under the outro, "
+        "and each shot in between under one story beat. Write the spoken narration "
+        "so every line fits what is ON SCREEN while it is spoken (weave the visual "
+        "in naturally - never just describe the picture), and the whole thing flows "
+        f"as ONE story told in a {voice} voice. "
+        'Reply with ONLY minified JSON, no markdown fences, exactly: '
+        '{"hook":"...","beats":[' + ",".join(['"..."'] * (n - 2)) + '],"outro":"..."} '
+        f"hook = one gripping opening line. beats = exactly {n - 2} spoken lines, "
+        f"{words} words each. outro = a short payoff line plus a one-sentence "
+        "follow call-to-action. No hashtags, no emoji, no stage directions.\n\n"
+        "SHOTS:\n" + numbered
+    )
+    def attempt():
+        raw = _ai_text(prompt, max_tokens=400 + 90 * (n - 2))
+        start, end = raw.find("{"), raw.rfind("}")
+        if start < 0 or end <= start:
+            raise RuntimeError("no JSON in AI response")
+        data = json.loads(raw[start:end + 1])
+        clean = lambda v, cap: re.sub(r"\s+", " ", str(v)).strip()[:cap]
+        beats = [clean(b, 900) for b in (data.get("beats") or []) if clean(b, 900)]
+        hook, outro = clean(data.get("hook", ""), 600), clean(data.get("outro", ""), 600)
+        if not hook or not outro or len(beats) != n - 2:
+            raise RuntimeError(f"the writer returned {len(beats)} beats for {n - 2} shots - try again")
+        return {"hook": hook, "beats": beats, "outro": outro}
+    return _retry_generate(attempt)
+
+
+def prompts_from_script(pkg, mood):
+    """Write one visual prompt core per spoken line FROM the current script,
+    with the chosen mood expressed through the imagery."""
+    segs = mv.narration_segments(pkg, 0)
+    n = len(segs)
+    if n < 3:
+        raise RuntimeError("this package has no script to write from")
+    voice = MOODS.get(mood, MOODS["eerie"])
+    numbered = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(segs))
+    prompt = (
+        "You write prompts for an AI video generator. For EACH numbered spoken "
+        "line below, write ONE sentence describing the 5-second video shot that "
+        "plays under it: name the subject, the setting, and one natural motion "
+        "(of the subject or the camera). Under 45 words each. Show a concrete "
+        "person doing something in most shots, and give the whole sequence a "
+        f"{voice} mood expressed purely through the imagery - lighting, framing, "
+        "body language. No style words like 'cinematic' and no aspect ratios - "
+        "those are appended separately. "
+        f"EVERY line gets a shot - all {n} of them, including the last one "
+        "(the outro/call-to-action plays over a closing shot, not a blank). "
+        'Reply with ONLY minified JSON, no markdown fences, exactly: '
+        '{"prompts":[' + ",".join(['"..."'] * n) + ']} - '
+        f"exactly {n} prompts, one per line, same order.\n\n"
+        "LINES:\n" + numbered
+    )
+
+    def attempt():
+        raw = _ai_text(prompt, max_tokens=200 + 70 * n)
+        start, end = raw.find("{"), raw.rfind("}")
+        if start < 0 or end <= start:
+            raise RuntimeError("no JSON in AI response")
+        data = json.loads(raw[start:end + 1])
+        prompts = [re.sub(r"\s+", " ", str(p)).strip(" ,.;\"'")[:600]
+                   for p in (data.get("prompts") or [])][:n]
+        if len(prompts) != n or not all(prompts):
+            raise RuntimeError(f"the writer returned {len(prompts)} prompts for {n} lines - try again")
+        return prompts
+    return _retry_generate(attempt)
 
 
 def spend_summary():
@@ -2024,6 +2136,64 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": str(exc)}, 400)
             return
 
+        if self.path == "/api/produce/script-from-prompts":
+            # Rewrite the WHOLE spoken script from the current visual prompts
+            # in the chosen mood, and save it. The prompts are re-pinned right
+            # after (a script save normally invalidates them - here they are
+            # the source of truth). History records the old script first.
+            try:
+                queue = str(data.get("queue", ""))
+                slot = int(data.get("slot") or 0)
+                mood = str(data.get("mood") or "eerie")
+                qpath = queue_path(queue)
+                if not qpath or not qpath.is_file():
+                    raise RuntimeError("queue file not found")
+                qdata = json.loads(qpath.read_text(encoding="utf-8"))
+                pkg = next((it["package"] for it in qdata.get("items", [])
+                            if it.get("slot") == slot and it.get("package")), None)
+                if not pkg:
+                    raise RuntimeError(f"slot {slot} not in {qpath.name}")
+                old_script = script_snapshot(pkg)
+                prompts = beat_prompts(pkg)
+                script = script_from_prompts(pkg, mood)
+                hooks = list(pkg.get("hooks") or [""])
+                hooks[0] = script["hook"]
+                pkg["hooks"], pkg["beats"], pkg["outro"] = hooks, script["beats"], script["outro"]
+                qpath.write_text(json.dumps(qdata, indent=2), encoding="utf-8")
+                save_prompts(pkg, prompts)   # keep the prompts the script was built from
+                try:
+                    d = produce_dir(staging_key(queue, slot, pkg))
+                    record_history(d, "script", script_snapshot(pkg), baseline=old_script,
+                                   note=f"written from prompts ({mood})")
+                except Exception:
+                    pass   # history must never block a save
+                self.send_json({"ok": True})
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 400)
+            return
+
+        if self.path == "/api/produce/prompts-from-script":
+            # Rewrite every visual prompt from the current script in the
+            # chosen mood, and save them (same store as Save prompts).
+            try:
+                queue = str(data.get("queue", ""))
+                slot = int(data.get("slot") or 0)
+                mood = str(data.get("mood") or "eerie")
+                pkg = load_package(queue, slot)
+                old_prompts = beat_prompts(pkg)
+                prompts = prompts_from_script(pkg, mood)
+                save_prompts(pkg, prompts)
+                try:
+                    record_history(produce_dir(staging_key(queue, slot, pkg)),
+                                   "prompts", prompts, baseline=old_prompts,
+                                   note=f"written from script ({mood})")
+                except Exception:
+                    pass   # history must never block a save
+                self.send_json({"ok": True, "prompts": beat_prompts(pkg)})
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 400)
+            return
+
         if self.path == "/api/produce/prompts":
             # Save edited visual prompts (cores, no style suffix).
             try:
@@ -2055,12 +2225,14 @@ class Handler(BaseHTTPRequestHandler):
                 pkg = load_package(queue, slot)
                 d = produce_dir(staging_key(queue, slot, pkg))
                 # AI modes generate their own visuals - otherwise at least one
-                # beat needs a video (legacy staged clips still count).
+                # beat needs a video or an attached image (legacy staged
+                # clips still count).
                 if (not data.get("infer") and not data.get("ai_visuals")
                         and not data.get("infer_images") and not staged_clips(d)
-                        and not any(d.glob("refv-*.mp4"))):
-                    raise RuntimeError("no videos on any beat - import from Downloads "
-                                       "or attach clips to the beats first")
+                        and not any(d.glob("refv-*.mp4"))
+                        and not any(ref_image_path(d, i) for i in range(1, 21))):
+                    raise RuntimeError("no clips or images on any beat - import from "
+                                       "Downloads or attach media to the beats first")
                 start_render(queue, slot, d, data)
                 self.send_json({"ok": True})
             except Exception as exc:
