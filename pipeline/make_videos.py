@@ -359,6 +359,107 @@ async def synthesize(text, vconf, mp3_path):
     return words
 
 
+# --------------------------------------------- trailer dialogue (multi-voice)
+# A narration line may embed in-scene character lines in the form
+#   [Name] "the line"
+# (the Trailer mood writes these). Each named character speaks with their own
+# cast voice plus a light in-scene room tone; the narrator keeps the normal
+# voice. The tag itself is never spoken or captioned - the quoted words are.
+
+_DLG_RE = re.compile(r'\[([A-Za-z][A-Za-z0-9 .\'-]{0,24})\]\s*("([^"]*)"|“([^”]*)”|([^\[]+))')
+
+# Distinct free edge-tts voices for the character cast, assigned by order of
+# first appearance (the narrator's voice is skipped if it collides).
+EDGE_CAST = ["en-US-AriaNeural", "en-US-GuyNeural", "en-GB-SoniaNeural",
+             "en-US-JennyNeural", "en-GB-RyanNeural", "en-US-AnaNeural"]
+# Preferred ElevenLabs premade voices for the cast (matched against the
+# account's voice list; any other account voices fill in after).
+ELEVEN_CAST_NAMES = ["Rachel", "Josh", "Domi", "Antoni", "Bella", "Charlie"]
+
+
+def split_dialogue(text):
+    """'... [Mara] "Why?" ...' -> [(None, '...'), ('Mara', 'Why?'), (None, '...')].
+    Text without markers comes back as a single narrator chunk."""
+    chunks, pos = [], 0
+    for m in _DLG_RE.finditer(text):
+        pre = text[pos:m.start()].strip()
+        if pre:
+            chunks.append((None, pre))
+        line = (m.group(3) or m.group(4) or m.group(5) or "").strip().strip('"“” ')
+        if line:
+            chunks.append((m.group(1).strip(), line))
+        pos = m.end()
+    tail = text[pos:].strip()
+    if tail:
+        chunks.append((None, tail))
+    return chunks or [(None, text.strip())]
+
+
+def strip_dialogue_markup(text):
+    """The spoken form of a line: [Name] tags gone, the quoted words kept."""
+    return " ".join(t for _, t in split_dialogue(text))
+
+
+def synthesize_cast(segments, vconf, out_mp3, tmp, ffmpeg, ffprobe, eleven=None):
+    """Multi-voice narration for segments carrying [Name] "line" dialogue.
+    Synthesizes each chunk with its voice, gives character lines a subtle
+    in-scene treatment (thinner low end + a touch of slap echo), stitches
+    everything into out_mp3, and returns (words, cast) - words being
+    (start, end, word) on the stitched track, same shape as synthesize().
+    `eleven` = {key, model, narrator_id, voices} switches the whole cast to
+    ElevenLabs; None uses free edge-tts throughout."""
+    chunks = []
+    for seg in segments:
+        chunks.extend(split_dialogue(seg))
+    characters = []
+    for sp, _ in chunks:
+        if sp and sp not in characters:
+            characters.append(sp)
+    cast = {}   # character -> (display label, voice)
+    if eleven:
+        byname = {_voice_base(n): (n.split(" - ")[0].strip(), vid)
+                  for n, vid in eleven["voices"].items()}
+        pool = [byname[w.lower()] for w in ELEVEN_CAST_NAMES
+                if w.lower() in byname and byname[w.lower()][1] != eleven["narrator_id"]]
+        pool += [v for v in sorted(byname.values())
+                 if v[1] != eleven["narrator_id"] and v not in pool]
+        for i, ch in enumerate(characters):
+            cast[ch] = pool[i % len(pool)] if pool else ("narrator", eleven["narrator_id"])
+    else:
+        pool = [v for v in EDGE_CAST if v != vconf["voice"]]
+        for i, ch in enumerate(characters):
+            v = pool[i % len(pool)]
+            cast[ch] = (v.split("-")[-1].replace("Neural", ""), v)
+
+    words, parts, offset = [], [], 0.0
+    for idx, (speaker, chunk_text) in enumerate(chunks):
+        part = tmp / f"vc-{idx:02d}.mp3"
+        if eleven:
+            vid = eleven["narrator_id"] if speaker is None else cast[speaker][1]
+            w = synthesize_elevenlabs(chunk_text, vid, eleven["model"], part, eleven["key"])
+        elif speaker is None:
+            w = asyncio.run(synthesize(chunk_text, vconf, part))
+        else:
+            w = asyncio.run(synthesize(chunk_text, {"voice": cast[speaker][1],
+                                                    "rate": "+0%", "pitch": "+0Hz"}, part))
+        # Normalize every chunk to one wav format so the concat is seamless;
+        # dialogue gets the in-scene tone; a short pad keeps a beat of air
+        # between speakers (word timings are unaffected - it's trailing).
+        filt = "aresample=44100,aformat=sample_fmts=s16:channel_layouts=mono,apad=pad_dur=0.15"
+        if speaker is not None:
+            filt = "highpass=f=140,aecho=0.8:0.55:14|29:0.18|0.09," + filt
+        wav = tmp / f"vc-{idx:02d}.wav"
+        run([ffmpeg, "-y", "-i", str(part), "-af", filt, str(wav)])
+        words.extend((s + offset, e + offset, t) for s, e, t in w)
+        parts.append(wav)
+        offset += probe_duration(ffprobe, wav)
+    (tmp / "vc-list.txt").write_text("".join(f"file '{p.name}'\n" for p in parts),
+                                     encoding="utf-8")
+    run([ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", "vc-list.txt",
+         "-c:a", "libmp3lame", "-q:a", "3", str(out_mp3)], cwd=tmp)
+    return words, cast
+
+
 # ---------------------------------------------------------------- ElevenLabs voice (optional, paid)
 
 ELEVENLABS_API = "https://api.elevenlabs.io/v1"
@@ -601,6 +702,7 @@ def _raw_shot_text(pkg, seg_index, seg_count):
         beats = pkg.get("beats") or []
         src = beats[seg_index - 1] if 1 <= seg_index <= len(beats) else shots[pick]
     src = re.sub(r"^[A-Za-z /-]{2,20}:", "", src)                      # "Hook:" style prefixes
+    src = re.sub(r"\[[A-Za-z][A-Za-z0-9 .'-]{0,24}\]", "", src)        # [Name] dialogue tags
     src = re.sub(r"[\"“”‘’']", "", src)
     # Drop instructions about on-screen text - generated text comes out garbled.
     src = re.sub(r"\b(labeled|labelled|stamped|caption|chyron|lower.third|overlay|typed|on.screen text)\b[^,.;]*",
@@ -1936,7 +2038,12 @@ def main():
         if args.pitch:
             vconf["pitch"] = args.pitch
 
-        segments = narration_segments(pkg, hook_index)
+        # raw_segments may carry [Name] "line" dialogue markup; `segments` is
+        # the SPOKEN form (tags stripped, quoted words kept) - it's what the
+        # word timings, spans, captions, charts, and prompts all line up with.
+        raw_segments = narration_segments(pkg, hook_index)
+        segments = [strip_dialogue_markup(s) for s in raw_segments]
+        has_dialogue = any(sp for s in raw_segments for sp, _ in split_dialogue(s))
         text = " ".join(segments)
         if not text:
             print("  SKIP: package has no narration text\n")
@@ -1952,16 +2059,31 @@ def main():
                 if brand_font_path:
                     shutil.copy(brand_font_path, tmp / brand_font_path.name)
 
+                cast = None
                 if args.elevenlabs:
                     el_voice_id, el_voice_name = pick_elevenlabs_voice(
                         pkg.get("voice", ""), args.el_voice, el_key)
-                    words = synthesize_elevenlabs(text, el_voice_id, args.el_model, tmp / "voice.mp3", el_key)
+                    if has_dialogue:
+                        words, cast = synthesize_cast(
+                            raw_segments, vconf, tmp / "voice.mp3", tmp, ffmpeg, ffprobe,
+                            eleven={"key": el_key, "model": args.el_model,
+                                    "narrator_id": el_voice_id,
+                                    "voices": elevenlabs_voices(el_key)})
+                    else:
+                        words = synthesize_elevenlabs(text, el_voice_id, args.el_model, tmp / "voice.mp3", el_key)
                     total = probe_duration(ffprobe, tmp / "voice.mp3")
                     print(f"  voice: ElevenLabs {el_voice_name} ({args.el_model}) - {total:.1f}s")
                 else:
-                    words = asyncio.run(synthesize(text, vconf, tmp / "voice.mp3"))
+                    if has_dialogue:
+                        words, cast = synthesize_cast(
+                            raw_segments, vconf, tmp / "voice.mp3", tmp, ffmpeg, ffprobe)
+                    else:
+                        words = asyncio.run(synthesize(text, vconf, tmp / "voice.mp3"))
                     total = probe_duration(ffprobe, tmp / "voice.mp3")
                     print(f"  voice: {vconf['voice']} ({vconf['rate']}, {vconf['pitch']}) - {total:.1f}s")
+                if cast:
+                    print("  cast: " + ", ".join(f"{ch} -> {label}"
+                                                 for ch, (label, _) in cast.items()))
                 (tmp / "subs.ass").write_text(words_to_ass(words, pkg, total), encoding="utf-8")
 
                 # Where the reveal lands (segments[-3] = the second-to-last

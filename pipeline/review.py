@@ -301,6 +301,7 @@ def draft_prompt(title, category, runtime=60, beats=5, idea=None, mood=None):
         + ('Build the whole thing from these details the creator supplied - keep every '
            f'named fact, person, and place: "{idea}" ' if idea else "")
         + (f"Tell it in a {MOODS[mood]} voice. " if mood and mood in MOODS else "")
+        + (TRAILER_DIALOGUE_RULE if mood == "trailer" else "")
     )
     if category == "Scary Story":
         # Narrative horror in the modern social-thriller register (the
@@ -755,7 +756,8 @@ Draft batches: while the dashboard runs, it drafts 3 fresh 90s Scary Story packa
 Dashboard pages (this server, 127.0.0.1:8765): Videos (review renders), Produce (per-beat visuals, voices, re-render), Results (log posted videos' views/likes by hand; rollups by category AND by render format - Classic vs Ironic cheerful vs Movie trailer, with mood/visuals badges - show what's winning), Spend (API costs), Help.
 Produce per-beat references: attach an image and/or your own video to any beat; the radio picks which one the beat uses and it ALWAYS lands in the final video - image = the picture is that beat's visual with gentle motion (in AI-video mode it's animated as the clip's first frame instead), video = the clip plays as-is (never billed). A 🎭 Mood dropdown (Auto = category default, or Eerie, Funny, Sarcastic, Witty, Adventurous, Dramatic, Mysterious, Wholesome, Inspiring, Deadpan) steers two rewrite buttons: "Script from prompts" writes the whole spoken script fitted to the visual prompts, "Prompts from script" re-imagines every visual prompt from the spoken lines; both save with the old version kept in History. The same mood flavors every ✨ line rewrite, and an explicit (non-Auto) mood also restyles generated visuals at render time.
 🎵 Ironic cheerful music (Render checkbox, or --ironic-music): a sincerely happy bed (music/ironic - 1950s swing, ragtime, elevator muzak; python get_music.py fetches them) that contradicts scary visuals, plays straight until the reveal beat, then tape-stops on its first word with a soft impact and resumes slowed + quiet. Any category, any visuals mode. With Mood on Auto it also renders generated visuals in Wholesome mood - smiling pictures, cheerful song, dark script - the full Jordan Peele contradiction in one click (an explicit mood overrides the look).
-🎬 Movie-trailer feel (Render checkbox, or --trailer; excludes the ironic checkbox): epic cinematic bed from music/trailer + the riser and impact on the reveal for any category; with Mood on Auto, generated visuals render in Trailer mood (anamorphic teal-and-orange). Pick the Trailer mood + "Script from prompts" for trailer-speak narration.
+🎬 Movie-trailer feel (Render checkbox, or --trailer; excludes the ironic checkbox): epic cinematic bed from music/trailer + the riser and impact on the reveal for any category; with Mood on Auto, generated visuals render in Trailer mood (anamorphic teal-and-orange). Pick the Trailer mood + "Script from prompts" for trailer-speak narration WITH character dialogue.
+🎙 Character dialogue: any spoken line can embed [Name] "the line" (the Trailer script writer adds 2-3 itself; users can type them into any beat). Each named character gets their own TTS voice automatically (edge-tts cast, or the ElevenLabs account's voices), with a light in-scene room tone; the narrator keeps the chosen voice, captions stay word-synced, the render log prints the cast. No lip-sync - trailer-style cuts carry it.
 💡 Draft from your own idea (top of Produce): paste a summary or details, pick scary/what-if/true-history, and Draft it builds the title, script, and shot prompts from YOUR notes (keeps every named fact), honoring Clips and Mood; the package opens ready to render.
 Optional API keys, one per file in pipeline/: openai_key.txt (better writing), elevenlabs_key.txt (premium voices), tryinfer_key.txt (paid AI video), pexels_key.txt (stock). Free fallbacks exist for everything.
 Everything runs locally; no accounts, no tracking, no auto-posting. Never promise views, virality, or income."""
@@ -1293,6 +1295,16 @@ MOODS = {
                "final line that hits like a title card",
 }
 
+# Trailer scripts trade the narrator against in-scene character lines - the
+# renderer gives each named character their own voice (multi-voice TTS).
+TRAILER_DIALOGUE_RULE = (
+    'Weave 2-3 SHORT in-scene character dialogue lines (max 8 words each) into '
+    'DIFFERENT beats, using exactly this format inside the beat text: '
+    '[Name] "the line" - square brackets around the character\'s name, the line '
+    'in double quotes. Each named character gets their own voice in the video. '
+    'Dialogue punctuates the narration like trailer cuts; never open a beat '
+    'with it and keep the narrator carrying the story. ')
+
 
 def resolve_mood(mood, pkg):
     """A concrete MOODS key for the writers. 'auto' (the dropdown default)
@@ -1340,8 +1352,9 @@ def script_from_prompts(pkg, mood):
         '{"hook":"...","beats":[' + ",".join(['"..."'] * (n - 2)) + '],"outro":"..."} '
         f"hook = one gripping opening line. beats = exactly {n - 2} spoken lines, "
         f"{words} words each. outro = a short payoff line plus a one-sentence "
-        "follow call-to-action. No hashtags, no emoji, no stage directions.\n\n"
-        "SHOTS:\n" + numbered
+        "follow call-to-action. No hashtags, no emoji, no stage directions. "
+        + (TRAILER_DIALOGUE_RULE if mood == "trailer" else "")
+        + "\n\nSHOTS:\n" + numbered
     )
     def attempt():
         raw = _ai_text(prompt, max_tokens=400 + 90 * (n - 2))
