@@ -181,6 +181,9 @@ def brand_font(pkg):
 # Modern caption look (ASS): white words, spoken word pops to yellow.
 CAP_WHITE = r"&H00FFFFFF&"
 CAP_HL = r"&H0000D4FF&"      # bright yellow (ASS is &HAABBGGRR)
+# Dialogue caption tints, one per character by order of appearance (BGR):
+# ice blue, rose, mint - the spoken-word pop stays yellow for everyone.
+CAP_SPEAKER_TINTS = [r"&H00F0DCA8&", r"&H00CCB4F0&", r"&H00C8EFB8&"]
 CAP_FONTSIZE = 92
 CAP_MAX_WORDS = 3           # words visible per phrase
 CAP_Y = 1200                # caption anchor (of 1920) - lower third
@@ -450,7 +453,9 @@ def synthesize_cast(segments, vconf, out_mp3, tmp, ffmpeg, ffprobe, eleven=None)
             filt = "highpass=f=140,aecho=0.8:0.55:14|29:0.18|0.09," + filt
         wav = tmp / f"vc-{idx:02d}.wav"
         run([ffmpeg, "-y", "-i", str(part), "-af", filt, str(wav)])
-        words.extend((s + offset, e + offset, t) for s, e, t in w)
+        # 4-tuples: the speaker rides along so captions can tint dialogue
+        # and flash the character's name (None = narrator).
+        words.extend((s + offset, e + offset, t, speaker) for s, e, t in w)
         parts.append(wav)
         offset += probe_duration(ffprobe, wav)
     (tmp / "vc-list.txt").write_text("".join(f"file '{p.name}'\n" for p in parts),
@@ -589,16 +594,25 @@ def ass_time(seconds):
     return f"{h}:{m:02d}:{s:02d}.{c:02d}"
 
 
+def _norm_words(words):
+    """Words as 4-tuples (start, end, word, speaker) - the single-voice path
+    produces 3-tuples (speaker None), the cast path 4-tuples."""
+    return [w if len(w) == 4 else (w[0], w[1], w[2], None) for w in words]
+
+
 def group_phrases(words, max_words=CAP_MAX_WORDS, max_gap=0.55):
     phrases, cur = [], []
-    for start, end, word in words:
+    for start, end, word, speaker in _norm_words(words):
         if cur:
             prev_end = cur[-1][1]
             sentence_break = cur[-1][2].rstrip('"”’').endswith((".", "!", "?", ":", ","))
-            if len(cur) >= max_words or (start - prev_end) > max_gap or sentence_break:
+            # A voice change always starts a fresh phrase, so every caption
+            # line belongs to exactly one speaker (clean tint + name flash).
+            if (len(cur) >= max_words or (start - prev_end) > max_gap
+                    or sentence_break or cur[-1][3] != speaker):
                 phrases.append(cur)
                 cur = []
-        cur.append((start, end, word))
+        cur.append((start, end, word, speaker))
     if cur:
         phrases.append(cur)
     return phrases
@@ -639,14 +653,26 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     # Flatten to one caption event per word so we can butt each event exactly
     # against the next (no overlap, no gap -> no doubled/garbled frames).
+    # Dialogue phrases (speaker-tagged words from synthesize_cast) render in
+    # the character's tint + italics; group_phrases never mixes speakers.
+    phrases = group_phrases(words)
+    tints = {}
+    for ph in phrases:
+        sp = ph[0][3]
+        if sp and sp not in tints:
+            tints[sp] = CAP_SPEAKER_TINTS[len(tints) % len(CAP_SPEAKER_TINTS)]
     events = []
-    for phrase in group_phrases(words):
-        for k, (start, _, _) in enumerate(phrase):
+    for phrase in phrases:
+        spk = phrase[0][3]
+        base = tints.get(spk, CAP_WHITE)
+        for k, (start, _, _, _) in enumerate(phrase):
             parts = []
-            for j, (_, _, w) in enumerate(phrase):
+            for j, (_, _, w, _) in enumerate(phrase):
                 token = w.upper()
-                parts.append(f"{{\\c{CAP_HL}}}{token}{{\\c{CAP_WHITE}}}" if j == k else token)
+                parts.append(f"{{\\c{CAP_HL}}}{token}{{\\c{base}}}" if j == k else token)
             tags = f"\\an5\\pos({WIDTH // 2},{CAP_Y})"
+            if spk:
+                tags += f"\\i1\\c{base}"
             if k == 0:  # entrance pop only when a new phrase appears
                 tags += "\\fad(70,0)\\fscx78\\fscy78\\t(0,120,\\fscx100\\fscy100)"
             events.append([start, f"{{{tags}}}" + " ".join(parts)])
@@ -655,6 +681,24 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     for i, (start, text) in enumerate(events):
         end = events[i + 1][0] if i + 1 < len(events) else start + 0.6
         lines.append(f"Dialogue: 0,{ass_time(start)},{ass_time(end)},Cap,,0,0,0,,{text}")
+
+    # A "— NAME" flash above the captions whenever a character starts
+    # speaking, in their tint, so viewers track who's talking over fast cuts.
+    runs = []
+    for ph in phrases:
+        sp = ph[0][3]
+        if runs and runs[-1][0] == sp:
+            runs[-1][2] = ph[-1][1]
+        else:
+            runs.append([sp, ph[0][0], ph[-1][1]])
+    for sp, s, e in runs:
+        if not sp:
+            continue
+        name = sanitize_card_text(sp)
+        dur = min(1.4, max(0.7, e - s))
+        tag = (f"{{\\an5\\pos({WIDTH // 2},{CAP_Y - 108})\\fs54\\c{tints[sp]}"
+               "\\fad(80,120)}")
+        lines.append(f"Dialogue: 1,{ass_time(s)},{ass_time(s + dur)},Cap,,0,0,0,,{tag}— {name}")
 
     if pkg:
         title = sanitize_card_text((pkg.get("thumbnails") or [pkg.get("title", "")])[0])
