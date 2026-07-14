@@ -786,6 +786,12 @@ def _polish_via_openai(pkg, seg_count, key):
         "Put a specific relatable person doing something concrete in nearly every "
         "prompt (reenactment style)." if PEOPLE_BIAS else
         "Include people only where a clip note calls for them.")
+    cast = pkg.get("cast") or []
+    cast_rule = ("Recurring characters: every clip is generated independently, so "
+                 "whenever one of these characters appears, describe them with "
+                 "EXACTLY this look, word for word: "
+                 + "; ".join(f'{c.get("name")} = {c.get("look")}' for c in cast)
+                 + ". " if cast else "")
     style_rule = ""
     if (pkg.get("category") or "") == "Scary Story":
         # Quiet-horror cinematography (the social-thriller school): the frame
@@ -805,7 +811,7 @@ def _polish_via_openai(pkg, seg_count, key):
         "Rewrite each clip note into ONE vivid visual prompt of 15-35 words: a concrete "
         "subject and action, the setting, a camera angle or movement, and lighting/mood. "
         "Stay true to the moment each note describes - same scene, richer picture - and "
-        "keep a consistent visual world across all clips. " + style_rule + people_rule + " "
+        "keep a consistent visual world across all clips. " + cast_rule + style_rule + people_rule + " "
         "Never mention on-screen text, captions, words, letters, numbers, signs, logos or "
         "watermarks. Reply with ONLY minified JSON, no markdown fences: "
         f'{{"prompts":["...", ...]}} with exactly {seg_count} strings in clip order.\n'
@@ -862,16 +868,37 @@ def polished_shot_texts(pkg, seg_count):
     return result
 
 
+def _apply_cast(text, cast):
+    """Pin recurring characters into a prompt: the first mention of a cast
+    name gains their look - 'Mara' -> 'Mara (mid-30s, red parka)' - so every
+    independently generated clip draws the same person. Skipped when the
+    look is already in the text (e.g. the polish pass wrote it out)."""
+    low = text.lower()
+    for c in cast or []:
+        name, look = str(c.get("name", "")), str(c.get("look", ""))
+        if not name or not look:
+            continue
+        # Any two consecutive look-words already in the text means the look
+        # is (at least partly) written out - don't describe her twice.
+        lw = re.sub(r"[^a-z0-9 -]", "", look.lower()).split()
+        if any(f"{a} {b}" in low for a, b in zip(lw, lw[1:])):
+            continue
+        text = re.sub(rf"\b{re.escape(name)}\b", f"{name} ({look})", text, count=1)
+    return text
+
+
 def ai_prompt_for_segment(pkg, seg_index, seg_count, style_suffix):
     """Build an image/video prompt for one narration segment: the OpenAI-polished
-    version when available, otherwise the raw shot/beat text (+ people bias)."""
+    version when available, otherwise the raw shot/beat text (+ people bias).
+    Either way, cast characters keep their exact look in every prompt."""
     polished = polished_shot_texts(pkg, seg_count)
     if polished:
-        return f"{polished[seg_index]}, {style_suffix}"
-    src = _raw_shot_text(pkg, seg_index, seg_count)
-    if PEOPLE_BIAS and not _PERSON_RE.search(src):
-        src = f"{src}, {HUMAN_HINT}"
-    return f"{src}, {style_suffix}"
+        core = polished[seg_index]
+    else:
+        core = _raw_shot_text(pkg, seg_index, seg_count)
+        if PEOPLE_BIAS and not _PERSON_RE.search(core):
+            core = f"{core}, {HUMAN_HINT}"
+    return f"{_apply_cast(core, pkg.get('cast'))}, {style_suffix}"
 
 
 def fetch_ai_image(prompt, dest, seed):

@@ -294,7 +294,13 @@ def draft_prompt(title, category, runtime=60, beats=5, idea=None, mood=None):
     words, pace = beat_word_budget(runtime, beats)
     shape = (
         'reply with ONLY minified JSON, no markdown fences, exactly this shape: '
-        '{"premise":"...","beats":[' + ",".join(['"..."'] * beats) + '],"tags":["...","...","..."],"emoji":"..."} '
+        '{"premise":"...","beats":[' + ",".join(['"..."'] * beats) + '],'
+        '"tags":["...","...","..."],"emoji":"...",'
+        '"cast":[{"name":"...","look":"..."}]} '
+        "cast = the story's recurring characters (0-3, empty list if none): a short "
+        "first name plus look, a 6-12 word visual description (age, build, hair, one "
+        "signature clothing item) that stays IDENTICAL every time they're on screen. "
+        "Refer to them by these names in the beats. "
         # The creator's own summary/details ground the whole draft; an
         # explicit 🎭 mood flavors the register on top of the category's own.
         # (MOODS is defined later in the module - resolved at call time.)
@@ -378,8 +384,21 @@ def draft_prompt(title, category, runtime=60, beats=5, idea=None, mood=None):
     )
 
 
+def parse_cast(raw_cast):
+    """Clean an AI-written cast list into [{"name", "look"}] (max 4)."""
+    cast = []
+    for c in (raw_cast or [])[:4]:
+        if not isinstance(c, dict):
+            continue
+        name = re.sub(r"\s+", " ", str(c.get("name", ""))).strip(" \"'[]")[:30]
+        look = re.sub(r"\s+", " ", str(c.get("look", ""))).strip(" \"'")[:120]
+        if name and look:
+            cast.append({"name": name, "look": look})
+    return cast
+
+
 def parse_draft(raw, engine, want=5):
-    """Validate a raw model reply into the {premise, beats, tags, emoji} contract."""
+    """Validate a raw model reply into the {premise, beats, tags, emoji, cast} contract."""
     start, end = raw.find("{"), raw.rfind("}")
     if start < 0 or end <= start:
         raise RuntimeError("no JSON in AI response")
@@ -393,6 +412,7 @@ def parse_draft(raw, engine, want=5):
         "beats": beats,
         "tags": [str(t).strip() for t in (data.get("tags") or []) if str(t).strip()][:5],
         "emoji": str(data.get("emoji") or "").strip()[:4],
+        "cast": parse_cast(data.get("cast")),
         "engine": engine,
     }
 
@@ -631,6 +651,7 @@ def scaffold_batch_package(conf, title, draft, runtime):
         "tags": draft.get("tags") or [conf["fallback_tag"]],
         "hooks": [first],
         "beats": draft["beats"],
+        "cast": draft.get("cast") or [],
         "outro": conf["outro"],
         "captions": [title, conf["extra_caption"]],
         "thumbnails": [" ".join(title.split()[:4]).upper()],
@@ -758,6 +779,7 @@ Produce per-beat references: attach an image and/or your own video to any beat; 
 🎵 Ironic cheerful music (Render checkbox, or --ironic-music): a sincerely happy bed (music/ironic - 1950s swing, ragtime, elevator muzak; python get_music.py fetches them) that contradicts scary visuals, plays straight until the reveal beat, then tape-stops on its first word with a soft impact and resumes slowed + quiet. Any category, any visuals mode. With Mood on Auto it also renders generated visuals in Wholesome mood - smiling pictures, cheerful song, dark script - the full Jordan Peele contradiction in one click (an explicit mood overrides the look).
 🎬 Movie-trailer feel (Render checkbox, or --trailer; excludes the ironic checkbox): epic cinematic bed from music/trailer + the riser and impact on the reveal for any category; with Mood on Auto, generated visuals render in Trailer mood (anamorphic teal-and-orange). Pick the Trailer mood + "Script from prompts" for trailer-speak narration WITH character dialogue.
 🎙 Character dialogue: any spoken line can embed [Name] "the line" (the Trailer script writer adds 2-3 itself; users can type them into any beat). Each named character gets their own TTS voice automatically (edge-tts cast, or the ElevenLabs account's voices), with a light in-scene room tone; the narrator keeps the chosen voice, captions stay word-synced, the render log prints the cast. Dialogue captions are speaker-aware: italic + a per-character tint with a small "- NAME" flash when a character starts speaking. No lip-sync - trailer-style cuts carry it.
+🧬 Cast memory: new drafts and "Script from prompts" write a cast (name + fixed 6-12 word look) into the package; every visual prompt that mentions a character pins that exact look (polish is instructed, the free path expands the first name mention), so the same person appears across clips - prompt-level consistency, strong resemblance rather than a perfect face lock.
 💡 Draft from your own idea (top of Produce): paste a summary or details, pick scary/what-if/true-history, and Draft it builds the title, script, and shot prompts from YOUR notes (keeps every named fact), honoring Clips and Mood; the package opens ready to render.
 Optional API keys, one per file in pipeline/: openai_key.txt (better writing), elevenlabs_key.txt (premium voices), tryinfer_key.txt (paid AI video), pexels_key.txt (stock). Free fallbacks exist for everything.
 Everything runs locally; no accounts, no tracking, no auto-posting. Never promise views, virality, or income."""
@@ -1301,7 +1323,8 @@ TRAILER_DIALOGUE_RULE = (
     'Weave 2-3 SHORT in-scene character dialogue lines (max 8 words each) into '
     'DIFFERENT beats, using exactly this format inside the beat text: '
     '[Name] "the line" - square brackets around the character\'s name, the line '
-    'in double quotes. Each named character gets their own voice in the video. '
+    'in double quotes. Each named character gets their own voice in the video; '
+    'use the SAME names as the cast list so their look and voice stay tied. '
     'Dialogue punctuates the narration like trailer cuts; never open a beat '
     'with it and keep the narrator carrying the story. ')
 
@@ -1349,15 +1372,18 @@ def script_from_prompts(pkg, mood):
         "in naturally - never just describe the picture), and the whole thing flows "
         f"as ONE story told in a {voice} voice. "
         'Reply with ONLY minified JSON, no markdown fences, exactly: '
-        '{"hook":"...","beats":[' + ",".join(['"..."'] * (n - 2)) + '],"outro":"..."} '
+        '{"hook":"...","beats":[' + ",".join(['"..."'] * (n - 2)) + '],"outro":"...",'
+        '"cast":[{"name":"...","look":"..."}]} '
         f"hook = one gripping opening line. beats = exactly {n - 2} spoken lines, "
         f"{words} words each. outro = a short payoff line plus a one-sentence "
-        "follow call-to-action. No hashtags, no emoji, no stage directions. "
+        "follow call-to-action. cast = any recurring characters you named (0-3): "
+        "first name + look, a 6-12 word visual description that stays identical "
+        "on screen; empty list if none. No hashtags, no emoji, no stage directions. "
         + (TRAILER_DIALOGUE_RULE if mood == "trailer" else "")
         + "\n\nSHOTS:\n" + numbered
     )
     def attempt():
-        raw = _ai_text(prompt, max_tokens=400 + 90 * (n - 2))
+        raw = _ai_text(prompt, max_tokens=450 + 90 * (n - 2))
         start, end = raw.find("{"), raw.rfind("}")
         if start < 0 or end <= start:
             raise RuntimeError("no JSON in AI response")
@@ -1367,7 +1393,8 @@ def script_from_prompts(pkg, mood):
         hook, outro = clean(data.get("hook", ""), 600), clean(data.get("outro", ""), 600)
         if not hook or not outro or len(beats) != n - 2:
             raise RuntimeError(f"the writer returned {len(beats)} beats for {n - 2} shots - try again")
-        return {"hook": hook, "beats": beats, "outro": outro}
+        return {"hook": hook, "beats": beats, "outro": outro,
+                "cast": parse_cast(data.get("cast"))}
     return _retry_generate(attempt)
 
 
@@ -1380,6 +1407,11 @@ def prompts_from_script(pkg, mood):
         raise RuntimeError("this package has no script to write from")
     voice = MOODS.get(mood, MOODS["eerie"])
     numbered = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(segs))
+    cast = pkg.get("cast") or []
+    cast_note = ("The story's recurring characters must look THE SAME in every shot - "
+                 "whenever one appears, describe them with exactly this look: "
+                 + "; ".join(f'{c["name"]} = {c["look"]}' for c in cast) + ". "
+                 if cast else "")
     prompt = (
         "You write prompts for an AI video generator. For EACH numbered spoken "
         "line below, write ONE sentence describing the 5-second video shot that "
@@ -1387,7 +1419,8 @@ def prompts_from_script(pkg, mood):
         "(of the subject or the camera). Under 45 words each. Show a concrete "
         "person doing something in most shots, and give the whole sequence a "
         f"{voice} mood expressed purely through the imagery - lighting, framing, "
-        "body language. No style words like 'cinematic' and no aspect ratios - "
+        "body language. " + cast_note +
+        "No style words like 'cinematic' and no aspect ratios - "
         "those are appended separately. "
         f"EVERY line gets a shot - all {n} of them, including the last one "
         "(the outro/call-to-action plays over a closing shot, not a blank). "
@@ -2259,6 +2292,10 @@ class Handler(BaseHTTPRequestHandler):
                 hooks = list(pkg.get("hooks") or [""])
                 hooks[0] = script["hook"]
                 pkg["hooks"], pkg["beats"], pkg["outro"] = hooks, script["beats"], script["outro"]
+                # A rewrite that names characters replaces the cast; one that
+                # doesn't keeps whatever the package already knew.
+                if script.get("cast"):
+                    pkg["cast"] = script["cast"]
                 qpath.write_text(json.dumps(qdata, indent=2), encoding="utf-8")
                 save_prompts(pkg, prompts)   # keep the prompts the script was built from
                 try:
