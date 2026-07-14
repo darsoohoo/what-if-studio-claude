@@ -371,6 +371,11 @@ async def synthesize(text, vconf, mp3_path):
 
 _DLG_RE = re.compile(r'\[([A-Za-z][A-Za-z0-9 .\'-]{0,24})\]\s*("([^"]*)"|“([^”]*)”|([^\[]+))')
 
+# Trailer VO tempo for voices that have no rate knob (ElevenLabs): atempo
+# keeps the pitch, word timings are rescaled to match. Edge voices use their
+# native rate parameter instead (-15% in trailer mode).
+TRAILER_TEMPO = 0.88
+
 # Distinct free edge-tts voices for the character cast, assigned by order of
 # first appearance (the narrator's voice is skipped if it collides).
 EDGE_CAST = ["en-US-AriaNeural", "en-US-GuyNeural", "en-GB-SoniaNeural",
@@ -403,7 +408,8 @@ def strip_dialogue_markup(text):
     return " ".join(t for _, t in split_dialogue(text))
 
 
-def synthesize_cast(segments, vconf, out_mp3, tmp, ffmpeg, ffprobe, eleven=None):
+def synthesize_cast(segments, vconf, out_mp3, tmp, ffmpeg, ffprobe, eleven=None,
+                    narrator_tempo=1.0):
     """Multi-voice narration for segments carrying [Name] "line" dialogue.
     Synthesizes each chunk with its voice, gives character lines a subtle
     in-scene treatment (thinner low end + a touch of slap echo), stitches
@@ -452,6 +458,11 @@ def synthesize_cast(segments, vconf, out_mp3, tmp, ffmpeg, ffprobe, eleven=None)
         filt = "aresample=44100,aformat=sample_fmts=s16:channel_layouts=mono,apad=pad_dur=0.15"
         if speaker is not None:
             filt = "highpass=f=140,aecho=0.8:0.55:14|29:0.18|0.09," + filt
+        elif narrator_tempo != 1.0:
+            # Trailer delivery for rate-less voices: slow the narrator only -
+            # dialogue keeps its natural pace - and stretch his word timings.
+            filt = f"atempo={narrator_tempo}," + filt
+            w = [(s / narrator_tempo, e / narrator_tempo, t) for s, e, t in w]
         wav = tmp / f"vc-{idx:02d}.wav"
         run([ffmpeg, "-y", "-i", str(part), "-af", filt, str(wav)])
         # 4-tuples: the speaker rides along so captions can tint dialogue
@@ -2153,13 +2164,26 @@ def main():
                             eleven={"key": el_key, "model": args.el_model,
                                     "narrator_id": el_voice_id,
                                     "voices": elevenlabs_voices(el_key),
-                                    "settings": el_settings})
+                                    "settings": el_settings},
+                            narrator_tempo=TRAILER_TEMPO if args.trailer else 1.0)
                     else:
                         words = synthesize_elevenlabs(text, el_voice_id, args.el_model,
                                                       tmp / "voice.mp3", el_key,
                                                       settings=el_settings)
+                        if args.trailer:
+                            # ElevenLabs has no rate knob - slow the whole VO
+                            # (pitch preserved) and stretch the word timings.
+                            slow = tmp / "voice-slow.mp3"
+                            run([ffmpeg, "-y", "-i", str(tmp / "voice.mp3"),
+                                 "-af", f"atempo={TRAILER_TEMPO}",
+                                 "-c:a", "libmp3lame", "-q:a", "3", str(slow)])
+                            (tmp / "voice.mp3").unlink()
+                            slow.rename(tmp / "voice.mp3")
+                            words = [(s / TRAILER_TEMPO, e / TRAILER_TEMPO, t)
+                                     for s, e, t in words]
                     total = probe_duration(ffprobe, tmp / "voice.mp3")
-                    print(f"  voice: ElevenLabs {el_voice_name} ({args.el_model}) - {total:.1f}s")
+                    print(f"  voice: ElevenLabs {el_voice_name} ({args.el_model}) - {total:.1f}s"
+                          + (f" (trailer pace x{TRAILER_TEMPO})" if args.trailer else ""))
                 else:
                     if has_dialogue:
                         words, cast = synthesize_cast(
