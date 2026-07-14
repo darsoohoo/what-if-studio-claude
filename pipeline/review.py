@@ -440,7 +440,9 @@ def ai_draft_openai(title, category, key, runtime=60, beats=5, idea=None, mood=N
     mv.record_spend("openai", "AI draft", mv.openai_usage_cost(reply),
                     OPENAI_MODEL, title[:60], estimated=True)
     raw = reply["choices"][0]["message"]["content"]
-    return parse_draft(raw, "openai", beats)
+    draft = parse_draft(raw, "openai", beats)
+    require_trailer_dialogue(draft["beats"], mood)
+    return draft
 
 
 def ai_draft_pollinations(title, category, runtime=60, beats=5, idea=None, mood=None):
@@ -463,7 +465,9 @@ def ai_draft_pollinations(title, category, runtime=60, beats=5, idea=None, mood=
             raise
     if raw is None:
         raise RuntimeError("the free writing service is busy - try again in a minute")
-    return parse_draft(raw, "pollinations", beats)
+    draft = parse_draft(raw, "pollinations", beats)
+    require_trailer_dialogue(draft["beats"], mood)
+    return draft
 
 
 def ai_draft(title, category, runtime=60, beats=5, idea=None, mood=None):
@@ -1312,22 +1316,36 @@ MOODS = {
     "wholesome": "wholesome - warm, kind, quietly uplifting",
     "inspiring": "inspiring - hopeful, motivating, big-picture wonder",
     "deadpan": "deadpan - flat matter-of-fact delivery that lets the absurdity speak",
-    "trailer": "movie-trailer VOICEOVER - short punchy fragments of 2-8 words that land "
-               "like cut cards, one image per fragment, separated by dramatic pauses "
-               "written as ' - ' or '...', the 'In a world' cadence without the cliche, "
-               "epic escalating stakes, built to a final line that hits like a title card",
+    "trailer": "movie-trailer VOICEOVER - each beat is a CHAIN of short punchy fragments "
+               "(2-8 words each) separated by dramatic pauses written as ' - ' or '...', "
+               "stacked until the beat reaches its FULL word count (fragments are short, "
+               "beats are not - never hand back a 4-word beat), the 'In a world' cadence "
+               "without the cliche, epic escalating stakes, built to a final line that "
+               "hits like a title card",
 }
 
 # Trailer scripts trade the narrator against in-scene character lines - the
 # renderer gives each named character their own voice (multi-voice TTS).
 TRAILER_DIALOGUE_RULE = (
-    'Weave 2-3 SHORT in-scene character dialogue lines (max 8 words each) into '
-    'DIFFERENT beats, using exactly this format inside the beat text: '
-    '[Name] "the line" - square brackets around the character\'s name, the line '
-    'in double quotes. Each named character gets their own voice in the video; '
-    'use the SAME names as the cast list so their look and voice stay tied. '
-    'Dialogue punctuates the narration like trailer cuts; never open a beat '
-    'with it and keep the narrator carrying the story. ')
+    'REQUIRED: at least 2 DIFFERENT beats must each contain one short in-scene '
+    'character line (max 8 words) in EXACTLY this inline format: [Name] "the line". '
+    'Example of a correct beat: '
+    'The doors lock at midnight - every door but one... [Mara] "Don\'t open it." '
+    'But someone always does. '
+    'The square-bracket name tag is REQUIRED and is not a stage direction - the '
+    'renderer reads it to give each character their own real voice, then each '
+    'named character speaks aloud in the video. Use the SAME names as the cast '
+    'list so their look and voice stay tied. Keep the narrator carrying the '
+    'story; never open a beat with dialogue. ')
+
+_DLG_MARK_RE = re.compile(r'\[[A-Za-z][A-Za-z0-9 .\'-]{0,24}\]\s*["“]')
+
+
+def require_trailer_dialogue(beats, mood):
+    """Trailer scripts without character lines defeat the point - reject so
+    the retry (or the engine fallback) rolls again."""
+    if mood == "trailer" and sum(1 for b in beats if _DLG_MARK_RE.search(b)) < 2:
+        raise RuntimeError('the writer left out the [Name] "line" character dialogue - try again')
 
 
 def resolve_mood(mood, pkg):
@@ -1375,8 +1393,14 @@ def script_from_prompts(pkg, mood):
         'Reply with ONLY minified JSON, no markdown fences, exactly: '
         '{"hook":"...","beats":[' + ",".join(['"..."'] * (n - 2)) + '],"outro":"...",'
         '"cast":[{"name":"...","look":"..."}]} '
-        f"hook = one gripping opening line. beats = exactly {n - 2} spoken lines, "
-        f"{words} words each. outro = a short payoff line plus a one-sentence "
+        "hook = one gripping opening line. "
+        + (f"beats = exactly {n - 2} spoken lines, {words} words each. "
+           if mood != "trailer" else
+           f"beats = exactly {n - 2} spoken lines. This is a TRAILER: build each "
+           f"beat as a chain of 3-5 short fragments separated by ' - ' or '...', "
+           f"and every beat must still total {words} words - COUNT them, never "
+           "stop after one fragment. ")
+        + "outro = a short payoff line plus a one-sentence "
         "follow call-to-action. cast = any recurring characters you named (0-3): "
         "first name + look, a 6-12 word visual description that stays identical "
         "on screen; empty list if none. No hashtags, no emoji, no stage directions. "
@@ -1394,9 +1418,19 @@ def script_from_prompts(pkg, mood):
         hook, outro = clean(data.get("hook", ""), 600), clean(data.get("outro", ""), 600)
         if not hook or not outro or len(beats) != n - 2:
             raise RuntimeError(f"the writer returned {len(beats)} beats for {n - 2} shots - try again")
+        # The video is exactly as long as the narration - a rewrite that
+        # undershoots the word budget silently shrinks the whole video
+        # (trailer fragments are the classic offender).
+        lo = int(words.split("-")[0])
+        got = sum(len(b.split()) for b in beats)
+        if got < 0.6 * lo * (n - 2):
+            raise RuntimeError(f"the writer came back too short ({got} words for a "
+                               f"~{lo * (n - 2)}-word script) - try again")
+        require_trailer_dialogue(beats, mood)
         return {"hook": hook, "beats": beats, "outro": outro,
                 "cast": parse_cast(data.get("cast"))}
-    return _retry_generate(attempt)
+    # Trailer asks for more (fragments + budget + dialogue) - allow more rolls.
+    return _retry_generate(attempt, tries=5 if mood == "trailer" else 3)
 
 
 def prompts_from_script(pkg, mood):
