@@ -7,7 +7,7 @@ A two-part product for making short-form "What if?" videos (TikTok/YouTube Short
 
 ## Commands
 
-- Render: `python pipeline/make_videos.py <queue.json>` — flags: `--ai-visuals [style]`, `--charts`, `--elevenlabs`, `--infer` (paid AI video), `--stock` (Pexels), `--prompt-sheet`, `--clip-audio VOL`, `--no-people`, `--no-polish`, `--slots N`
+- Render: `python pipeline/make_videos.py <queue.json>` — flags: `--ai-visuals [style]`, `--charts`, `--elevenlabs`, `--infer` (paid AI video), `--stock` (Pexels), `--prompt-sheet`, `--clip-audio VOL`, `--no-people`, `--no-polish`, `--no-sfx`, `--slots N`
 - Dashboard: `pipeline/review.bat` (or the root .bat) → http://127.0.0.1:8765
 - Watcher (auto-render on queue export to Downloads): `pipeline/start-watcher.bat`
 

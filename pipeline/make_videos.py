@@ -26,10 +26,12 @@ Requirements: Python 3.9+, `pip install -r requirements.txt`, ffmpeg on PATH
 """
 
 import argparse
+import array
 import asyncio
 import base64
 import glob
 import json
+import math
 import os
 import random
 import re
@@ -40,6 +42,7 @@ import tempfile
 import time
 import urllib.parse
 import urllib.request
+import wave
 from pathlib import Path
 
 try:
@@ -108,6 +111,9 @@ DEFAULT_BRANDING = {
     "title_spacing": 1, "title_outline": 9, "title_shadow": 3,
     "cta_outline": 6, "thumb_border": 9,
     "music_volume": MUSIC_VOLUME,
+    # Beat-timed sound design: "reveal" = a sub-bass riser that swells into
+    # the reveal beat and lands with a soft impact (synthesized, no samples).
+    "sfx": None,
 }
 CATEGORY_BRANDING = {
     "Scary Story": {
@@ -117,8 +123,10 @@ CATEGORY_BRANDING = {
         "title_color": r"&H00E0E8ED&", "thumb_color": "0xEDE8E0",   # bone white
         "title_spacing": 7, "title_outline": 3, "title_shadow": 2,
         "cta_outline": 3, "thumb_border": 5,
-        # Horror leans on the bed: the creepy track sits a notch louder.
+        # Horror leans on the bed: the creepy track sits a notch louder,
+        # and the reveal beat gets a riser + soft impact under it.
         "music_volume": 0.16,
+        "sfx": "reveal",
     },
     "True History": {
         "cta": "FOLLOW FOR MORE TRUE HISTORY", "anchor": "#history", "style": "archival",
@@ -1217,6 +1225,47 @@ def probe_duration(ffprobe, media_path):
     return float(out.stdout.strip())
 
 
+# ---------------------------------------------------------------- beat SFX
+
+SFX_RATE = 48000
+
+
+def synth_reveal_sfx(path, riser=3.0, tail=2.2):
+    """Write a mono WAV: a sub-bass riser (rising sine sweep + hushed noise)
+    that swells for `riser` seconds, then a soft low impact that decays over
+    `tail` seconds. Synthesized from scratch - no samples, nothing to license.
+    The impact lands exactly at t=riser, so callers align that moment with
+    the first word of the reveal beat."""
+    n_riser = int(riser * SFX_RATE)
+    n_tail = int(tail * SFX_RATE)
+    rng = random.Random(333)          # deterministic: same render, same sound
+    out = array.array("h", bytes(2 * (n_riser + n_tail)))
+
+    phase, lp = 0.0, 0.0
+    for i in range(n_riser):
+        t = i / SFX_RATE
+        prog = t / riser
+        freq = 30.0 * (54.0 / 30.0) ** prog          # 30 Hz sweeping up to ~54 Hz
+        phase += 2.0 * math.pi * freq / SFX_RATE
+        lp += 0.015 * (rng.uniform(-1, 1) - lp)      # one-pole lowpassed rumble
+        amp = 0.22 * prog * prog
+        out[i] = int(32767 * max(-1.0, min(1.0, amp * (math.sin(phase) + 1.4 * lp))))
+
+    for i in range(n_tail):
+        t = i / SFX_RATE
+        freq = 40.0 + 12.0 * math.exp(-4.0 * t)      # pitch sags as it decays
+        phase += 2.0 * math.pi * freq / SFX_RATE
+        thump = 0.10 * math.exp(-90.0 * t) * rng.uniform(-1, 1)   # 25ms attack noise
+        amp = 0.38 * math.exp(-2.4 * t)
+        out[n_riser + i] = int(32767 * max(-1.0, min(1.0, amp * math.sin(phase) + thump)))
+
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(SFX_RATE)
+        w.writeframes(out.tobytes())
+
+
 def segment_spans(segments, words, total):
     """Map each spoken segment to a (start, end) time span using word counts."""
     counts = [max(1, len(clean_for_tts(s).split())) for s in segments]
@@ -1445,10 +1494,12 @@ def render_thumbnail(ffmpeg, visual, pkg, out_path, tmp, font_ff):
          str(out_path)], cwd=tmp)
 
 
-def final_render(ffmpeg, base, pkg, total, has_music, out_path, tmp, clip_audio=0.0):
+def final_render(ffmpeg, base, pkg, total, has_music, out_path, tmp, clip_audio=0.0,
+                 sfx_delay_ms=None):
     """Overlay captions and mix audio onto the base video (or a gradient).
     `clip_audio` > 0 mixes the base video's own sound (e.g. LTX-generated
-    ambience) under the voice at that volume."""
+    ambience) under the voice at that volume. `sfx_delay_ms` places tmp's
+    sfx.wav on the timeline (None = no beat SFX)."""
     if base is not None:
         video_in = ["-i", base.name]
     else:
@@ -1471,6 +1522,14 @@ def final_render(ffmpeg, base, pkg, total, has_music, out_path, tmp, clip_audio=
         filters.append(f"[2:a]volume={branding_for(pkg)['music_volume']},"
                        f"afade=t=out:st={fade_start:.2f}:d=1.5[m]")
         mix.append("[m]")
+    # Beat-timed sound design (sfx.wav + its start offset, prepared by the
+    # render loop when the category asks for it).
+    sfx_file = Path(tmp) / "sfx.wav"
+    if sfx_delay_ms is not None and sfx_file.exists():
+        sfx_idx = 3 if (has_music and music_files) else 2
+        inputs += ["-i", "sfx.wav"]
+        filters.append(f"[{sfx_idx}:a]adelay={int(sfx_delay_ms)}:all=1[sfx]")
+        mix.append("[sfx]")
     if len(mix) > 1:
         filters.append("".join(mix) + f"amix=inputs={len(mix)}:duration=first:normalize=0[a]")
     else:
@@ -1655,6 +1714,8 @@ def main():
                         help="Don't add a person to visual prompts for shots that lack one (people are added by default)")
     parser.add_argument("--no-polish", action="store_true",
                         help="Skip the OpenAI prompt polish (it runs automatically when an OpenAI key is configured)")
+    parser.add_argument("--no-sfx", action="store_true",
+                        help="Skip the beat-timed sound design (Scary Story gets a riser + soft impact on the reveal beat by default)")
     parser.add_argument("--hook", type=int, default=1, choices=[1, 2, 3],
                         help="Which of the 3 hooks opens the video (default: 1)")
     parser.add_argument("--voice", help="Override edge-tts voice for all items")
@@ -1804,6 +1865,19 @@ def main():
                     print(f"  voice: {vconf['voice']} ({vconf['rate']}, {vconf['pitch']}) - {total:.1f}s")
                 (tmp / "subs.ass").write_text(words_to_ass(words, pkg, total), encoding="utf-8")
 
+                # Beat-timed sound design: a sub-bass riser that swells into
+                # the reveal beat (segments[-3] = the second-to-last body
+                # beat) and lands with a soft impact on its first word.
+                sfx_delay_ms = None
+                if (branding_for(pkg).get("sfx") == "reveal" and not args.no_sfx
+                        and len(segments) >= 4 and total > 20):
+                    reveal_start = segment_spans(segments, words, total)[len(segments) - 3][0]
+                    if reveal_start > 6:
+                        lead = min(3.0, reveal_start - 1.0)
+                        synth_reveal_sfx(tmp / "sfx.wav", riser=lead)
+                        sfx_delay_ms = int((reveal_start - lead) * 1000)
+                        print(f"  sfx: sub-bass riser into the reveal at {reveal_start:.1f}s")
+
                 item_visuals = visuals
                 stock_authors = set()
                 item_style = args.ai_style or branding_for(pkg)["style"]
@@ -1879,7 +1953,8 @@ def main():
                     print(f"  music: {music.parent.name}/{music.name}")
 
                 final_render(ffmpeg, base, pkg, total, bool(music), out_path.resolve(), tmp,
-                             clip_audio=args.clip_audio if base is not None else 0.0)
+                             clip_audio=args.clip_audio if base is not None else 0.0,
+                             sfx_delay_ms=sfx_delay_ms)
 
                 thumb_made = False
                 if font_ff:
