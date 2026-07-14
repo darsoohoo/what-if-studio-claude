@@ -89,6 +89,7 @@ AI_STYLES = {
     "infographic": "flat design vector illustration, corporate infographic style, soft pastel beige background, simple geometric shapes and characters, clean minimal composition, no text, no words, no letters",
     "dark":        "moody dark atmospheric illustration, deep shadows, single strong light source, eerie but tasteful, high detail, no text, no words, no letters",
     "archival":    "aged archival photograph blended with classical oil painting, sepia and muted earth tones, dramatic historical scene, subtle film grain, high detail, no text, no words, no letters",
+    "eerie":       "cinematic horror film still, muted desaturated colors, symmetrical composition, unnervingly still, ordinary place with something subtly wrong, natural window light or sodium streetlight, 35mm film grain, quiet dread, high detail, no text, no words, no letters",
 }
 AI_IMAGE_HOST = "https://image.pollinations.ai/prompt/"
 
@@ -105,7 +106,7 @@ DEFAULT_BRANDING = {
 }
 CATEGORY_BRANDING = {
     "Scary Story": {
-        "cta": "FOLLOW FOR MORE SCARY STORIES", "anchor": "#scarystories", "style": "dark",
+        "cta": "FOLLOW FOR MORE SCARY STORIES", "anchor": "#scarystories", "style": "eerie",
         "font": "Creepster-Regular.ttf", "font_name": "Creepster",
         "title_color": r"&H002D31D2&", "thumb_color": "0xD2312D",   # blood red
     },
@@ -548,13 +549,26 @@ def _polish_via_openai(pkg, seg_count, key):
         "Put a specific relatable person doing something concrete in nearly every "
         "prompt (reenactment style)." if PEOPLE_BIAS else
         "Include people only where a clip note calls for them.")
+    style_rule = ""
+    if (pkg.get("category") or "") == "Scary Story":
+        # Quiet-horror cinematography (the social-thriller school): the frame
+        # itself should unsettle, one composition device per clip, no repeats.
+        style_rule = (
+            "This is QUIET HORROR - compose unsettling frames the way social-thriller "
+            "films do. Use a DIFFERENT one of these devices per clip: dead-centered "
+            "symmetrical framing; a subject looking directly into the camera, expression "
+            "a little too calm; a wide static frame of an ordinary place with one small "
+            "detail wrong; a figure standing unnaturally still, or slightly too far away; "
+            "a long hallway or doorway with heavy negative space; something mundane in "
+            "bright cheerful daylight that feels deeply wrong. Stillness over action, "
+            "unease over gore. ")
     prompt = (
         "You write prompts for AI image/video generators. "
         f'The clips below form one vertical 9:16 short answering: "{title}". '
         "Rewrite each clip note into ONE vivid visual prompt of 15-35 words: a concrete "
         "subject and action, the setting, a camera angle or movement, and lighting/mood. "
         "Stay true to the moment each note describes - same scene, richer picture - and "
-        "keep a consistent visual world across all clips. " + people_rule + " "
+        "keep a consistent visual world across all clips. " + style_rule + people_rule + " "
         "Never mention on-screen text, captions, words, letters, numbers, signs, logos or "
         "watermarks. Reply with ONLY minified JSON, no markdown fences: "
         f'{{"prompts":["...", ...]}} with exactly {seg_count} strings in clip order.\n'
@@ -1589,7 +1603,7 @@ def main():
                         help="Generate one free AI image per beat (Pollinations, no account) instead of using backgrounds/")
     parser.add_argument("--ai-style", default=None, choices=sorted(AI_STYLES),
                         help="Look of generated AI visuals (default: the category's own style - "
-                             "dark for Scary Story, archival for True History, cinematic otherwise)")
+                             "eerie for Scary Story, archival for True History, cinematic otherwise)")
     parser.add_argument("--ai-cache", default="ai-visuals",
                         help="Cache folder for generated images (default: ai-visuals)")
     parser.add_argument("--charts", action="store_true",

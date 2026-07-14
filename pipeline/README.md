@@ -15,9 +15,10 @@ python make_videos.py queue.json --ai-visuals --ai-style dark        # eerie/hor
 python make_videos.py queue.json --ai-visuals --ai-style 3d          # pixar-ish characters
 python make_videos.py queue.json --ai-visuals --ai-style infographic # flat corporate vector look
 python make_videos.py queue.json --ai-visuals --ai-style archival    # aged photo / oil painting look
+python make_videos.py queue.json --ai-visuals --ai-style eerie       # quiet-horror film stills (social-thriller framing)
 ```
 
-Without `--ai-style`, each video uses its category's own style: **dark** for Scary Story, **archival** for True History, **cinematic** for everything else. Those categories also swap the burned-in follow card, spoken outro, and anchor hashtag to match (scary-story and true-history branding instead of what-if).
+Without `--ai-style`, each video uses its category's own style: **eerie** for Scary Story, **archival** for True History, **cinematic** for everything else. Those categories also swap the burned-in follow card, spoken outro, and anchor hashtag to match (scary-story and true-history branding instead of what-if).
 
 To regenerate a scenario's images (new random look), delete its folder in `ai-visuals/`. AI images make the whole video AI-generated content — the disclosure reminder in each post kit covers this.
 
