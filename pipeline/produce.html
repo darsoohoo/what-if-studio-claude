@@ -135,6 +135,14 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
     <div style="display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap">
       <button type="button" id="morningBtn" data-kind="scary">🌅 Draft 3 fresh scary scenarios</button>
       <button type="button" id="whatifBtn" data-kind="whatif">💭 Draft 3 realistic what-ifs</button>
+      <label class="opt" style="margin:0" title="Total clips per video: hook + story beats + outro. More clips = faster cuts — the writer splits the same story across shorter lines, so the video stays the same length and the reveal still lands on the second-to-last beat.">Clips:
+        <select id="clipCount" style="width:auto">
+          <option value="7">7 — classic</option>
+          <option value="9">9</option>
+          <option value="12">12</option>
+          <option value="15">15</option>
+        </select>
+      </label>
       <span class="hint" id="morningStatus" style="margin:0"></span>
     </div>
   </section>
@@ -1243,14 +1251,29 @@ async function morningStatus() {
       : `Fresh scary drafts appear every morning after ${m.hour}:00 while the studio runs — or draft either kind on demand.`;
   } catch (e) { /* dashboard hiccup - buttons still work */ }
 }
+/* Clips per drafted video (hook + beats + outro) — remembered across sessions.
+   The writer splits the same total narration across the beats, so more clips
+   = faster cuts at the same video length, and every clip still lands on its
+   own spoken beat (the reveal stays on the second-to-last one). */
+(() => {
+  const sel = $id("clipCount");
+  try {
+    const c = localStorage.getItem("wis.clipCount");
+    if (c && [...sel.options].some(o => o.value === c)) sel.value = c;
+  } catch (e) {}
+  sel.addEventListener("change", () => {
+    try { localStorage.setItem("wis.clipCount", sel.value); } catch (e) {}
+  });
+})();
 ["morningBtn", "whatifBtn"].forEach(id => $id(id).addEventListener("click", async () => {
   const btn = $id(id);
   const kind = btn.dataset.kind;
+  const clips = Number($id("clipCount").value) || 7;
   btn.disabled = true;
   $id("morningStatus").textContent =
-    `Drafting 3 fresh ${kind === "whatif" ? "realistic what-ifs" : "scary scenarios"}… (about half a minute)`;
+    `Drafting 3 fresh ${kind === "whatif" ? "realistic what-ifs" : "scary scenarios"} at ${clips} clips each… (about half a minute)`;
   try {
-    const r = await api("/api/morning/run", { kind });
+    const r = await api("/api/morning/run", { kind, clips });
     if (r.error) throw new Error(r.error);
     $id("morningStatus").textContent = r.made.length
       ? `Drafted: ${r.made.join(" · ")} — loading them into the package list…`

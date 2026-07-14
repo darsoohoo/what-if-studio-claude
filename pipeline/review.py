@@ -273,11 +273,24 @@ RUNTIME_BEAT_WORDS = {
 }
 
 
-def draft_prompt(title, category, runtime=60):
+def beat_word_budget(runtime, beats=5):
+    """Per-beat word range for `beats` beats. The table is calibrated for 5;
+    more beats split the SAME total narration into shorter lines, so the
+    video stays as long as the runtime label - the cuts just come faster."""
     words, pace = RUNTIME_BEAT_WORDS.get(runtime, RUNTIME_BEAT_WORDS[60])
+    if beats != 5:
+        lo, hi = (int(w) for w in words.split("-"))
+        lo = max(6, round(lo * 5 / beats))
+        hi = max(lo + 4, round(hi * 5 / beats))
+        words = f"{lo}-{hi}"
+    return words, pace
+
+
+def draft_prompt(title, category, runtime=60, beats=5):
+    words, pace = beat_word_budget(runtime, beats)
     shape = (
         'reply with ONLY minified JSON, no markdown fences, exactly this shape: '
-        '{"premise":"...","beats":["...","...","...","...","..."],"tags":["...","...","..."],"emoji":"..."} '
+        '{"premise":"...","beats":[' + ",".join(['"..."'] * beats) + '],"tags":["...","...","..."],"emoji":"..."} '
     )
     if category == "Scary Story":
         # Narrative horror in the modern social-thriller register (the
@@ -291,13 +304,19 @@ def draft_prompt(title, category, runtime=60):
             "people. "
             f'For the story "{title}", ' + shape +
             "Rules: premise = 2-3 sentences setting the scene and hinting at what's wrong. "
-            f"beats = exactly 5 spoken story beats, {words} words each, no stage directions: "
+            f"beats = exactly {beats} spoken story beats, {words} words each, no stage directions: "
             f"({pace}) "
-            "1 the ordinary setup with one detail slightly off, 2 the wrong detail becomes "
-            "impossible to unsee, 3 the point of no return, 4 the reveal that RECONTEXTUALIZES "
-            "everything before it - the horror was hiding in plain sight the whole time, "
-            "5 a final line with a double meaning that lingers after the video ends. "
-            "Present tense, concrete sensory details (sounds, timestamps, textures), a specific "
+            + ("1 the ordinary setup with one detail slightly off, 2 the wrong detail becomes "
+               "impossible to unsee, 3 the point of no return, 4 the reveal that RECONTEXTUALIZES "
+               "everything before it - the horror was hiding in plain sight the whole time, "
+               "5 a final line with a double meaning that lingers after the video ends. "
+               if beats == 5 else
+               f"1 the ordinary setup with one detail slightly off, 2-{beats - 2} the escalation - "
+               "the wrong detail becomes impossible to unsee, then the point of no return, each "
+               f"beat one concrete step deeper, {beats - 1} the reveal that RECONTEXTUALIZES "
+               "everything before it - the horror was hiding in plain sight the whole time, "
+               f"{beats} a final line with a double meaning that lingers after the video ends. ")
+            + "Present tense, concrete sensory details (sounds, timestamps, textures), a specific "
             "person doing something in every beat. Root the fear in something human - grief, "
             "guilt, conformity, being watched, needing to belong, who gets believed, or a life "
             "that turns out to be curated for you - shown, never preached. Too-perfect places "
@@ -313,11 +332,15 @@ def draft_prompt(title, category, runtime=60):
             "narration: vivid, punchy, but factually accurate). "
             f'For the real event or story "{title}", ' + shape +
             "Rules: premise = 2-3 sentences placing the event and why it sounds unbelievable. "
-            f"beats = exactly 5 spoken story beats, {words} words each, no stage directions: "
+            f"beats = exactly {beats} spoken story beats, {words} words each, no stage directions: "
             f"({pace}) "
-            "1 drop into the scene, 2 how it started, 3 the escalation, "
-            "4 the twist or best-documented detail, 5 a payoff connecting it to today. "
-            "EVERY fact must be real and verifiable - dates, names, numbers. If a detail is "
+            + ("1 drop into the scene, 2 how it started, 3 the escalation, "
+               "4 the twist or best-documented detail, 5 a payoff connecting it to today. "
+               if beats == 5 else
+               f"1 drop into the scene, 2 how it started, 3-{beats - 2} the escalation told "
+               f"step by documented step, {beats - 1} the twist or best-documented detail, "
+               f"{beats} a payoff connecting it to today. ")
+            + "EVERY fact must be real and verifiable - dates, names, numbers. If a detail is "
             "debated or legend, say so in the narration itself ('accounts claim...', "
             "'historians still argue...'). Never invent quotes, statistics, or people. "
             "Show a specific person doing something concrete in most beats. "
@@ -327,26 +350,32 @@ def draft_prompt(title, category, runtime=60):
         'You write scripts for short-form "What if?" videos (TikTok explainer style). '
         f'For the question "{title}" (category: {category}), ' + shape +
         "Rules: premise = 2-3 vivid sentences setting up why this is fascinating. "
-        f"beats = exactly 5 spoken-narration beats, {words} words each, no stage directions: "
+        f"beats = exactly {beats} spoken-narration beats, {words} words each, no stage directions: "
         f"({pace}) "
-        "1 the setup, 2 the immediate consequence, 3 the ripple effect nobody predicts, "
-        "4 the twist or surprising real fact, 5 a payoff line that reframes the question. "
-        "IMPORTANT: write beats as concrete HUMAN scenes someone could reenact on camera - "
+        + ("1 the setup, 2 the immediate consequence, 3 the ripple effect nobody predicts, "
+           "4 the twist or surprising real fact, 5 a payoff line that reframes the question. "
+           if beats == 5 else
+           f"1 the setup, 2 the immediate consequence, 3-{beats - 2} the ripple effects nobody "
+           f"predicts, each beat a different corner of life, {beats - 1} the twist or surprising "
+           f"real fact, {beats} a payoff line that reframes the question. ")
+        + "IMPORTANT: write beats as concrete HUMAN scenes someone could reenact on camera - "
         "show a specific person doing, holding, or reacting to something ('you reach for...', "
-        "'a commuter drags...', 'a kid stares at...') in at least 4 of the 5 beats. "
+        "'a commuter drags...', 'a kid stares at...') in at least "
+        f"{beats - 1} of the {beats} beats. "
         "Anchor in real facts where possible, clearly speculative in tone, punchy. "
         "tags = 3-5 lowercase topic words. emoji = one fitting emoji."
     )
 
 
-def parse_draft(raw, engine):
+def parse_draft(raw, engine, want=5):
     """Validate a raw model reply into the {premise, beats, tags, emoji} contract."""
     start, end = raw.find("{"), raw.rfind("}")
     if start < 0 or end <= start:
         raise RuntimeError("no JSON in AI response")
     data = json.loads(raw[start:end + 1])
-    beats = [str(b).strip() for b in (data.get("beats") or []) if str(b).strip()][:5]
-    if not data.get("premise") or len(beats) < 3:
+    beats = [str(b).strip() for b in (data.get("beats") or []) if str(b).strip()][:want]
+    # A couple short is livable at high counts; below that the arc is broken.
+    if not data.get("premise") or len(beats) < max(3, want - 2):
         raise RuntimeError("AI draft was incomplete - try again")
     return {
         "premise": str(data["premise"]).strip(),
@@ -357,15 +386,17 @@ def parse_draft(raw, engine):
     }
 
 
-def ai_draft_openai(title, category, key, runtime=60):
+def ai_draft_openai(title, category, key, runtime=60, beats=5):
     """Draft via the OpenAI API (fast, no rate-limit queue; needs credits)."""
     body = json.dumps({
         "model": OPENAI_MODEL,
-        "messages": [{"role": "user", "content": draft_prompt(title, category, runtime)}],
+        "messages": [{"role": "user", "content": draft_prompt(title, category, runtime, beats)}],
         "response_format": {"type": "json_object"},
         "temperature": 0.9,
-        # Longer runtimes need room: 5 beats x up to ~75 words plus premise/tags.
-        "max_tokens": 600 if runtime <= 60 else (900 if runtime <= 90 else 1500),
+        # Longer runtimes need room: beats x up to ~75 words plus premise/tags.
+        # Extra beats keep the same total words but add JSON overhead per line.
+        "max_tokens": (600 if runtime <= 60 else (900 if runtime <= 90 else 1500))
+                      + 40 * max(0, beats - 5),
     }).encode("utf-8")
     req = urllib.request.Request(OPENAI_API, data=body, method="POST", headers={
         "Authorization": f"Bearer {key}",
@@ -377,15 +408,15 @@ def ai_draft_openai(title, category, key, runtime=60):
     mv.record_spend("openai", "AI draft", mv.openai_usage_cost(reply),
                     OPENAI_MODEL, title[:60], estimated=True)
     raw = reply["choices"][0]["message"]["content"]
-    return parse_draft(raw, "openai")
+    return parse_draft(raw, "openai", beats)
 
 
-def ai_draft_pollinations(title, category, runtime=60):
+def ai_draft_pollinations(title, category, runtime=60, beats=5):
     """Draft via the free Pollinations text API. Runs server-side because the
     API blocks direct browser requests (Turnstile) but allows plain server calls."""
     raw = None
     for attempt in range(3):
-        url = TEXT_AI + quote(draft_prompt(title, category, runtime)) + f"?seed={int(time.time())}"
+        url = TEXT_AI + quote(draft_prompt(title, category, runtime, beats)) + f"?seed={int(time.time())}"
         req = urllib.request.Request(url, headers={"User-Agent": "WhatIfStudio-review/1.0"})
         try:
             with urllib.request.urlopen(req, timeout=90) as resp:
@@ -399,20 +430,21 @@ def ai_draft_pollinations(title, category, runtime=60):
             raise
     if raw is None:
         raise RuntimeError("the free writing service is busy - try again in a minute")
-    return parse_draft(raw, "pollinations")
+    return parse_draft(raw, "pollinations", beats)
 
 
-def ai_draft(title, category, runtime=60):
+def ai_draft(title, category, runtime=60, beats=5):
     """Draft premise/beats/tags/emoji for a scenario title, scaled to the
-    selected runtime. Prefers the OpenAI API when a key is configured; falls
-    back to the free Pollinations API otherwise (or if the OpenAI call fails)."""
+    selected runtime and beat count (clips = beats + hook + outro). Prefers
+    the OpenAI API when a key is configured; falls back to the free
+    Pollinations API otherwise (or if the OpenAI call fails)."""
     key = openai_key()
     if key:
         try:
-            return ai_draft_openai(title, category, key, runtime)
+            return ai_draft_openai(title, category, key, runtime, beats)
         except Exception as exc:
             print(f"OpenAI draft failed ({exc}); falling back to the free writer")
-    return ai_draft_pollinations(title, category, runtime)
+    return ai_draft_pollinations(title, category, runtime, beats)
 
 
 # ---------------- draft batches ----------------
@@ -591,8 +623,9 @@ def scaffold_batch_package(kind, title, draft, runtime):
     }
 
 
-def batch_run(kind="scary", force=False):
-    """Draft one kind's packages into exports/ (once per day unless forced)."""
+def batch_run(kind="scary", force=False, beats=5):
+    """Draft one kind's packages into exports/ (once per day unless forced).
+    `beats` = spoken story beats per package; clips = beats + hook + outro."""
     conf = BATCHES[kind]
     with _morning_lock:
         log = load_morning_log()
@@ -605,7 +638,7 @@ def batch_run(kind="scary", force=False):
         made = []
         for title in batch_titles(kind, recent, conf["count"]):
             try:
-                draft = ai_draft(title, conf["category"], conf["runtime"])
+                draft = ai_draft(title, conf["category"], conf["runtime"], beats)
                 pkg = scaffold_batch_package(kind, title, draft, conf["runtime"])
                 EXPORTS_DIR.mkdir(exist_ok=True)
                 name = (f"whatifstudio-queue-{conf['prefix']}-{mv.slugify(title)[:40]}"
@@ -664,7 +697,7 @@ CHAT_APP_FACTS = """\
 What If Studio makes short-form "What if?" videos (TikTok / YouTube Shorts / Reels, 9:16 vertical).
 The app is a local static page: scenario library (10 categories - 8 "what if" ones plus two story categories that brand their own renders automatically: Scary Story, social-thriller narrative horror with eerie still-and-symmetrical visuals + a "follow for more scary stories" CTA + horror hashtags, and True History, real documented events with archival visuals + a "follow for more true history" CTA + history hashtags), package settings (runtime 30s/60s/90s/3min; voice Calm/High-Energy/Deadpan), and "Generate + Export for render" which downloads a queue .json. A watcher (started via Start-What-If-Studio.bat) picks that file up from Downloads and renders the full video: TTS voiceover, word-synced captions, per-beat visuals, music, thumbnail, and a post kit with per-platform hashtags. Posting is always manual.
 Custom scenarios: the builder ("+ Create your own scenario") with an AI "Write it for me" draft, all editable, saved in the browser's local storage.
-Draft batches: while the dashboard runs, it drafts 3 fresh 90s Scary Story packages daily after 6:00, and Produce has two on-demand buttons - 🌅 for 3 more scary scenarios, 💭 for 3 realistic what-ifs (grounded thought experiments from real facts, no monsters or magic); everything lands in the Produce package dropdown with per-beat prompts ready to copy into tryinfer Studio. Drafting only - nothing renders or posts by itself.
+Draft batches: while the dashboard runs, it drafts 3 fresh 90s Scary Story packages daily after 6:00, and Produce has two on-demand buttons - 🌅 for 3 more scary scenarios, 💭 for 3 realistic what-ifs (grounded thought experiments from real facts, no monsters or magic); the Clips dropdown next to them picks 7 (default), 9, 12, or 15 clips per video (hook + beats + outro - more clips = faster cuts at the same length, reveal still on the second-to-last beat); everything lands in the Produce package dropdown with per-beat prompts ready to copy into tryinfer Studio. Drafting only - nothing renders or posts by itself.
 Dashboard pages (this server, 127.0.0.1:8765): Videos (review renders), Produce (per-beat visuals, voices, re-render), Results (log posted videos' views/likes by hand; rollups by category show what's winning), Spend (API costs), Help.
 Optional API keys, one per file in pipeline/: openai_key.txt (better writing), elevenlabs_key.txt (premium voices), tryinfer_key.txt (paid AI video), pexels_key.txt (stock). Free fallbacks exist for everything.
 Everything runs locally; no accounts, no tracking, no auto-posting. Never promise views, virality, or income."""
@@ -1565,11 +1598,15 @@ class Handler(BaseHTTPRequestHandler):
                 runtime = int((q.get("runtime") or ["60"])[0])
             except ValueError:
                 runtime = 60
+            try:
+                beats = max(3, min(18, int((q.get("beats") or ["5"])[0])))
+            except ValueError:
+                beats = 5
             if not title:
                 self.send_json({"error": "missing title"}, 400)
                 return
             try:
-                self.send_json(ai_draft(title, category, runtime))
+                self.send_json(ai_draft(title, category, runtime, beats))
             except Exception as exc:
                 self.send_json({"error": str(exc)}, 502)
             return
@@ -2039,8 +2076,14 @@ class Handler(BaseHTTPRequestHandler):
             if kind not in BATCHES:
                 self.send_json({"error": "unknown batch kind"}, 400)
                 return
+            # `clips` = total rows (hook + beats + outro); the writer gets
+            # clips-2 beats. Clamped so the arc stays tellable.
             try:
-                self.send_json(batch_run(kind, force=True))
+                beats = max(3, min(18, int(data.get("clips") or 7) - 2))
+            except (TypeError, ValueError):
+                beats = 5
+            try:
+                self.send_json(batch_run(kind, force=True, beats=beats))
             except Exception as exc:
                 self.send_json({"error": str(exc)}, 500)
             return
