@@ -71,7 +71,7 @@ const VOICES = [
 const STORAGE_KEY = "whatIfStudio.v1";
 
 /* ============================================================
-   2. SCENARIO BANK — 37 scenarios across 10 categories
+   2. SCENARIO BANK — 40 scenarios across 10 categories
    ============================================================ */
 
 const scenarioBank = [
@@ -1166,6 +1166,123 @@ const scenarioBank = [
     ]
   },
   {
+    id: "ss-openhouse",
+    category: "Scary Story",
+    title: "The open house that never ends",
+    image: { glyph: "🏘️", from: "#5a6e52", to: "#120a16" },
+    premise: "A couple tours Unit 9 of a brand-new development where every house is the same shade of sage green. The agent is lovely. The street is quiet. And every road out of the neighborhood curves, gently and politely, back to Unit 9.",
+    tags: ["suburbia", "trapped", "open house", "scary story"],
+    safety: "Fictional manufactured-perfection horror. No real developments, companies, or persons; unease over gore throughout.",
+    hooks: [
+      "They toured a model home at noon. It's been three weeks. The agent says take your time.",
+      "Every road out of the neighborhood curves gently back to the house they toured.",
+      "The fridge restocks itself with their favorite brands. They never told anyone their favorite brands."
+    ],
+    beats: [
+      "The development is called Belle Meadow, and the agent walks them through Unit 9 like she's done it a thousand times — same smile at the same doorframes. The couple notice, laughing about it later, that every window on the street shows the same angle of the same sun.",
+      "They wave goodbye, pull out of the driveway, and turn left. Then left. Then left again — and roll to a stop in front of Unit 9, where the door is standing open. Their phones have full bars and no signal. In the kitchen, the fridge has been stocked with their exact brands: her oat milk, his hot sauce.",
+      "Day four. Chalk marks on the door so they can track which houses they've tried — by morning, every door on the street wears the same mark. The car's tank never empties and the road never ends, so they stop driving. Dinner is always warm. Neither of them remembers cooking it.",
+      "In the hall closet she finds the guest book from the open house — hundreds of couples' signatures, page after page, ink fading with age. On the first page, in handwriting she knows better than her own: their names. Dated years ago. They've toured this house before. Maybe every time. The word that catches in her throat: the brochure on the counter has always said 'a lived-in feel.'",
+      "The doorbell rings. A young couple stands on the porch behind the agent, shy and excited, asking about square footage. She hears herself answer warmly, hears him offer to show them the yard — the words arriving in her mouth like furniture being delivered. Every home needs a lived-in feel. Theirs, at least, comes fully staffed."
+    ],
+    shotList: [
+      "Hook: a dead-centered symmetrical shot down a suburban street of identical sage-green houses, one front door standing open at the far end.",
+      "A smiling real-estate agent in the doorway holding a brochure, framed perfectly by the doorframe, expression a little too calm, looking straight into the lens.",
+      "Wide static shot through a windshield: the same house seen at the end of three different turns, GPS screen glowing with a road that spirals.",
+      "Bright cheerful daylight kitchen, groceries neatly lined up on the counter, every label facing forward, no one in frame.",
+      "Close-up: an open guest book, hundreds of signatures, one pair repeated down the page in slowly aging ink.",
+      "Closer: the couple standing unnaturally still on their porch, waving at someone off-frame, their smiles held one beat too long."
+    ],
+    captions: [
+      "Every road out curves politely back. 🏘️",
+      "The guest book has their names on page one. Dated years ago.",
+      "Every home needs a lived-in feel."
+    ],
+    thumbnails: [
+      "UNIT 9",
+      "The open house never ends",
+      "A lived-in feel"
+    ]
+  },
+  {
+    id: "ss-companytown",
+    category: "Scary Story",
+    title: "The company town where nobody remembers applying",
+    image: { glyph: "🏭", from: "#3b4368", to: "#5a6e52" },
+    premise: "The company gives every new family a house, a schedule, and a welcome basket with her favorite tea — which she never told anyone. The husbands walk to the Facility each morning. The wives smile. Everyone is thriving, according to the reviews she didn't know she was getting.",
+    tags: ["company town", "conformity", "perfect life", "scary story"],
+    safety: "Fictional manufactured-perfection horror in the company-town tradition. No real companies or communities; unease over gore throughout.",
+    hooks: [
+      "The welcome basket had her favorite tea. She'd never told anyone her favorite tea.",
+      "Every husband on the street leaves at 7:40. Every porch light comes on at 8:15. Nobody set a timer.",
+      "She found her job application in the company archive. It's her handwriting. She never wrote it."
+    ],
+    beats: [
+      "The company moved them in on a Tuesday: a lake-blue house on Harmony Loop, a schedule on the fridge in friendly type, and a welcome basket with her exact favorite tea. Her husband starts at the Facility Monday. When she asks what the Facility makes, everyone smiles like she's told a good joke.",
+      "By week two she notices the seams. Mrs. Pratt next door tells her the same story about her sister on Tuesday and again on Friday, word for word, same laugh in the same place. The radio replays yesterday's ballgame and nobody minds. When she asks her husband about his day, there's a pause before he answers — small, but always the same length.",
+      "She skips the wives' luncheon, just once, just to see. That afternoon two men in company polos repaint her kitchen in the approved shade of yellow while she stands there holding her cup. Nobody mentions it. At dinner her husband says the kitchen looks nice, and the pause before 'nice' is a little longer than usual.",
+      "The company archive is open on Thursdays. Her family's folder is thick: her signed application — her handwriting, a date three years before they moved — and behind it, quarterly reviews grading her 'contentment,' 'neighborliness,' 'curiosity (see notes).' The most recent one is stamped RENEWED. It is the third stamp on the page.",
+      "She practices her smile in the hallway mirror before the next luncheon, the way the handbook suggests, and finds it settling into place faster than it used to. Her latest review sits unread in the folder, but she already knows what it says. Her contentment scores have never been higher."
+    ],
+    shotList: [
+      "Hook: identical husbands in identical coats walking down a curved suburban street in perfect step, dawn light, shot dead-centered and symmetrical.",
+      "A woman at a sunny kitchen table looking directly into the camera over a teacup, expression composed a beat too carefully.",
+      "Wide static shot of a cheerful cul-de-sac at dusk: every porch light snapping on in the same frame, every curtain closing at once.",
+      "Two workers in matching polos painting a kitchen wall yellow in bright daylight while a woman stands unnaturally still in the doorway, cup in hand.",
+      "Close-up: a manila folder of typed evaluation forms, a red RENEWED stamp, three deep, slightly overlapping.",
+      "Closer: her reflection in a hallway mirror practicing a smile, the reflection settling half a second after she does."
+    ],
+    captions: [
+      "The welcome basket knew her favorite tea. 🏭",
+      "Skipped one luncheon. They repainted her kitchen.",
+      "Her contentment scores have never been higher."
+    ],
+    thumbnails: [
+      "HARMONY LOOP",
+      "Stamped: RENEWED",
+      "Nobody remembers applying"
+    ]
+  },
+  {
+    id: "ss-testmarket",
+    category: "Scary Story",
+    title: "Her whole street was a test market",
+    image: { glyph: "🛒", from: "#3b4368", to: "#8a2431" },
+    premise: "The coupons arrive the day she needs them. The corner store stocks products she's never seen advertised anywhere else. And when she mentions a made-up brand out loud — alone, in her own kitchen — it's on the shelf by Friday.",
+    tags: ["consumerism", "surveillance", "suburbia", "scary story"],
+    safety: "Fictional consumer-surveillance horror. No real brands, retailers, or research firms; unease over gore throughout.",
+    hooks: [
+      "She invented a fake brand name and said it out loud, alone. It was on the shelf by Friday.",
+      "The billboard on her street changes overnight. It's started using her words.",
+      "Her neighbors' small talk has follow-up questions. Like a survey. Exactly like a survey."
+    ],
+    beats: [
+      "It starts as good luck: a coupon for the exact cereal she ran out of, in that morning's mail. The corner store on her street carries flavors and brands she never sees across town, shelved at her eye height. The cashier asks how she'd rate her morning, one to five.",
+      "Then she starts hearing the pattern. Mrs. Okafor's chat about detergent ends with 'and would you say that's very important, or only somewhat?' The billboard by the bus stop rotates overnight, and one morning it uses a phrase — word for word — that she said in her own backyard.",
+      "When her dog dies, she cries at the kitchen table with the windows shut. The next morning the corner store has a new endcap: comfort teas, a candle called Old Friend, a picture frame sized for the photo on her phone. So she runs a test. Alone, out loud, to her empty kitchen, she praises a brand she invented on the spot — Marlow & Finch. By Friday it has a shelf.",
+      "The county archive keeps the development's founding papers. Her street was platted in 1962 by a research group, as 'Panel Six' — housing reserved for participant families. The consent form on file is signed by her grandmother. Participation, the small print says, conveys with the property. There is a box marked 'decline.' It was never printed on the homeowner copies.",
+      "She still lives there. The prices are unbeatable and the store always has what she needs, a day before she needs it. But some nights, drying the dishes, she says a brand name out loud that doesn't exist — clearly, politely, toward the ceiling — just to see what's listening."
+    ],
+    shotList: [
+      "Hook: wide static shot of a tidy corner store at dawn in cheerful light, one aisle's products all facing a single house across the street.",
+      "A woman at her mailbox holding a coupon, looking directly into the camera, half-smiling like she almost gets the joke.",
+      "Dead-centered symmetrical shot of a suburban billboard towering over identical rooftops, a workman on a ladder changing it in the dark.",
+      "Bright daylight supermarket endcap of comfort items arranged too perfectly, a lone shopping cart standing unnaturally still in the aisle.",
+      "Close-up: a 1962 plat map labeled PANEL SIX, a consent form beneath it with a faded signature and an empty checkbox.",
+      "Closer: a woman drying dishes at night, speaking calmly toward the ceiling of an empty kitchen, the window behind her one shade too dark."
+    ],
+    captions: [
+      "She made up a brand. It was on the shelf by Friday. 🛒",
+      "Her street was platted in 1962. As 'Panel Six.'",
+      "Say a fake brand out loud. See what's listening."
+    ],
+    thumbnails: [
+      "PANEL SIX",
+      "On the shelf by Friday",
+      "The street is listening"
+    ]
+  },
+  {
     id: "ss-doorbell",
     category: "Scary Story",
     title: "The doorbell only records him at 3:33",
@@ -1591,7 +1708,11 @@ const seedBank = {
     "The voicemail your own number keeps leaving you",
     "A lighthouse logbook with two sets of handwriting",
     "The elevator stops at a floor the building doesn't have",
-    "The trail cameras only ever catch it leaving"
+    "The trail cameras only ever catch it leaving",
+    "The cul-de-sac where every lawn is mowed at 6:14",
+    "The neighborhood app that thanks you for staying indoors",
+    "The model home furnished with your childhood photos",
+    "The wellness retreat nobody checks out of"
   ],
   "True History": [
     "The war two cities fought over a wooden bucket",

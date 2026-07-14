@@ -299,8 +299,10 @@ def draft_prompt(title, category, runtime=60):
             "5 a final line with a double meaning that lingers after the video ends. "
             "Present tense, concrete sensory details (sounds, timestamps, textures), a specific "
             "person doing something in every beat. Root the fear in something human - grief, "
-            "guilt, conformity, being watched, needing to belong, who gets believed - shown, "
-            "never preached. Fictional but grounded - no real victims, no gore, no "
+            "guilt, conformity, being watched, needing to belong, who gets believed, or a life "
+            "that turns out to be curated for you - shown, never preached. Too-perfect places "
+            "(planned suburbs, company towns, wellness communities, lives staged like showrooms) "
+            "are welcome sources of dread. Fictional but grounded - no real victims, no gore, no "
             "jump-scare cliches. "
             "tags = 3-5 lowercase topic words. emoji = one fitting emoji."
         )
@@ -413,39 +415,79 @@ def ai_draft(title, category, runtime=60):
     return ai_draft_pollinations(title, category, runtime)
 
 
-# ---------------- morning batch ----------------
-# While the dashboard is running, draft a few fresh Scary Story packages
-# each morning so Produce has per-beat prompts ready to copy into tryinfer
-# Studio. Drafting ONLY - nothing is rendered, billed to tryinfer, or
-# posted by itself. State in pipeline/morning-log.json (gitignored).
+# ---------------- draft batches ----------------
+# While the dashboard is running, draft ready-to-produce packages - daily
+# for kinds flagged "daily" (after MORNING_HOUR), or on demand from the
+# Produce page. Drafting ONLY - nothing is rendered, billed to tryinfer,
+# or posted by itself. State in pipeline/morning-log.json (gitignored).
 
-MORNING = {"count": 3, "category": "Scary Story", "runtime": 90, "hour": 6}
+MORNING_HOUR = 6
 MORNING_LOG = HERE / "morning-log.json"
-SCARY_COLORS = {"from": "#120a16", "to": "#8a2431"}
 _morning_lock = threading.Lock()
 
-# Offline fallback titles if both writers are unreachable.
-MORNING_SEEDS = [
-    "The carpool app matched her with a car that has no driver",
-    "The window cleaner who waved from the 14th floor of a 12-story building",
-    "The overnight ferry that docks twice",
-    "The last voicemail says to stop looking for him",
-    "The house sitter's list ends with a rule that is crossed out",
-    "The elevator inspector who never signs floor nine",
-    "The campsite log everyone signs on the way in but not out",
-    "The subway announcement that names you",
-    "The motel room phone that only dials room 8",
-    "The snowplow driver who keeps clearing a road that leads nowhere",
-    "The neighbor's porch light that blinks in patterns",
-    "The night fisherman who reels in his own tackle box",
-]
+BATCHES = {
+    "scary": {
+        "label": "scary stories", "daily": True, "count": 3, "runtime": 90,
+        "category": "Scary Story", "prefix": "morning",
+        "colors": {"from": "#120a16", "to": "#8a2431"},
+        "pacing": "Room to breathe: let the dread land.",
+        "safety": "Fictional scary story - dread over gore, no real victims depicted.",
+        "outro": "Sit with that one for a second. Follow for more scary stories.",
+        "extra_caption": "Wait for the last line.",
+        "fallback_tag": "scary story",
+    },
+    "whatif": {
+        "label": "realistic what-ifs", "daily": False, "count": 3, "runtime": 90,
+        "category": "Speculative", "prefix": "whatif",
+        "colors": {"from": "#2dbf8b", "to": "#3a6ea5"},
+        "pacing": "Room to breathe: full beat structure with one extra detail per beat.",
+        "safety": "Speculative thought experiment anchored in real facts.",
+        "outro": "Sit with that one for a second. Follow for the next what-if.",
+        "extra_caption": "The wildest part is the true part.",
+        "fallback_tag": "thought experiment",
+    },
+}
+
+# Offline fallback titles per kind if both writers are unreachable.
+BATCH_SEEDS = {
+    "scary": [
+        "The carpool app matched her with a car that has no driver",
+        "The window cleaner who waved from the 14th floor of a 12-story building",
+        "The overnight ferry that docks twice",
+        "The last voicemail says to stop looking for him",
+        "The house sitter's list ends with a rule that is crossed out",
+        "The elevator inspector who never signs floor nine",
+        "The campsite log everyone signs on the way in but not out",
+        "The subway announcement that names you",
+        "The motel room phone that only dials room 8",
+        "The snowplow driver who keeps clearing a road that leads nowhere",
+        "The neighbor's porch light that blinks in patterns",
+        "The night fisherman who reels in his own tackle box",
+    ],
+    "whatif": [
+        "What if school started at noon?",
+        "What if antibiotics stopped working next year?",
+        "What if the internet went down for a whole month?",
+        "What if every commute counted as paid work time?",
+        "What if food labels showed the hours of work they cost?",
+        "What if cities banned private cars for one year?",
+        "What if your memories could be used in court?",
+        "What if everyone could see how their taxes were spent, live?",
+        "What if naps were a legal right at work?",
+        "What if every product showed its true lifetime cost?",
+    ],
+}
 
 
 def load_morning_log():
     try:
-        return json.loads(MORNING_LOG.read_text(encoding="utf-8"))
+        log = json.loads(MORNING_LOG.read_text(encoding="utf-8"))
     except Exception:
         return {}
+    if "date" in log:
+        # Pre-kinds format: the whole file was the scary batch.
+        log = {"scary": {k: log[k] for k in ("date", "titles", "history") if k in log}}
+    return log
 
 
 def _ai_text(prompt):
@@ -473,21 +515,37 @@ def _ai_text(prompt):
         return resp.read().decode("utf-8", "replace")
 
 
-def morning_titles(recent, count):
-    """Fresh scary-story titles from the AI, avoiding recent repeats."""
-    prompt = (
-        "You name short-form scary-story videos: narrative dread, real-feeling, "
-        "no gore, never phrased as a 'what if' question. Favor the social-thriller "
-        "register - a familiar everyday setting (a job, a family ritual, an app, a "
-        "neighborhood) hiding one quietly wrong thing, where the scare could turn out "
-        "to say something about people. "
-        f"Invent {count} fresh, specific story premises as titles of 5-12 words, "
-        "in the register of: 'The dive log that ends mid-sentence' or "
-        "'The new neighbors all wave with the wrong hand'. "
-        'Reply with ONLY minified JSON, exactly: {"titles":["...","..."]}. '
-        + ("Avoid anything similar to these recent ones: " + "; ".join(recent[-30:]) + "."
-           if recent else "")
-    )
+def batch_titles(kind, recent, count):
+    """Fresh titles for one batch kind from the AI, avoiding recent repeats."""
+    avoid = ("Avoid anything similar to these recent ones: " + "; ".join(recent[-30:]) + "."
+             if recent else "")
+    if kind == "whatif":
+        prompt = (
+            "You invent short-form 'What if?' video questions that are REALISTIC "
+            "thought experiments: grounded in real science, economics, psychology, "
+            "history, or everyday life, so the video can be built from real facts. "
+            "Each one should feel like it could plausibly happen, nearly be true, or "
+            "reveal something true about how the world works. Strictly NO monsters, "
+            "magic, ghosts, or the supernatural. "
+            f"Invent {count} questions of 5-12 words, each starting with 'What if', "
+            "in the register of: 'What if money expired after 30 days?' or "
+            "'What if school started at noon?'. "
+            'Reply with ONLY minified JSON, exactly: {"titles":["...","..."]}. ' + avoid
+        )
+    else:
+        prompt = (
+            "You name short-form scary-story videos: narrative dread, real-feeling, "
+            "no gore, never phrased as a 'what if' question. Favor the social-thriller "
+            "register - a familiar everyday setting (a job, a family ritual, an app, a "
+            "neighborhood) hiding one quietly wrong thing, where the scare could turn out "
+            "to say something about people. Too-perfect places are welcome too: planned "
+            "suburbs, company towns, wellness communities, lives that feel staged. "
+            f"Invent {count} fresh, specific story premises as titles of 5-12 words, "
+            "in the register of: 'The dive log that ends mid-sentence', "
+            "'The new neighbors all wave with the wrong hand', or "
+            "'The model home furnished with your childhood photos'. "
+            'Reply with ONLY minified JSON, exactly: {"titles":["...","..."]}. ' + avoid
+        )
     try:
         raw = _ai_text(prompt)
         start, end = raw.find("{"), raw.rfind("}")
@@ -498,55 +556,59 @@ def morning_titles(recent, count):
         if titles:
             return titles
     except Exception as exc:
-        print(f"morning batch: title generation failed ({exc}); using the seed list")
+        print(f"{kind} batch: title generation failed ({exc}); using the seed list")
     seen = {r.lower() for r in recent}
-    pool = [s for s in MORNING_SEEDS if s.lower() not in seen] or list(MORNING_SEEDS)
+    pool = [s for s in BATCH_SEEDS[kind] if s.lower() not in seen] or list(BATCH_SEEDS[kind])
     return pool[:count]
 
 
-def scaffold_scary_package(title, draft, runtime):
+def scaffold_batch_package(kind, title, draft, runtime):
     """A full render-ready package from an AI draft (server-side sibling of
-    the app's buildPackage, fixed to the Scary Story house style)."""
+    the app's buildPackage, styled per batch kind)."""
+    conf = BATCHES[kind]
     first = draft["premise"].split(". ")[0].rstrip(".") + "."
     return {
-        "scenarioId": "morning-" + mv.slugify(title)[:28],
+        "scenarioId": f"{conf['prefix']}-" + mv.slugify(title)[:28],
         "title": title,
-        "category": "Scary Story",
-        "colors": dict(SCARY_COLORS),
+        "category": conf["category"],
+        "colors": dict(conf["colors"]),
         "platform": "Any",
         "aspect": "9:16 vertical",
         "runtime": runtime,
         "runtimeLabel": "3 min" if runtime == 180 else f"{runtime}s",
-        "pacingNote": "Room to breathe: let the dread land.",
+        "pacingNote": conf["pacing"],
         "voice": "Calm Narrator",
-        "direction": "Low, steady, confident. Let pauses do the scaring. Never rush the payoff line.",
+        "direction": "Low, steady, confident. Let pauses do the work. Never rush the payoff line.",
         "premise": draft["premise"],
-        "safety": "Fictional scary story - dread over gore, no real victims depicted.",
-        "tags": draft.get("tags") or ["scary story"],
+        "safety": conf["safety"],
+        "tags": draft.get("tags") or [conf["fallback_tag"]],
         "hooks": [first],
         "beats": draft["beats"],
-        "outro": "Sit with that one for a second. Follow for more scary stories.",
-        "captions": [title, "Wait for the last line."],
+        "outro": conf["outro"],
+        "captions": [title, conf["extra_caption"]],
         "thumbnails": [" ".join(title.split()[:4]).upper()],
         "generatedAt": time.strftime("%Y-%m-%dT%H:%M:%S"),
     }
 
 
-def morning_batch(force=False):
-    """Draft today's scary packages into exports/ (once per day unless forced)."""
+def batch_run(kind="scary", force=False):
+    """Draft one kind's packages into exports/ (once per day unless forced)."""
+    conf = BATCHES[kind]
     with _morning_lock:
         log = load_morning_log()
+        entry = log.get(kind, {})
         today = time.strftime("%Y-%m-%d")
-        if log.get("date") == today and not force:
-            return {"date": today, "made": [], "titles": log.get("titles", []), "already": True}
-        recent = log.get("history", [])
+        if entry.get("date") == today and not force:
+            return {"kind": kind, "date": today, "made": [],
+                    "titles": entry.get("titles", []), "already": True}
+        recent = entry.get("history", [])
         made = []
-        for title in morning_titles(recent, MORNING["count"]):
+        for title in batch_titles(kind, recent, conf["count"]):
             try:
-                draft = ai_draft(title, MORNING["category"], MORNING["runtime"])
-                pkg = scaffold_scary_package(title, draft, MORNING["runtime"])
+                draft = ai_draft(title, conf["category"], conf["runtime"])
+                pkg = scaffold_batch_package(kind, title, draft, conf["runtime"])
                 EXPORTS_DIR.mkdir(exist_ok=True)
-                name = (f"whatifstudio-queue-morning-{mv.slugify(title)[:40]}"
+                name = (f"whatifstudio-queue-{conf['prefix']}-{mv.slugify(title)[:40]}"
                         f"-{time.strftime('%Y%m%d-%H%M%S')}.json")
                 (EXPORTS_DIR / name).write_text(json.dumps({
                     "app": "what-if-studio", "format": 1,
@@ -555,28 +617,28 @@ def morning_batch(force=False):
                 }, indent=2), encoding="utf-8")
                 made.append(title)
             except Exception as exc:
-                print(f"morning batch: '{title}' failed: {exc}")
-        titles = (log.get("titles", []) if log.get("date") == today else []) + made
+                print(f"{kind} batch: '{title}' failed: {exc}")
+        titles = (entry.get("titles", []) if entry.get("date") == today else []) + made
         if made:
-            MORNING_LOG.write_text(json.dumps({
-                "date": today, "titles": titles,
-                "history": (recent + made)[-60:],
-            }, indent=2), encoding="utf-8")
-        return {"date": today, "made": made, "titles": titles, "already": False}
+            log[kind] = {"date": today, "titles": titles, "history": (recent + made)[-60:]}
+            MORNING_LOG.write_text(json.dumps(log, indent=2), encoding="utf-8")
+        return {"kind": kind, "date": today, "made": made, "titles": titles, "already": False}
 
 
 def morning_loop():
-    """Background timer: fire the batch once a day after MORNING['hour']."""
+    """Background timer: daily-flagged batches fire once a day after MORNING_HOUR."""
     while True:
         try:
-            log = load_morning_log()
-            if (time.localtime().tm_hour >= MORNING["hour"]
-                    and log.get("date") != time.strftime("%Y-%m-%d")):
-                res = morning_batch()
-                if res["made"]:
-                    print("morning batch: drafted " + " | ".join(res["made"]))
+            if time.localtime().tm_hour >= MORNING_HOUR:
+                log = load_morning_log()
+                today = time.strftime("%Y-%m-%d")
+                for kind, conf in BATCHES.items():
+                    if conf["daily"] and log.get(kind, {}).get("date") != today:
+                        res = batch_run(kind)
+                        if res["made"]:
+                            print(f"{kind} batch: drafted " + " | ".join(res["made"]))
         except Exception as exc:
-            print(f"morning batch loop: {exc}")
+            print(f"batch loop: {exc}")
         time.sleep(600)
 
 
@@ -602,7 +664,7 @@ CHAT_APP_FACTS = """\
 What If Studio makes short-form "What if?" videos (TikTok / YouTube Shorts / Reels, 9:16 vertical).
 The app is a local static page: scenario library (10 categories - 8 "what if" ones plus two story categories that brand their own renders automatically: Scary Story, social-thriller narrative horror with eerie still-and-symmetrical visuals + a "follow for more scary stories" CTA + horror hashtags, and True History, real documented events with archival visuals + a "follow for more true history" CTA + history hashtags), package settings (runtime 30s/60s/90s/3min; voice Calm/High-Energy/Deadpan), and "Generate + Export for render" which downloads a queue .json. A watcher (started via Start-What-If-Studio.bat) picks that file up from Downloads and renders the full video: TTS voiceover, word-synced captions, per-beat visuals, music, thumbnail, and a post kit with per-platform hashtags. Posting is always manual.
 Custom scenarios: the builder ("+ Create your own scenario") with an AI "Write it for me" draft, all editable, saved in the browser's local storage.
-Morning batch: while the dashboard runs, it drafts 3 fresh 90s Scary Story packages daily after 6:00 (plus a 🌅 on-demand button on Produce); they land in the Produce package dropdown with per-beat prompts ready to copy into tryinfer Studio. Drafting only - nothing renders or posts by itself.
+Draft batches: while the dashboard runs, it drafts 3 fresh 90s Scary Story packages daily after 6:00, and Produce has two on-demand buttons - 🌅 for 3 more scary scenarios, 💭 for 3 realistic what-ifs (grounded thought experiments from real facts, no monsters or magic); everything lands in the Produce package dropdown with per-beat prompts ready to copy into tryinfer Studio. Drafting only - nothing renders or posts by itself.
 Dashboard pages (this server, 127.0.0.1:8765): Videos (review renders), Produce (per-beat visuals, voices, re-render), Results (log posted videos' views/likes by hand; rollups by category show what's winning), Spend (API costs), Help.
 Optional API keys, one per file in pipeline/: openai_key.txt (better writing), elevenlabs_key.txt (premium voices), tryinfer_key.txt (paid AI video), pexels_key.txt (stock). Free fallbacks exist for everything.
 Everything runs locally; no accounts, no tracking, no auto-posting. Never promise views, virality, or income."""
@@ -1377,9 +1439,13 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/morning":
             log = load_morning_log()
             today = time.strftime("%Y-%m-%d")
-            self.send_json({"date": log.get("date"), "today": today,
-                            "titles": log.get("titles", []) if log.get("date") == today else [],
-                            "config": MORNING})
+            kinds = {}
+            for kind, conf in BATCHES.items():
+                entry = log.get(kind, {})
+                kinds[kind] = {"label": conf["label"], "daily": conf["daily"],
+                               "count": conf["count"],
+                               "titles": entry.get("titles", []) if entry.get("date") == today else []}
+            self.send_json({"today": today, "hour": MORNING_HOUR, "kinds": kinds})
             return
         if self.path == "/api/spend":
             self.send_json(spend_summary())
@@ -1965,11 +2031,16 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if self.path == "/api/morning/run":
-            # Manual trigger from the Produce page - drafts a fresh batch right
-            # now (on top of today's, if it already ran). Kept OUTSIDE the state
-            # lock: the AI calls take a while and have their own morning lock.
+            # Manual trigger from the Produce page - drafts a fresh batch of the
+            # requested kind right now (on top of today's, if it already ran).
+            # Kept OUTSIDE the state lock: the AI calls take a while and have
+            # their own batch lock.
+            kind = str(data.get("kind") or "scary")
+            if kind not in BATCHES:
+                self.send_json({"error": "unknown batch kind"}, 400)
+                return
             try:
-                self.send_json(morning_batch(force=True))
+                self.send_json(batch_run(kind, force=True))
             except Exception as exc:
                 self.send_json({"error": str(exc)}, 500)
             return
@@ -2077,8 +2148,10 @@ def main():
     url = f"http://127.0.0.1:{args.port}"
     print(f"Review dashboard running at {url}  (local-only; Ctrl+C to stop)")
     threading.Thread(target=morning_loop, daemon=True).start()
-    print(f"Morning batch armed: {MORNING['count']} x {MORNING['runtime']}s "
-          f"{MORNING['category']} drafts daily after {MORNING['hour']}:00 (while running)")
+    armed = ", ".join(f"{c['count']}x{c['runtime']}s {c['label']} "
+                      f"({'daily after %d:00' % MORNING_HOUR if c['daily'] else 'on demand'})"
+                      for c in BATCHES.values())
+    print(f"Draft batches armed: {armed} (while running)")
     if args.open:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     try:

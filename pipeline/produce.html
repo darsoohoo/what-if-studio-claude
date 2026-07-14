@@ -133,7 +133,8 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
     <select id="pkgSelect"><option value="">Loading…</option></select>
     <p class="hint">These come from your queue exports. Export a queue in the Studio and it appears here.</p>
     <div style="display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap">
-      <button type="button" id="morningBtn">🌅 Draft 3 fresh scary scenarios</button>
+      <button type="button" id="morningBtn" data-kind="scary">🌅 Draft 3 fresh scary scenarios</button>
+      <button type="button" id="whatifBtn" data-kind="whatif">💭 Draft 3 realistic what-ifs</button>
       <span class="hint" id="morningStatus" style="margin:0"></span>
     </div>
   </section>
@@ -1230,25 +1231,26 @@ function setRenderStatus(msg, cls) {
 }
 $id("openVideosBtn").addEventListener("click", () => { location.href = "/"; });
 
-/* ---------- morning batch: fresh scary drafts on demand ---------- */
+/* ---------- draft batches: scary daily + either kind on demand ---------- */
 async function morningStatus() {
   try {
     const m = await api("/api/morning");
-    if (m.titles && m.titles.length) {
-      $id("morningStatus").textContent =
-        `Today's batch (${m.titles.length}): ${m.titles.join(" · ")} — pick them above.`;
-    } else {
-      $id("morningStatus").textContent =
-        `Fresh ${m.config.category} drafts appear here every morning after ${m.config.hour}:00 while the studio is running — or click the button.`;
-    }
-  } catch (e) { /* dashboard hiccup - button still works */ }
+    const parts = Object.values(m.kinds || {})
+      .filter(k => k.titles && k.titles.length)
+      .map(k => `${k.label}: ${k.titles.join(" · ")}`);
+    $id("morningStatus").textContent = parts.length
+      ? `Today's drafts — ${parts.join("  |  ")} — pick them above.`
+      : `Fresh scary drafts appear every morning after ${m.hour}:00 while the studio runs — or draft either kind on demand.`;
+  } catch (e) { /* dashboard hiccup - buttons still work */ }
 }
-$id("morningBtn").addEventListener("click", async () => {
-  const btn = $id("morningBtn");
+["morningBtn", "whatifBtn"].forEach(id => $id(id).addEventListener("click", async () => {
+  const btn = $id(id);
+  const kind = btn.dataset.kind;
   btn.disabled = true;
-  $id("morningStatus").textContent = "Drafting 3 fresh scary scenarios… (about half a minute)";
+  $id("morningStatus").textContent =
+    `Drafting 3 fresh ${kind === "whatif" ? "realistic what-ifs" : "scary scenarios"}… (about half a minute)`;
   try {
-    const r = await api("/api/morning/run", {});
+    const r = await api("/api/morning/run", { kind });
     if (r.error) throw new Error(r.error);
     $id("morningStatus").textContent = r.made.length
       ? `Drafted: ${r.made.join(" · ")} — loading them into the package list…`
@@ -1259,7 +1261,7 @@ $id("morningBtn").addEventListener("click", async () => {
     $id("morningStatus").textContent = "Drafting failed: " + e.message;
   }
   btn.disabled = false;
-});
+}));
 
 loadQueues();
 morningStatus();

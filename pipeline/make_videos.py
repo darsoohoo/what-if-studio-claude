@@ -103,12 +103,19 @@ DEFAULT_BRANDING = {
     "cta": "FOLLOW FOR THE NEXT WHAT-IF", "anchor": "#whatif", "style": "cinematic",
     "font": None, "font_name": CAPTION_FONT_NAME,
     "title_color": r"&H0000D4FF&", "thumb_color": "0xF5C400",       # signature yellow
+    # Typography tuning (defaults = the classic look). Thin display faces
+    # want wide tracking and a much lighter outline than bold ones.
+    "title_spacing": 1, "title_outline": 9, "title_shadow": 3,
+    "cta_outline": 6, "thumb_border": 9,
 }
 CATEGORY_BRANDING = {
     "Scary Story": {
+        # Art-house horror poster look: thin caps, wide tracking, bone white.
         "cta": "FOLLOW FOR MORE SCARY STORIES", "anchor": "#scarystories", "style": "eerie",
-        "font": "Creepster-Regular.ttf", "font_name": "Creepster",
-        "title_color": r"&H002D31D2&", "thumb_color": "0xD2312D",   # blood red
+        "font": "JuliusSansOne-Regular.ttf", "font_name": "Julius Sans One",
+        "title_color": r"&H00E0E8ED&", "thumb_color": "0xEDE8E0",   # bone white
+        "title_spacing": 7, "title_outline": 3, "title_shadow": 2,
+        "cta_outline": 3, "thumb_border": 5,
     },
     "True History": {
         "cta": "FOLLOW FOR MORE TRUE HISTORY", "anchor": "#history", "style": "archival",
@@ -426,8 +433,11 @@ def words_to_ass(words, pkg=None, total=None):
     Also lays a title card over the hook and a follow-card over the outro.
     Title/CTA cards use the category's display font and color; the spoken
     captions stay in the caption font for readability."""
+    brand = branding_for(pkg)
     _, title_font = brand_font(pkg)
-    title_color = branding_for(pkg)["title_color"]
+    title_color = brand["title_color"]
+    t_sp, t_out, t_sh = brand["title_spacing"], brand["title_outline"], brand["title_shadow"]
+    c_out, c_sp = brand["cta_outline"], max(1, brand["title_spacing"] // 2)
     header = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {WIDTH}
@@ -439,8 +449,8 @@ YCbCr Matrix: TV.709
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Cap,{CAPTION_FONT_NAME},{CAP_FONTSIZE},{CAP_WHITE},{CAP_WHITE},&H00101010,&H90000000,0,0,0,0,100,100,1,0,1,7,2,5,60,60,0,1
-Style: Title,{title_font},112,{title_color},{title_color},&H00101010,&H90000000,0,0,0,0,100,100,1,0,1,9,3,8,70,70,360,1
-Style: CTA,{title_font},62,{CAP_WHITE},{CAP_WHITE},&H00101010,&H90000000,0,0,0,0,100,100,1,0,1,6,2,8,90,90,430,1
+Style: Title,{title_font},112,{title_color},{title_color},&H00101010,&H90000000,0,0,0,0,100,100,{t_sp},0,1,{t_out},{t_sh},8,70,70,360,1
+Style: CTA,{title_font},62,{CAP_WHITE},{CAP_WHITE},&H00101010,&H90000000,0,0,0,0,100,100,{c_sp},0,1,{c_out},2,8,90,90,430,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -1426,7 +1436,7 @@ def render_thumbnail(ffmpeg, visual, pkg, out_path, tmp, font_ff):
     for i, ln in enumerate(lines):
         filters.append(
             f"drawtext=fontfile={font_ff}:text='{esc_drawtext(ln)}':fontsize={fontsize}:"
-            f"fontcolor={thumb_color}:borderw=9:bordercolor=black:x=(w-tw)/2:y={start_y + i * line_h}"
+            f"fontcolor={thumb_color}:borderw={branding_for(pkg)['thumb_border']}:bordercolor=black:x=(w-tw)/2:y={start_y + i * line_h}"
         )
     run([ffmpeg, "-y", *inp, "-frames:v", "1", "-vf", ",".join(filters), "-q:v", "3",
          str(out_path)], cwd=tmp)
