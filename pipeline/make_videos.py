@@ -181,6 +181,9 @@ def brand_font(pkg):
 # Modern caption look (ASS): white words, spoken word pops to yellow.
 CAP_WHITE = r"&H00FFFFFF&"
 CAP_HL = r"&H0000D4FF&"      # bright yellow (ASS is &HAABBGGRR)
+# Dialogue caption tints, one per character by order of appearance (BGR):
+# ice blue, rose, mint - the spoken-word pop stays yellow for everyone.
+CAP_SPEAKER_TINTS = [r"&H00F0DCA8&", r"&H00CCB4F0&", r"&H00C8EFB8&"]
 CAP_FONTSIZE = 92
 CAP_MAX_WORDS = 3           # words visible per phrase
 CAP_Y = 1200                # caption anchor (of 1920) - lower third
@@ -359,6 +362,110 @@ async def synthesize(text, vconf, mp3_path):
     return words
 
 
+# --------------------------------------------- trailer dialogue (multi-voice)
+# A narration line may embed in-scene character lines in the form
+#   [Name] "the line"
+# (the Trailer mood writes these). Each named character speaks with their own
+# cast voice plus a light in-scene room tone; the narrator keeps the normal
+# voice. The tag itself is never spoken or captioned - the quoted words are.
+
+_DLG_RE = re.compile(r'\[([A-Za-z][A-Za-z0-9 .\'-]{0,24})\]\s*("([^"]*)"|“([^”]*)”|([^\[]+))')
+
+# Distinct free edge-tts voices for the character cast, assigned by order of
+# first appearance (the narrator's voice is skipped if it collides).
+EDGE_CAST = ["en-US-AriaNeural", "en-US-GuyNeural", "en-GB-SoniaNeural",
+             "en-US-JennyNeural", "en-GB-RyanNeural", "en-US-AnaNeural"]
+# Preferred ElevenLabs premade voices for the cast (matched against the
+# account's voice list; any other account voices fill in after).
+ELEVEN_CAST_NAMES = ["Rachel", "Josh", "Domi", "Antoni", "Bella", "Charlie"]
+
+
+def split_dialogue(text):
+    """'... [Mara] "Why?" ...' -> [(None, '...'), ('Mara', 'Why?'), (None, '...')].
+    Text without markers comes back as a single narrator chunk."""
+    chunks, pos = [], 0
+    for m in _DLG_RE.finditer(text):
+        pre = text[pos:m.start()].strip()
+        if pre:
+            chunks.append((None, pre))
+        line = (m.group(3) or m.group(4) or m.group(5) or "").strip().strip('"“” ')
+        if line:
+            chunks.append((m.group(1).strip(), line))
+        pos = m.end()
+    tail = text[pos:].strip()
+    if tail:
+        chunks.append((None, tail))
+    return chunks or [(None, text.strip())]
+
+
+def strip_dialogue_markup(text):
+    """The spoken form of a line: [Name] tags gone, the quoted words kept."""
+    return " ".join(t for _, t in split_dialogue(text))
+
+
+def synthesize_cast(segments, vconf, out_mp3, tmp, ffmpeg, ffprobe, eleven=None):
+    """Multi-voice narration for segments carrying [Name] "line" dialogue.
+    Synthesizes each chunk with its voice, gives character lines a subtle
+    in-scene treatment (thinner low end + a touch of slap echo), stitches
+    everything into out_mp3, and returns (words, cast) - words being
+    (start, end, word) on the stitched track, same shape as synthesize().
+    `eleven` = {key, model, narrator_id, voices} switches the whole cast to
+    ElevenLabs; None uses free edge-tts throughout."""
+    chunks = []
+    for seg in segments:
+        chunks.extend(split_dialogue(seg))
+    characters = []
+    for sp, _ in chunks:
+        if sp and sp not in characters:
+            characters.append(sp)
+    cast = {}   # character -> (display label, voice)
+    if eleven:
+        byname = {_voice_base(n): (n.split(" - ")[0].strip(), vid)
+                  for n, vid in eleven["voices"].items()}
+        pool = [byname[w.lower()] for w in ELEVEN_CAST_NAMES
+                if w.lower() in byname and byname[w.lower()][1] != eleven["narrator_id"]]
+        pool += [v for v in sorted(byname.values())
+                 if v[1] != eleven["narrator_id"] and v not in pool]
+        for i, ch in enumerate(characters):
+            cast[ch] = pool[i % len(pool)] if pool else ("narrator", eleven["narrator_id"])
+    else:
+        pool = [v for v in EDGE_CAST if v != vconf["voice"]]
+        for i, ch in enumerate(characters):
+            v = pool[i % len(pool)]
+            cast[ch] = (v.split("-")[-1].replace("Neural", ""), v)
+
+    words, parts, offset = [], [], 0.0
+    for idx, (speaker, chunk_text) in enumerate(chunks):
+        part = tmp / f"vc-{idx:02d}.mp3"
+        if eleven:
+            vid = eleven["narrator_id"] if speaker is None else cast[speaker][1]
+            w = synthesize_elevenlabs(chunk_text, vid, eleven["model"], part, eleven["key"],
+                                      settings=eleven.get("settings"))
+        elif speaker is None:
+            w = asyncio.run(synthesize(chunk_text, vconf, part))
+        else:
+            w = asyncio.run(synthesize(chunk_text, {"voice": cast[speaker][1],
+                                                    "rate": "+0%", "pitch": "+0Hz"}, part))
+        # Normalize every chunk to one wav format so the concat is seamless;
+        # dialogue gets the in-scene tone; a short pad keeps a beat of air
+        # between speakers (word timings are unaffected - it's trailing).
+        filt = "aresample=44100,aformat=sample_fmts=s16:channel_layouts=mono,apad=pad_dur=0.15"
+        if speaker is not None:
+            filt = "highpass=f=140,aecho=0.8:0.55:14|29:0.18|0.09," + filt
+        wav = tmp / f"vc-{idx:02d}.wav"
+        run([ffmpeg, "-y", "-i", str(part), "-af", filt, str(wav)])
+        # 4-tuples: the speaker rides along so captions can tint dialogue
+        # and flash the character's name (None = narrator).
+        words.extend((s + offset, e + offset, t, speaker) for s, e, t in w)
+        parts.append(wav)
+        offset += probe_duration(ffprobe, wav)
+    (tmp / "vc-list.txt").write_text("".join(f"file '{p.name}'\n" for p in parts),
+                                     encoding="utf-8")
+    run([ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", "vc-list.txt",
+         "-c:a", "libmp3lame", "-q:a", "3", str(out_mp3)], cwd=tmp)
+    return words, cast
+
+
 # ---------------------------------------------------------------- ElevenLabs voice (optional, paid)
 
 ELEVENLABS_API = "https://api.elevenlabs.io/v1"
@@ -449,15 +556,17 @@ def chars_to_words(chars, starts, ends):
     return words
 
 
-def synthesize_elevenlabs(text, voice_id, model, mp3_path, key):
+def synthesize_elevenlabs(text, voice_id, model, mp3_path, key, settings=None):
     """ElevenLabs TTS with character timestamps -> mp3 + per-word timings,
-    matching the edge-tts word format so captions/charts work unchanged."""
+    matching the edge-tts word format so captions/charts work unchanged.
+    `settings` overrides voice_settings (trailer mode lowers stability for
+    a more dramatic, less even read)."""
     import base64
     url = f"{ELEVENLABS_API}/text-to-speech/{voice_id}/with-timestamps?output_format=mp3_44100_128"
     body = json.dumps({
         "text": text,
         "model_id": model,
-        "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
+        "voice_settings": settings or {"stability": 0.5, "similarity_boost": 0.75},
     }).encode("utf-8")
     req = urllib.request.Request(url, data=body, method="POST", headers={
         "xi-api-key": key,
@@ -488,16 +597,25 @@ def ass_time(seconds):
     return f"{h}:{m:02d}:{s:02d}.{c:02d}"
 
 
+def _norm_words(words):
+    """Words as 4-tuples (start, end, word, speaker) - the single-voice path
+    produces 3-tuples (speaker None), the cast path 4-tuples."""
+    return [w if len(w) == 4 else (w[0], w[1], w[2], None) for w in words]
+
+
 def group_phrases(words, max_words=CAP_MAX_WORDS, max_gap=0.55):
     phrases, cur = [], []
-    for start, end, word in words:
+    for start, end, word, speaker in _norm_words(words):
         if cur:
             prev_end = cur[-1][1]
             sentence_break = cur[-1][2].rstrip('"”’').endswith((".", "!", "?", ":", ","))
-            if len(cur) >= max_words or (start - prev_end) > max_gap or sentence_break:
+            # A voice change always starts a fresh phrase, so every caption
+            # line belongs to exactly one speaker (clean tint + name flash).
+            if (len(cur) >= max_words or (start - prev_end) > max_gap
+                    or sentence_break or cur[-1][3] != speaker):
                 phrases.append(cur)
                 cur = []
-        cur.append((start, end, word))
+        cur.append((start, end, word, speaker))
     if cur:
         phrases.append(cur)
     return phrases
@@ -538,14 +656,26 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     # Flatten to one caption event per word so we can butt each event exactly
     # against the next (no overlap, no gap -> no doubled/garbled frames).
+    # Dialogue phrases (speaker-tagged words from synthesize_cast) render in
+    # the character's tint + italics; group_phrases never mixes speakers.
+    phrases = group_phrases(words)
+    tints = {}
+    for ph in phrases:
+        sp = ph[0][3]
+        if sp and sp not in tints:
+            tints[sp] = CAP_SPEAKER_TINTS[len(tints) % len(CAP_SPEAKER_TINTS)]
     events = []
-    for phrase in group_phrases(words):
-        for k, (start, _, _) in enumerate(phrase):
+    for phrase in phrases:
+        spk = phrase[0][3]
+        base = tints.get(spk, CAP_WHITE)
+        for k, (start, _, _, _) in enumerate(phrase):
             parts = []
-            for j, (_, _, w) in enumerate(phrase):
+            for j, (_, _, w, _) in enumerate(phrase):
                 token = w.upper()
-                parts.append(f"{{\\c{CAP_HL}}}{token}{{\\c{CAP_WHITE}}}" if j == k else token)
+                parts.append(f"{{\\c{CAP_HL}}}{token}{{\\c{base}}}" if j == k else token)
             tags = f"\\an5\\pos({WIDTH // 2},{CAP_Y})"
+            if spk:
+                tags += f"\\i1\\c{base}"
             if k == 0:  # entrance pop only when a new phrase appears
                 tags += "\\fad(70,0)\\fscx78\\fscy78\\t(0,120,\\fscx100\\fscy100)"
             events.append([start, f"{{{tags}}}" + " ".join(parts)])
@@ -554,6 +684,24 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     for i, (start, text) in enumerate(events):
         end = events[i + 1][0] if i + 1 < len(events) else start + 0.6
         lines.append(f"Dialogue: 0,{ass_time(start)},{ass_time(end)},Cap,,0,0,0,,{text}")
+
+    # A "— NAME" flash above the captions whenever a character starts
+    # speaking, in their tint, so viewers track who's talking over fast cuts.
+    runs = []
+    for ph in phrases:
+        sp = ph[0][3]
+        if runs and runs[-1][0] == sp:
+            runs[-1][2] = ph[-1][1]
+        else:
+            runs.append([sp, ph[0][0], ph[-1][1]])
+    for sp, s, e in runs:
+        if not sp:
+            continue
+        name = sanitize_card_text(sp)
+        dur = min(1.4, max(0.7, e - s))
+        tag = (f"{{\\an5\\pos({WIDTH // 2},{CAP_Y - 108})\\fs54\\c{tints[sp]}"
+               "\\fad(80,120)}")
+        lines.append(f"Dialogue: 1,{ass_time(s)},{ass_time(s + dur)},Cap,,0,0,0,,{tag}— {name}")
 
     if pkg:
         title = sanitize_card_text((pkg.get("thumbnails") or [pkg.get("title", "")])[0])
@@ -601,6 +749,7 @@ def _raw_shot_text(pkg, seg_index, seg_count):
         beats = pkg.get("beats") or []
         src = beats[seg_index - 1] if 1 <= seg_index <= len(beats) else shots[pick]
     src = re.sub(r"^[A-Za-z /-]{2,20}:", "", src)                      # "Hook:" style prefixes
+    src = re.sub(r"\[[A-Za-z][A-Za-z0-9 .'-]{0,24}\]", "", src)        # [Name] dialogue tags
     src = re.sub(r"[\"“”‘’']", "", src)
     # Drop instructions about on-screen text - generated text comes out garbled.
     src = re.sub(r"\b(labeled|labelled|stamped|caption|chyron|lower.third|overlay|typed|on.screen text)\b[^,.;]*",
@@ -640,6 +789,12 @@ def _polish_via_openai(pkg, seg_count, key):
         "Put a specific relatable person doing something concrete in nearly every "
         "prompt (reenactment style)." if PEOPLE_BIAS else
         "Include people only where a clip note calls for them.")
+    cast = pkg.get("cast") or []
+    cast_rule = ("Recurring characters: every clip is generated independently, so "
+                 "whenever one of these characters appears, describe them with "
+                 "EXACTLY this look, word for word: "
+                 + "; ".join(f'{c.get("name")} = {c.get("look")}' for c in cast)
+                 + ". " if cast else "")
     style_rule = ""
     if (pkg.get("category") or "") == "Scary Story":
         # Quiet-horror cinematography (the social-thriller school): the frame
@@ -659,7 +814,7 @@ def _polish_via_openai(pkg, seg_count, key):
         "Rewrite each clip note into ONE vivid visual prompt of 15-35 words: a concrete "
         "subject and action, the setting, a camera angle or movement, and lighting/mood. "
         "Stay true to the moment each note describes - same scene, richer picture - and "
-        "keep a consistent visual world across all clips. " + style_rule + people_rule + " "
+        "keep a consistent visual world across all clips. " + cast_rule + style_rule + people_rule + " "
         "Never mention on-screen text, captions, words, letters, numbers, signs, logos or "
         "watermarks. Reply with ONLY minified JSON, no markdown fences: "
         f'{{"prompts":["...", ...]}} with exactly {seg_count} strings in clip order.\n'
@@ -716,16 +871,37 @@ def polished_shot_texts(pkg, seg_count):
     return result
 
 
+def _apply_cast(text, cast):
+    """Pin recurring characters into a prompt: the first mention of a cast
+    name gains their look - 'Mara' -> 'Mara (mid-30s, red parka)' - so every
+    independently generated clip draws the same person. Skipped when the
+    look is already in the text (e.g. the polish pass wrote it out)."""
+    low = text.lower()
+    for c in cast or []:
+        name, look = str(c.get("name", "")), str(c.get("look", ""))
+        if not name or not look:
+            continue
+        # Any two consecutive look-words already in the text means the look
+        # is (at least partly) written out - don't describe her twice.
+        lw = re.sub(r"[^a-z0-9 -]", "", look.lower()).split()
+        if any(f"{a} {b}" in low for a, b in zip(lw, lw[1:])):
+            continue
+        text = re.sub(rf"\b{re.escape(name)}\b", f"{name} ({look})", text, count=1)
+    return text
+
+
 def ai_prompt_for_segment(pkg, seg_index, seg_count, style_suffix):
     """Build an image/video prompt for one narration segment: the OpenAI-polished
-    version when available, otherwise the raw shot/beat text (+ people bias)."""
+    version when available, otherwise the raw shot/beat text (+ people bias).
+    Either way, cast characters keep their exact look in every prompt."""
     polished = polished_shot_texts(pkg, seg_count)
     if polished:
-        return f"{polished[seg_index]}, {style_suffix}"
-    src = _raw_shot_text(pkg, seg_index, seg_count)
-    if PEOPLE_BIAS and not _PERSON_RE.search(src):
-        src = f"{src}, {HUMAN_HINT}"
-    return f"{src}, {style_suffix}"
+        core = polished[seg_index]
+    else:
+        core = _raw_shot_text(pkg, seg_index, seg_count)
+        if PEOPLE_BIAS and not _PERSON_RE.search(core):
+            core = f"{core}, {HUMAN_HINT}"
+    return f"{_apply_cast(core, pkg.get('cast'))}, {style_suffix}"
 
 
 def fetch_ai_image(prompt, dest, seed):
@@ -1929,6 +2105,12 @@ def main():
             print(f"  earlier render kept - this one saves as {out_path.name}")
 
         vconf = dict(VOICE_MAP.get(pkg.get("voice"), DEFAULT_VOICE))
+        if args.trailer:
+            # Trailer VO delivery: noticeably slower and a touch deeper - the
+            # pauses the trailer-mood script writes (' - ', '...') get room to
+            # land. Character dialogue keeps its own natural pace; explicit
+            # --rate/--pitch below still win.
+            vconf["rate"], vconf["pitch"] = "-15%", "-8Hz"
         if args.voice:
             vconf["voice"] = args.voice
         if args.rate:
@@ -1936,7 +2118,12 @@ def main():
         if args.pitch:
             vconf["pitch"] = args.pitch
 
-        segments = narration_segments(pkg, hook_index)
+        # raw_segments may carry [Name] "line" dialogue markup; `segments` is
+        # the SPOKEN form (tags stripped, quoted words kept) - it's what the
+        # word timings, spans, captions, charts, and prompts all line up with.
+        raw_segments = narration_segments(pkg, hook_index)
+        segments = [strip_dialogue_markup(s) for s in raw_segments]
+        has_dialogue = any(sp for s in raw_segments for sp, _ in split_dialogue(s))
         text = " ".join(segments)
         if not text:
             print("  SKIP: package has no narration text\n")
@@ -1952,16 +2139,38 @@ def main():
                 if brand_font_path:
                     shutil.copy(brand_font_path, tmp / brand_font_path.name)
 
+                cast = None
+                # Trailer VO on ElevenLabs: lower stability = a hotter, more
+                # dramatic read instead of the even narration default.
+                el_settings = ({"stability": 0.35, "similarity_boost": 0.75}
+                               if args.trailer else None)
                 if args.elevenlabs:
                     el_voice_id, el_voice_name = pick_elevenlabs_voice(
                         pkg.get("voice", ""), args.el_voice, el_key)
-                    words = synthesize_elevenlabs(text, el_voice_id, args.el_model, tmp / "voice.mp3", el_key)
+                    if has_dialogue:
+                        words, cast = synthesize_cast(
+                            raw_segments, vconf, tmp / "voice.mp3", tmp, ffmpeg, ffprobe,
+                            eleven={"key": el_key, "model": args.el_model,
+                                    "narrator_id": el_voice_id,
+                                    "voices": elevenlabs_voices(el_key),
+                                    "settings": el_settings})
+                    else:
+                        words = synthesize_elevenlabs(text, el_voice_id, args.el_model,
+                                                      tmp / "voice.mp3", el_key,
+                                                      settings=el_settings)
                     total = probe_duration(ffprobe, tmp / "voice.mp3")
                     print(f"  voice: ElevenLabs {el_voice_name} ({args.el_model}) - {total:.1f}s")
                 else:
-                    words = asyncio.run(synthesize(text, vconf, tmp / "voice.mp3"))
+                    if has_dialogue:
+                        words, cast = synthesize_cast(
+                            raw_segments, vconf, tmp / "voice.mp3", tmp, ffmpeg, ffprobe)
+                    else:
+                        words = asyncio.run(synthesize(text, vconf, tmp / "voice.mp3"))
                     total = probe_duration(ffprobe, tmp / "voice.mp3")
                     print(f"  voice: {vconf['voice']} ({vconf['rate']}, {vconf['pitch']}) - {total:.1f}s")
+                if cast:
+                    print("  cast: " + ", ".join(f"{ch} -> {label}"
+                                                 for ch, (label, _) in cast.items()))
                 (tmp / "subs.ass").write_text(words_to_ass(words, pkg, total), encoding="utf-8")
 
                 # Where the reveal lands (segments[-3] = the second-to-last
