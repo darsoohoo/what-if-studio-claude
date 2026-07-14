@@ -96,6 +96,30 @@ AI_STYLES = {
 }
 AI_IMAGE_HOST = "https://image.pollinations.ai/prompt/"
 
+# 🎭 Mood looks: appended to the style suffix of every generated visual
+# (free Pollinations images, paid tryinfer images, and AI-video first
+# frames/motion) when --mood is passed. Keys mirror MOODS in review.py.
+# No mood flag = exactly the classic look; caches are NOT forked by mood,
+# so re-renders stay free (delete a scenario's cache entry to restyle it).
+MOOD_LOOKS = {
+    "eerie": "unsettling atmosphere, muted desaturated palette, quiet dread in the stillness",
+    "funny": "bright playful atmosphere, warm saturated colors, comic timing in the poses",
+    "sarcastic": "glossy advertising perfection with one detail played visibly straight-faced wrong",
+    "witty": "clever visual gag staged in frame, crisp clean lighting",
+    "adventurous": "epic wide adventure feel, golden-hour light, dynamic diagonal motion",
+    "dramatic": "high-contrast dramatic lighting, deep shadows, tense staging",
+    "mysterious": "fog and half-light, subjects partly hidden, cool blue-grey tones",
+    "wholesome": "soft warm cozy light, gentle expressions, pastel tones",
+    "inspiring": "sunrise glow, hopeful upward framing, expansive sky",
+    "deadpan": "flat symmetrical composition, even lighting, expressionless subjects held perfectly still",
+}
+
+
+def styled_suffix(style_suffix, mood):
+    """The style tail for generated visuals, with the mood look folded in."""
+    look = MOOD_LOOKS.get(mood or "")
+    return f"{style_suffix}, {look}" if look else style_suffix
+
 # Category branding: story categories get their own burned-in follow card,
 # anchor hashtag, default AI-visual style, and title-card/cover typography.
 # Anything not listed renders with the classic what-if brand. Keys mirror
@@ -234,13 +258,56 @@ def pick_file(directory, exts):
     return random.choice(files) if files else None
 
 
-def pick_music(pkg, music_dir):
-    """Pick a track matching the scenario's mood; fall back to loose files."""
+def pick_music(pkg, music_dir, ironic=False):
+    """Pick a track matching the scenario's mood; fall back to loose files.
+    `ironic` overrides the category mood with a sincerely cheerful bed
+    (music/ironic, fetched by get_music.py; upbeat fills in if it's empty)."""
     root = Path(music_dir) if music_dir else None
     if not root or not root.is_dir():
         return None
+    if ironic:
+        return (pick_file(root / "ironic", AUDIO_EXTS)
+                or pick_file(root / "upbeat", AUDIO_EXTS)
+                or pick_file(root, AUDIO_EXTS))
     mood = MOOD_BY_CATEGORY.get(pkg.get("category", ""), "wonder")
     return pick_file(root / mood, AUDIO_EXTS) or pick_file(root, AUDIO_EXTS)
+
+
+def ironic_music_treatment(ffmpeg, src, dest, reveal, mode="tail"):
+    """Rebuild a cheerful bed so it dies on the reveal (the Jordan Peele
+    trick: the song stays SINCERELY happy, the picture goes wrong). Up to
+    `reveal` the track plays straight, a notch louder than a normal bed;
+    then a ~0.45s tape-stop (three slurring pitch-drop chunks), a beat of
+    silence, and either nothing more ("stop") or the song resuming slowed
+    ~7% and quieter ("tail" - like it's playing from another room).
+    Levels are relative: final_render still applies the branding volume
+    and end fade on top."""
+    r = float(reveal)
+    st = "aformat=sample_fmts=fltp:channel_layouts=stereo"
+    segs = [
+        f"[0:a]aresample=44100,{st},asplit=5[p][s1][s2][s3][t]",
+        f"[p]atrim=0:{r:.3f},asetpts=PTS-STARTPTS,volume=1.25[pre]",
+    ]
+    labels = ["[pre]"]
+    for j, (rate, vol) in enumerate(((0.84, 1.0), (0.62, 0.7), (0.42, 0.4)), 1):
+        a, b = r + 0.15 * (j - 1), r + 0.15 * j
+        segs.append(f"[s{j}]atrim={a:.3f}:{b:.3f},asetpts=PTS-STARTPTS,"
+                    f"asetrate={int(44100 * rate)},aresample=44100,{st},"
+                    f"volume={vol}[c{j}]")
+        labels.append(f"[c{j}]")
+    segs.append(f"anullsrc=r=44100:cl=stereo,atrim=0:0.6,{st}[gap]")
+    labels.append("[gap]")
+    if mode == "tail":
+        segs.append(f"[t]atrim={r + 0.45:.3f},asetpts=PTS-STARTPTS,"
+                    f"asetrate={int(44100 * 0.93)},aresample=44100,{st},"
+                    f"volume=0.45,afade=t=in:st=0:d=1.2[tl]")
+        labels.append("[tl]")
+    else:
+        segs.append("[t]atrim=0:0.05,asetpts=PTS-STARTPTS,volume=0[tl]")
+        labels.append("[tl]")
+    segs.append("".join(labels) + f"concat=n={len(labels)}:v=0:a=1[out]")
+    run([ffmpeg, "-y", "-i", str(src), "-filter_complex", ";".join(segs),
+         "-map", "[out]", "-c:a", "pcm_s16le", str(dest)])
 
 
 def music_credit_for(music, music_dir):
@@ -669,9 +736,9 @@ def fetch_ai_image(prompt, dest, seed):
         raise RuntimeError("image response too small")
 
 
-def generate_ai_visuals(pkg, seg_count, style_key, cache_root):
+def generate_ai_visuals(pkg, seg_count, style_key, cache_root, mood=None):
     """One generated image per narration segment, cached per scenario+style."""
-    suffix = AI_STYLES[style_key]
+    suffix = styled_suffix(AI_STYLES[style_key], mood)
     folder = Path(cache_root) / f"{pkg.get('scenarioId', 'pkg')}-{style_key}"
     folder.mkdir(parents=True, exist_ok=True)
     files = []
@@ -952,22 +1019,26 @@ def openai_usage_cost(reply):
 _IMAGE_EXT_RE = re.compile(r"\.(jpe?g|png|webp)(\?|$)", re.I)
 
 
-def _find_image_url(obj):
-    """Find the finished image URL anywhere in the poll response."""
+def _find_image_url(obj, in_images=False):
+    """Find the finished image URL anywhere in the poll response. Some models
+    return presigned S3 URLs with no file extension inside an "images" list
+    ({"output": {"images": [{"url": ...}]}}) - anything under an images/image
+    key is trusted without the extension check."""
     if isinstance(obj, str):
-        return obj if obj.startswith("http") and _IMAGE_EXT_RE.search(obj) else None
+        return obj if obj.startswith("http") and (_IMAGE_EXT_RE.search(obj) or in_images) else None
     if isinstance(obj, dict):
         for key in ("image_url", "url", "output_url", "download_url", "result_url"):
             v = obj.get(key)
-            if isinstance(v, str) and v.startswith("http") and (_IMAGE_EXT_RE.search(v) or key != "url"):
+            if isinstance(v, str) and v.startswith("http") \
+                    and (_IMAGE_EXT_RE.search(v) or key != "url" or in_images):
                 return v
-        for v in obj.values():
-            found = _find_image_url(v)
+        for k, v in obj.items():
+            found = _find_image_url(v, in_images or k in ("images", "image"))
             if found:
                 return found
     elif isinstance(obj, list):
         for v in obj:
-            found = _find_image_url(v)
+            found = _find_image_url(v, in_images)
             if found:
                 return found
     return None
@@ -1024,7 +1095,7 @@ def _run_infer_job(model, task, input_obj, key, find_url=_find_video_url):
         if status in ("COMPLETED", "SUCCEEDED", "SUCCESS"):
             url = find_url(resp)
             if not url:
-                return None, None, "completed but no video URL: " + json.dumps(resp)[:400]
+                return None, None, "completed but no output URL: " + json.dumps(resp)[:400]
             return url, _find_price(resp), None
         if status in ("FAILED", "ERROR", "CANCELLED", "CANCELED"):
             err = json.dumps((resp or {}).get("error") or resp)[:300]
@@ -1095,7 +1166,7 @@ def _ref_frame_uri(ref, ffmpeg, cache_folder, index):
 
 
 def generate_infer_videos(pkg, segments, key, model, task, duration, cache_root,
-                          ref_dir=None, ffmpeg=None):
+                          ref_dir=None, ffmpeg=None, mood=None):
     """One AI-generated clip per beat via tryinfer. image-to-video animates the
     beat's user-attached reference image when one is staged (ref-NN.jpg in
     ref_dir), else a free Pollinations first frame (shared style = coherence);
@@ -1120,7 +1191,8 @@ def generate_infer_videos(pkg, segments, key, model, task, duration, cache_root,
             else:
                 files.append(dest)
                 continue
-        motion = ai_prompt_for_segment(pkg, i, len(segments), VIDEO_MOTION_SUFFIX)
+        motion = ai_prompt_for_segment(pkg, i, len(segments),
+                                       styled_suffix(VIDEO_MOTION_SUFFIX, mood))
         base_input = {"prompt": motion, "duration_seconds": str(duration), "aspect_ratio": "9:16"}
 
         attempts = []
@@ -1132,7 +1204,8 @@ def generate_infer_videos(pkg, segments, key, model, task, duration, cache_root,
                     print(f"    beat {i + 1}: animating your attached image ({ref.name})")
                 except Exception as exc:
                     print(f"    beat {i + 1}: couldn't read attached image ({exc})")
-            frame_prompt = ai_prompt_for_segment(pkg, i, len(segments), AI_STYLES[branding_for(pkg)["style"]])
+            frame_prompt = ai_prompt_for_segment(
+                pkg, i, len(segments), styled_suffix(AI_STYLES[branding_for(pkg)["style"]], mood))
             image_url = pollinations_image_url(frame_prompt, seed=(i + 1) * 17)
             if _prewarm_url(image_url):
                 attempts.append(("image-to-video", {**base_input, "image_url": image_url}))
@@ -1172,12 +1245,12 @@ def generate_infer_videos(pkg, segments, key, model, task, duration, cache_root,
     return files
 
 
-def generate_infer_images(pkg, seg_count, key, model, style_key, cache_root):
+def generate_infer_images(pkg, seg_count, key, model, style_key, cache_root, mood=None):
     """One paid AI image per beat via tryinfer text-to-image (cheaper than
     video; Ken Burns motion is added at assembly like any still). Uses the
     same polished prompts and style suffixes as the free image path. Images
     cache per scenario+model - re-renders are free."""
-    suffix = AI_STYLES.get(style_key, AI_STYLES["cinematic"])
+    suffix = styled_suffix(AI_STYLES.get(style_key, AI_STYLES["cinematic"]), mood)
     folder = Path(cache_root) / f"{slugify(pkg.get('scenarioId', 'pkg'))}-{slugify(model)}"
     folder.mkdir(parents=True, exist_ok=True)
     files, spent = [], 0.0
@@ -1194,7 +1267,15 @@ def generate_infer_images(pkg, seg_count, key, model, style_key, cache_root):
         except Exception as exc:
             url, price, err = None, None, str(exc)
         if not url:
-            print(f"    image {i + 1}/{seg_count} failed: {err} - neighbors will fill in")
+            # One bad beat (moderation, model hiccup) shouldn't leave a hole:
+            # fall back to a free Pollinations image so the beat keeps ITS
+            # visual; only if that fails too do neighbors fill in.
+            try:
+                fetch_ai_image(prompt, dest, seed=(i + 1) * 13)
+                print(f"    image {i + 1}/{seg_count} failed ({str(err)[:160]}) - used a free Pollinations image instead")
+                files.append(dest)
+            except Exception:
+                print(f"    image {i + 1}/{seg_count} failed: {err} - neighbors will fill in")
             continue
         try:
             dl = urllib.request.Request(url, headers={"User-Agent": "WhatIfStudio-pipeline/1.0"})
@@ -1674,6 +1755,16 @@ def main():
     parser.add_argument("--music", default="music", help="Folder of background music (optional)")
     parser.add_argument("--ai-visuals", action="store_true",
                         help="Generate one free AI image per beat (Pollinations, no account) instead of using backgrounds/")
+    parser.add_argument("--ironic-music", nargs="?", const="tail", choices=["tail", "stop"],
+                        default=None,
+                        help="Sincerely cheerful music that contradicts the visuals and tape-stops "
+                             "on the reveal beat. 'tail' (default) lets the song resume slowed and "
+                             "quiet after the stop; 'stop' leaves silence. Uses music/ironic "
+                             "(python get_music.py fetches the tracks).")
+    parser.add_argument("--mood", default=None, choices=sorted(MOOD_LOOKS),
+                        help="Fold a mood look into every generated visual's style suffix "
+                             "(images, AI-video frames and motion). Omit = the classic look. "
+                             "Caches are not forked - delete a scenario's cache entry to restyle it.")
     parser.add_argument("--ai-style", default=None, choices=sorted(AI_STYLES),
                         help="Look of generated AI visuals (default: the category's own style - "
                              "eerie for Scary Story, archival for True History, cinematic otherwise)")
@@ -1865,14 +1956,26 @@ def main():
                     print(f"  voice: {vconf['voice']} ({vconf['rate']}, {vconf['pitch']}) - {total:.1f}s")
                 (tmp / "subs.ass").write_text(words_to_ass(words, pkg, total), encoding="utf-8")
 
-                # Beat-timed sound design: a sub-bass riser that swells into
-                # the reveal beat (segments[-3] = the second-to-last body
-                # beat) and lands with a soft impact on its first word.
+                # Where the reveal lands (segments[-3] = the second-to-last
+                # body beat): shared by the beat SFX and the ironic-music
+                # tape-stop below.
+                reveal_start = None
+                if len(segments) >= 4 and total > 20:
+                    t0 = segment_spans(segments, words, total)[len(segments) - 3][0]
+                    if t0 > 6:
+                        reveal_start = t0
+
+                # Beat-timed sound design on the reveal's first word. Ironic
+                # mode drops the riser - a swell would telegraph the dread the
+                # cheerful song is busy denying - and keeps just the impact,
+                # landing together with the music's tape-stop.
                 sfx_delay_ms = None
-                if (branding_for(pkg).get("sfx") == "reveal" and not args.no_sfx
-                        and len(segments) >= 4 and total > 20):
-                    reveal_start = segment_spans(segments, words, total)[len(segments) - 3][0]
-                    if reveal_start > 6:
+                if reveal_start is not None and not args.no_sfx:
+                    if args.ironic_music:
+                        synth_reveal_sfx(tmp / "sfx.wav", riser=0.3)
+                        sfx_delay_ms = int((reveal_start - 0.3) * 1000)
+                        print(f"  sfx: soft impact on the reveal at {reveal_start:.1f}s")
+                    elif branding_for(pkg).get("sfx") == "reveal":
                         lead = min(3.0, reveal_start - 1.0)
                         synth_reveal_sfx(tmp / "sfx.wav", riser=lead)
                         sfx_delay_ms = int((reveal_start - lead) * 1000)
@@ -1881,21 +1984,23 @@ def main():
                 item_visuals = visuals
                 stock_authors = set()
                 item_style = args.ai_style or branding_for(pkg)["style"]
+                if args.mood:
+                    print(f"  mood: {args.mood} - {MOOD_LOOKS[args.mood]}")
                 if args.infer:
                     print(f"  generating AI video with {args.infer_model}...")
                     item_visuals = generate_infer_videos(pkg, segments, infer_key, args.infer_model,
                                                          args.infer_task, args.infer_duration, args.infer_cache,
-                                                         ref_dir=args.backgrounds, ffmpeg=ffmpeg)
+                                                         ref_dir=args.backgrounds, ffmpeg=ffmpeg, mood=args.mood)
                 elif args.infer_images:
                     print(f"  generating AI images with {args.infer_images}...")
                     item_visuals = generate_infer_images(pkg, len(segments), infer_key, args.infer_images,
-                                                         item_style, args.infer_images_cache)
+                                                         item_style, args.infer_images_cache, mood=args.mood)
                 elif args.stock:
                     print("  fetching Pexels stock footage...")
                     item_visuals = fetch_stock_visuals(pkg, segments, stock_key, args.stock_cache, stock_authors)
                 elif args.ai_visuals:
                     print(f"  generating AI visuals ({item_style})...")
-                    item_visuals = generate_ai_visuals(pkg, len(segments), item_style, args.ai_cache)
+                    item_visuals = generate_ai_visuals(pkg, len(segments), item_style, args.ai_cache, mood=args.mood)
 
                 # Per-beat reference overrides from the Produce page: a beat
                 # whose radio says "video" plays that uploaded clip in EVERY
@@ -1957,10 +2062,19 @@ def main():
                 else:
                     print("  visuals: generated gradient")
 
-                music = pick_music(pkg, args.music)
+                music = pick_music(pkg, args.music, ironic=bool(args.ironic_music))
                 if music:
                     shutil.copy(music, tmp / ("music" + music.suffix))
                     print(f"  music: {music.parent.name}/{music.name}")
+                    if args.ironic_music and reveal_start is not None:
+                        ironic_music_treatment(ffmpeg, tmp / ("music" + music.suffix),
+                                               tmp / "music-ironic.wav", reveal_start,
+                                               args.ironic_music)
+                        (tmp / ("music" + music.suffix)).unlink()
+                        (tmp / "music-ironic.wav").rename(tmp / "music.wav")
+                        print(f"  music: sincerely cheerful until the reveal at {reveal_start:.1f}s,"
+                              f" then tape-stop"
+                              + (" + warped tail" if args.ironic_music == "tail" else " to silence"))
 
                 final_render(ffmpeg, base, pkg, total, bool(music), out_path.resolve(), tmp,
                              clip_audio=args.clip_audio if base is not None else 0.0,

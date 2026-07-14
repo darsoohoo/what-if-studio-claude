@@ -699,7 +699,8 @@ The app is a local static page: scenario library (10 categories - 8 "what if" on
 Custom scenarios: the builder ("+ Create your own scenario") with an AI "Write it for me" draft, all editable, saved in the browser's local storage.
 Draft batches: while the dashboard runs, it drafts 3 fresh 90s Scary Story packages daily after 6:00, and Produce has two on-demand buttons - 🌅 for 3 more scary scenarios, 💭 for 3 realistic what-ifs (grounded thought experiments from real facts, no monsters or magic); the Clips dropdown next to them picks 7 (default), 9, 12, or 15 clips per video (hook + beats + outro - more clips = faster cuts at the same length, reveal still on the second-to-last beat); everything lands in the Produce package dropdown with per-beat prompts ready to copy into tryinfer Studio. Drafting only - nothing renders or posts by itself.
 Dashboard pages (this server, 127.0.0.1:8765): Videos (review renders), Produce (per-beat visuals, voices, re-render), Results (log posted videos' views/likes by hand; rollups by category show what's winning), Spend (API costs), Help.
-Produce per-beat references: attach an image and/or your own video to any beat; the radio picks which one the beat uses and it ALWAYS lands in the final video - image = the picture is that beat's visual with gentle motion (in AI-video mode it's animated as the clip's first frame instead), video = the clip plays as-is (never billed). A 🎭 Mood dropdown (Eerie, Funny, Sarcastic, Witty, Adventurous, Dramatic, Mysterious, Wholesome, Inspiring, Deadpan) steers two rewrite buttons: "Script from prompts" writes the whole spoken script fitted to the visual prompts, "Prompts from script" re-imagines every visual prompt from the spoken lines; both save with the old version kept in History.
+Produce per-beat references: attach an image and/or your own video to any beat; the radio picks which one the beat uses and it ALWAYS lands in the final video - image = the picture is that beat's visual with gentle motion (in AI-video mode it's animated as the clip's first frame instead), video = the clip plays as-is (never billed). A 🎭 Mood dropdown (Auto = category default, or Eerie, Funny, Sarcastic, Witty, Adventurous, Dramatic, Mysterious, Wholesome, Inspiring, Deadpan) steers two rewrite buttons: "Script from prompts" writes the whole spoken script fitted to the visual prompts, "Prompts from script" re-imagines every visual prompt from the spoken lines; both save with the old version kept in History. The same mood flavors every ✨ line rewrite, and an explicit (non-Auto) mood also restyles generated visuals at render time.
+🎵 Ironic cheerful music (Render checkbox, or --ironic-music): a sincerely happy bed (music/ironic - 1950s swing, ragtime, elevator muzak; python get_music.py fetches them) that contradicts scary visuals, plays straight until the reveal beat, then tape-stops on its first word with a soft impact and resumes slowed + quiet. Any category, any visuals mode.
 Optional API keys, one per file in pipeline/: openai_key.txt (better writing), elevenlabs_key.txt (premium voices), tryinfer_key.txt (paid AI video), pexels_key.txt (stock). Free fallbacks exist for everything.
 Everything runs locally; no accounts, no tracking, no auto-posting. Never promise views, virality, or income."""
 
@@ -830,18 +831,22 @@ ENHANCE_TONES = {
 }
 
 
-def enhance_line(title, role, line, img=None, tone="punchy"):
+def enhance_line(title, role, line, img=None, tone="punchy", mood=None):
     """Rewrite one spoken narration line in the chosen tone. When img (the
     beat's selected reference image, or its video's first frame) is given and
     OpenAI is available, the rewrite is grounded in what the viewer actually
-    sees. Falls back to the free Pollinations writer (text-only)."""
+    sees. An explicit 🎭 mood keeps the rewrite in the video's overall
+    register on top of the line-level tone. Falls back to the free
+    Pollinations writer (text-only)."""
     style = ENHANCE_TONES.get(tone, ENHANCE_TONES["punchy"])
+    mood_clause = (f" The video's overall mood is {MOODS[mood]} - keep the "
+                   "rewrite inside that register." if mood in MOODS else "")
     base = (
         'You rewrite narration lines for short-form "What if?" videos '
         f'(TikTok explainer style). Video: "{title}". Rewrite this {role} line '
         f"to be {style}: keep every fact and "
         "number, keep roughly the same length (within 20%), no hashtags, no "
-        "emoji, no quotes, no stage directions."
+        "emoji, no quotes, no stage directions." + mood_clause
     )
     grounding = (
         " The attached frame is what the viewer SEES while this line is spoken"
@@ -1230,6 +1235,15 @@ MOODS = {
 }
 
 
+def resolve_mood(mood, pkg):
+    """A concrete MOODS key for the writers. 'auto' (the dropdown default)
+    picks the category's own register; explicit picks pass through."""
+    if mood in MOODS:
+        return mood
+    return {"Scary Story": "eerie", "True History": "mysterious"}.get(
+        (pkg or {}).get("category", ""), "witty")
+
+
 def _retry_generate(attempt, tries=3):
     """Run one generation attempt up to `tries` times - the writers
     occasionally return the wrong number of lines; a fresh roll usually
@@ -1443,6 +1457,14 @@ def start_render(queue_file, slot, staging, opts):
         style = str(opts.get("ai_style") or "").strip()
         if style in mv.AI_STYLES:
             cmd += ["--ai-style", style]
+    # An explicit 🎭 mood restyles generated visuals; "auto" (the default)
+    # passes nothing, so existing packages render exactly as before.
+    mood = str(opts.get("mood") or "").strip()
+    if mood in mv.MOOD_LOOKS:
+        cmd += ["--mood", mood]
+    ironic = str(opts.get("ironic_music") or "").strip()
+    if ironic in ("tail", "stop"):
+        cmd += ["--ironic-music", ironic]
     if opts.get("elevenlabs"):
         cmd.append("--elevenlabs")
     if opts.get("charts"):
@@ -2129,9 +2151,13 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception:
                     img = None   # a broken frame never blocks a text enhance
                 tone = str(data.get("tone") or "punchy")
+                # An explicit 🎭 mood rides along; "auto" adds no clause (the
+                # tone dropdown already steers the line-level voice).
+                mood = str(data.get("mood") or "")
                 self.send_json({"ok": True, "grounded": bool(img),
                                 "line": enhance_line(pkg.get("title", ""), role,
-                                                     segs[index], img=img, tone=tone)})
+                                                     segs[index], img=img, tone=tone,
+                                                     mood=mood if mood in MOODS else None)})
             except Exception as exc:
                 self.send_json({"error": str(exc)}, 400)
             return
@@ -2144,7 +2170,6 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 queue = str(data.get("queue", ""))
                 slot = int(data.get("slot") or 0)
-                mood = str(data.get("mood") or "eerie")
                 qpath = queue_path(queue)
                 if not qpath or not qpath.is_file():
                     raise RuntimeError("queue file not found")
@@ -2153,6 +2178,7 @@ class Handler(BaseHTTPRequestHandler):
                             if it.get("slot") == slot and it.get("package")), None)
                 if not pkg:
                     raise RuntimeError(f"slot {slot} not in {qpath.name}")
+                mood = resolve_mood(str(data.get("mood") or ""), pkg)
                 old_script = script_snapshot(pkg)
                 prompts = beat_prompts(pkg)
                 script = script_from_prompts(pkg, mood)
@@ -2178,8 +2204,8 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 queue = str(data.get("queue", ""))
                 slot = int(data.get("slot") or 0)
-                mood = str(data.get("mood") or "eerie")
                 pkg = load_package(queue, slot)
+                mood = resolve_mood(str(data.get("mood") or ""), pkg)
                 old_prompts = beat_prompts(pkg)
                 prompts = prompts_from_script(pkg, mood)
                 save_prompts(pkg, prompts)

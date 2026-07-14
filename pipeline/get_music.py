@@ -60,6 +60,17 @@ TRACKS = {
         "Teller of the Tales",
         "Lord of the Land",
     ],
+    # Ironic mode (--ironic-music): sincerely cheerful beds meant to
+    # CONTRADICT scary visuals - vintage swing, naive sweetness, elevator
+    # muzak. The render keeps them cheerful until the reveal, then tape-stops.
+    "ironic": [
+        "Hep Cats",                   # 1950s-style swing
+        "Fig Leaf Rag",               # jaunty ragtime
+        "Wholesome",                  # naive, almost children's-music sweet
+        "Sweeter Vermouth",           # gentle romantic lilt
+        "Airport Lounge",             # cheesy easy-listening
+        "Local Forecast - Elevator",  # corporate elevator muzak
+    ],
 }
 
 CREDIT_TEMPLATE = ('"{title}" Kevin MacLeod (incompetech.com). '

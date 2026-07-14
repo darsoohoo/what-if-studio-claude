@@ -190,7 +190,7 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
         </label>
       </div>
       <div class="row" style="margin:4px 0 10px">
-        <label class="opt" title="The voice the two rewrite buttons aim for — script and prompts alike.">🎭 Mood:
+        <label class="opt" title="One mood steers everything AI-written here: the two rewrite buttons, every ✨ line rewrite, and (when set to something other than Auto) the look of generated visuals at render time. Auto = each category's own register, visuals unchanged.">🎭 Mood:
           <select id="moodSel" style="width:auto"></select>
         </label>
         <button type="button" id="scriptFromPromptsBtn" title="AI-write the whole spoken script (hook, beats, outro) FROM the visual prompts below, in the selected mood — every line is fitted to what's on screen. The old script stays in 🕘 History.">📝 Script from prompts</button>
@@ -229,6 +229,7 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
         <button type="button" id="voiceStarBtn" title="Pin the selected voice to the top and make it the default narrator">☆ Make default</button>
         <label class="opt"><input type="checkbox" id="optCharts" checked> Animated numbers</label>
         <label class="opt"><input type="checkbox" id="optClipAudio"> Keep clip sound (LTX)</label>
+        <label class="opt" title="The Jordan Peele trick: a sincerely cheerful song (1950s swing, ragtime, elevator muzak) that contradicts the visuals — it plays straight, a notch louder than a normal bed, then tape-stops on the reveal beat's first word and resumes slowed and quiet, like it's playing from another room. Replaces the riser with a single soft impact on the stop."><input type="checkbox" id="optIronic"> 🎵 Ironic cheerful music</label>
       </div>
       <div class="row">
         <button type="button" id="renderBtn" class="primary">🎬 Render video</button>
@@ -554,6 +555,7 @@ function setTone(v) {
    every visual prompt FROM the script (words stay, shots re-imagined).
    Both save immediately — the old version is always in 🕘 History. */
 const MOODS = [
+  ["auto", "🎯 Auto — match the category"],
   ["eerie", "🕯️ Eerie"],
   ["funny", "😂 Funny"],
   ["sarcastic", "🙄 Sarcastic"],
@@ -720,7 +722,7 @@ function renderPrompts(prompts, keepPending = true) {
     enh.addEventListener("click", async () => {
       enh.disabled = true; enh.textContent = "…";
       const r = await api("/api/produce/enhance-line",
-        { queue: S.queue, slot: S.slot, index: i, tone: S.tone });
+        { queue: S.queue, slot: S.slot, index: i, tone: S.tone, mood: $id("moodSel").value });
       enh.disabled = false; enh.textContent = "✨";
       if (r.error) {
         $id("prSaveRow").hidden = false;
@@ -1269,6 +1271,8 @@ $id("renderBtn").addEventListener("click", async () => {
     charts: $id("optCharts").checked,
     clip_audio: $id("optClipAudio").checked ? 0.25 : 0,
     voice: $id("optVoice").value,
+    mood: $id("moodSel").value,
+    ironic_music: $id("optIronic").checked ? "tail" : "",
   });
   if (r.error) { setRenderStatus(r.error, "bad"); return; }
   $id("renderBtn").disabled = true;
