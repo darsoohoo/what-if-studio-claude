@@ -37,6 +37,7 @@ STUDIO_TYPES = {
     ".html": "text/html; charset=utf-8",
     ".css": "text/css; charset=utf-8",
     ".js": "application/javascript; charset=utf-8",
+    ".svg": "image/svg+xml",
 }
 OUTPUT = HERE / "output"
 TRASH = OUTPUT / "trash"
@@ -279,19 +280,28 @@ def draft_prompt(title, category, runtime=60):
         '{"premise":"...","beats":["...","...","...","...","..."],"tags":["...","...","..."],"emoji":"..."} '
     )
     if category == "Scary Story":
-        # Narrative horror, told straight - not a "What if?" explainer.
+        # Narrative horror in the modern social-thriller register (the
+        # Get Out / Twilight Zone school): the scare hides inside something
+        # human, and the reveal reframes everything that came before.
         return (
             "You write scripts for short-form scary-story videos (TikTok horror narration: "
-            "true-feeling, first-person or documentary tone, dread over gore). "
+            "true-feeling, first-person or documentary tone, dread over gore) in the register "
+            "of modern social-thriller horror: an ordinary person in a familiar world notices "
+            "one quietly wrong detail, and the truth underneath says something real about "
+            "people. "
             f'For the story "{title}", ' + shape +
             "Rules: premise = 2-3 sentences setting the scene and hinting at what's wrong. "
             f"beats = exactly 5 spoken story beats, {words} words each, no stage directions: "
             f"({pace}) "
-            "1 the ordinary setup, 2 the first wrong detail, 3 the point of no return, "
-            "4 the reveal or escalation, 5 a final line that lingers after the video ends. "
+            "1 the ordinary setup with one detail slightly off, 2 the wrong detail becomes "
+            "impossible to unsee, 3 the point of no return, 4 the reveal that RECONTEXTUALIZES "
+            "everything before it - the horror was hiding in plain sight the whole time, "
+            "5 a final line with a double meaning that lingers after the video ends. "
             "Present tense, concrete sensory details (sounds, timestamps, textures), a specific "
-            "person doing something in every beat. Fictional but grounded - no real victims, "
-            "no gore, no jump-scare cliches. "
+            "person doing something in every beat. Root the fear in something human - grief, "
+            "guilt, conformity, being watched, needing to belong, who gets believed - shown, "
+            "never preached. Fictional but grounded - no real victims, no gore, no "
+            "jump-scare cliches. "
             "tags = 3-5 lowercase topic words. emoji = one fitting emoji."
         )
     if category == "True History":
@@ -467,9 +477,13 @@ def morning_titles(recent, count):
     """Fresh scary-story titles from the AI, avoiding recent repeats."""
     prompt = (
         "You name short-form scary-story videos: narrative dread, real-feeling, "
-        "no gore, never phrased as a 'what if' question. "
+        "no gore, never phrased as a 'what if' question. Favor the social-thriller "
+        "register - a familiar everyday setting (a job, a family ritual, an app, a "
+        "neighborhood) hiding one quietly wrong thing, where the scare could turn out "
+        "to say something about people. "
         f"Invent {count} fresh, specific story premises as titles of 5-12 words, "
-        "in the register of: 'The dive log that ends mid-sentence'. "
+        "in the register of: 'The dive log that ends mid-sentence' or "
+        "'The new neighbors all wave with the wrong hand'. "
         'Reply with ONLY minified JSON, exactly: {"titles":["...","..."]}. '
         + ("Avoid anything similar to these recent ones: " + "; ".join(recent[-30:]) + "."
            if recent else "")
@@ -1326,6 +1340,15 @@ class Handler(BaseHTTPRequestHandler):
         if studio:
             ctype = STUDIO_TYPES.get(studio.suffix.lower(), "application/octet-stream")
             self.send_file(studio, ctype)
+            return
+        # The brand favicon, shared by every page (the app's own file sits in
+        # the project root; dashboard pages reference it absolutely).
+        if self.path.split("?")[0] in ("/favicon.svg", "/favicon.ico"):
+            icon = STUDIO / "favicon.svg"
+            if icon.is_file():
+                self.send_file(icon, STUDIO_TYPES[".svg"])
+            else:
+                self.send_json({"error": "favicon not found"}, 404)
             return
         # The shared assistant chat, loaded by every dashboard page (and by
         # help.html, whose relative src resolves here when server-hosted).
