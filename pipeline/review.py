@@ -1151,6 +1151,13 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
+        # Bare /studio breaks the app's relative asset URLs (app.js resolves
+        # to /app.js) - bounce to the canonical trailing-slash form.
+        if self.path.split("?")[0] == "/studio":
+            self.send_response(301)
+            self.send_header("Location", "/studio/")
+            self.end_headers()
+            return
         studio = studio_file(self.path)
         if studio:
             ctype = STUDIO_TYPES.get(studio.suffix.lower(), "application/octet-stream")

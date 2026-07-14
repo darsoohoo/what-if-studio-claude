@@ -218,18 +218,9 @@ document.getElementById("navSpendBtn").addEventListener("click", () => { locatio
 document.getElementById("navResultsBtn").addEventListener("click", () => { location.href = "/results"; });
 document.getElementById("navHelpBtn").addEventListener("click", () => { location.href = "/help"; });
 
-document.getElementById("navStudioBtn").addEventListener("click", () => {
-  // Browsers block http -> file:// links, but going BACK to a file:// page
-  // in this tab's history is allowed. Fallback covers direct opens.
-  if (history.length > 1) {
-    history.back();
-  } else {
-    setNavCollapsed(false, false);
-    document.getElementById("navStatus").textContent =
-      "This tab opened straight to the dashboard — your Studio is index.html (or its open tab).";
-    setTimeout(() => { document.getElementById("navStatus").textContent = ""; }, 8000);
-  }
-});
+// The dashboard serves the app itself at /studio/ (same origin, same
+// localStorage as the launcher's tab) - no history tricks needed.
+document.getElementById("navStudioBtn").addEventListener("click", () => { location.href = "/studio/"; });
 
 (async () => {
   videos = await api("/api/videos");

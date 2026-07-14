@@ -335,12 +335,9 @@ const DASHBOARD = "http://127.0.0.1:8765/";
 const onDashboard = location.protocol !== "file:" && location.port === "8765";
 
 document.getElementById("navStudioBtn").addEventListener("click", () => {
-  if (onDashboard) {
-    if (history.length > 1) history.back();
-    else showStatus("Your Studio is index.html in the project folder (or use Start-What-If-Studio.bat).");
-  } else {
-    location.href = "index.html";
-  }
+  // On the dashboard the app itself is served at /studio/ (same origin,
+  // same localStorage); from file:// the Studio is the sibling index.html.
+  location.href = onDashboard ? "/studio/" : "index.html";
 });
 async function goDashboard(path) {
   if (onDashboard) { location.href = "/" + path; return; }

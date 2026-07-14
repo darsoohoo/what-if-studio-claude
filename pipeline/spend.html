@@ -124,10 +124,7 @@ $id("navVideosBtn").addEventListener("click", () => { location.href = "/"; });
 $id("navProduceBtn").addEventListener("click", () => { location.href = "/produce"; });
 $id("navResultsBtn").addEventListener("click", () => { location.href = "/results"; });
 $id("navHelpBtn").addEventListener("click", () => { location.href = "/help"; });
-$id("navStudioBtn").addEventListener("click", () => {
-  if (history.length > 1) history.back();
-  else alert("Your Studio is index.html — open it from the project folder (or Start-What-If-Studio.bat).");
-});
+$id("navStudioBtn").addEventListener("click", () => { location.href = "/studio/"; });
 
 /* ---------- data ---------- */
 async function load() {
