@@ -145,6 +145,20 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
       </label>
       <span class="hint" id="morningStatus" style="margin:0"></span>
     </div>
+    <div style="margin-top:12px;border-top:1px dashed var(--border-strong);padding-top:10px">
+      <p class="hint" style="margin:0 0 6px">💡 <strong>Or draft from your own idea</strong> — paste a summary or a few details and the writer builds the title, full script, and per-beat shot prompts from it (honors the <strong>Clips</strong> count above and the <strong>🎭 Mood</strong> in step 2).</p>
+      <textarea id="ideaText" rows="3" style="width:100%;font:inherit;font-size:13px;color:var(--text);background:var(--bg-inset);border:1px solid var(--border-strong);border-radius:8px;padding:8px 10px;resize:vertical" placeholder="e.g. A night-shift nurse notices every patient in ward 6 draws the same door — and last night someone drew it open."></textarea>
+      <div class="row">
+        <input type="text" id="ideaTitle" placeholder="Title (optional — the writer invents one)" style="flex:1;min-width:220px;font:inherit;color:var(--text);background:var(--bg-inset);border:1px solid var(--border-strong);border-radius:8px;padding:8px 10px">
+        <select id="ideaKind" style="width:auto">
+          <option value="scary">😱 Scary story</option>
+          <option value="whatif">💭 Realistic what-if</option>
+          <option value="history">📜 True history</option>
+        </select>
+        <button type="button" id="ideaBtn" class="primary">💡 Draft it</button>
+      </div>
+      <p class="status" id="ideaStatus" role="status" aria-live="polite" style="margin:4px 0 0"></p>
+    </div>
   </section>
 
   <div id="flow" hidden>
@@ -230,8 +244,10 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
         <label class="opt"><input type="checkbox" id="optCharts" checked> Animated numbers</label>
         <label class="opt"><input type="checkbox" id="optClipAudio"> Keep clip sound (LTX)</label>
         <label class="opt" title="The Jordan Peele trick: a sincerely cheerful song (1950s swing, ragtime, elevator muzak) that contradicts the visuals — it plays straight, a notch louder than a normal bed, then tape-stops on the reveal beat's first word and resumes slowed and quiet, like it's playing from another room. Replaces the riser with a single soft impact on the stop. With 🎭 Mood on Auto, generated visuals render 🌤️ Wholesome so the pictures smile as sincerely as the song."><input type="checkbox" id="optIronic"> 🎵 Ironic cheerful music</label>
+        <label class="opt" title="Movie-trailer treatment: an epic cinematic bed (percussion hits, swelling strings) with the riser + impact landing on the reveal beat, whatever the category. With 🎭 Mood on Auto, generated visuals render in Trailer mood — anamorphic teal-and-orange, dramatic rim light. For trailer-speak narration, set 🎭 Trailer and hit 📝 Script from prompts."><input type="checkbox" id="optTrailer"> 🎬 Movie-trailer feel</label>
       </div>
       <p class="hint" id="ironicHint" hidden>🎵 + 🌤️ The full contradiction: the song stays sincerely cheerful and generated visuals render in <strong>Wholesome</strong> mood (soft warm light, gentle smiles) while the script goes wrong — until the tape-stop on the reveal. Pick an explicit 🎭 mood above to override the visual look; already-cached visuals keep their old look until you delete the scenario's cache entry.</p>
+      <p class="hint" id="trailerHint" hidden>🎬 Epic bed + riser and impact on the reveal, and generated visuals render in <strong>Trailer</strong> mood (anamorphic teal-and-orange, dramatic rim light). For trailer-speak narration too, pick <strong>🎬 Trailer</strong> in the 🎭 Mood dropdown and hit <strong>📝 Script from prompts</strong>. Pick any explicit mood to override the visual look.</p>
       <div class="row">
         <button type="button" id="renderBtn" class="primary">🎬 Render video</button>
         <button type="button" id="openVideosBtn" hidden>See it in Videos →</button>
@@ -562,6 +578,7 @@ const MOODS = [
   ["sarcastic", "🙄 Sarcastic"],
   ["witty", "🧠 Witty"],
   ["adventurous", "🧗 Adventurous"],
+  ["trailer", "🎞️ Trailer"],
   ["dramatic", "🎬 Dramatic"],
   ["mysterious", "🌫️ Mysterious"],
   ["wholesome", "🌤️ Wholesome"],
@@ -1237,21 +1254,32 @@ function notifyDone(ok) {
   else setTimeout(restore, 10000);
 }
 
-/* The mood the RENDER sends: 🎵 Ironic + 🎭 Auto pairs the cheerful song
-   with Wholesome visuals (the full Peele contradiction - the pictures smile
-   as sincerely as the music while the script goes wrong). An explicit mood
-   always wins; the ✨/rewrite buttons are untouched, so the script keeps
-   its dark register. */
+/* The mood the RENDER sends: with 🎭 on Auto, 🎵 Ironic pairs the cheerful
+   song with Wholesome visuals (the Peele contradiction) and 🎬 Trailer pairs
+   the epic bed with Trailer-look visuals. An explicit mood always wins; the
+   ✨/rewrite buttons are untouched, so the script keeps its own register. */
 function renderMood() {
   const m = $id("moodSel").value;
-  return ($id("optIronic").checked && m === "auto") ? "wholesome" : m;
+  if (m !== "auto") return m;
+  if ($id("optIronic").checked) return "wholesome";
+  if ($id("optTrailer").checked) return "trailer";
+  return m;
 }
+function updatePairHints() {
+  const auto = $id("moodSel").value === "auto";
+  $id("ironicHint").hidden = !(auto && $id("optIronic").checked);
+  $id("trailerHint").hidden = !(auto && $id("optTrailer").checked);
+}
+/* One musical identity per video: the two treatments exclude each other. */
 $id("optIronic").addEventListener("change", () => {
-  $id("ironicHint").hidden = !($id("optIronic").checked && $id("moodSel").value === "auto");
+  if ($id("optIronic").checked) $id("optTrailer").checked = false;
+  updatePairHints();
 });
-$id("moodSel").addEventListener("change", () => {
-  $id("ironicHint").hidden = !($id("optIronic").checked && $id("moodSel").value === "auto");
+$id("optTrailer").addEventListener("change", () => {
+  if ($id("optTrailer").checked) $id("optIronic").checked = false;
+  updatePairHints();
 });
+$id("moodSel").addEventListener("change", updatePairHints);
 
 /* ---------- step 4: render ---------- */
 let pollTimer = null;
@@ -1290,6 +1318,7 @@ $id("renderBtn").addEventListener("click", async () => {
     voice: $id("optVoice").value,
     mood: renderMood(),
     ironic_music: $id("optIronic").checked ? "tail" : "",
+    trailer: $id("optTrailer").checked,
   });
   if (r.error) { setRenderStatus(r.error, "bad"); return; }
   $id("renderBtn").disabled = true;
@@ -1376,6 +1405,43 @@ async function morningStatus() {
   }
   btn.disabled = false;
 }));
+
+/* ---------- 💡 draft from the creator's own idea ---------- */
+$id("ideaBtn").addEventListener("click", async () => {
+  const idea = $id("ideaText").value.trim();
+  const st = $id("ideaStatus");
+  if (idea.length < 12) {
+    st.className = "status bad";
+    st.textContent = "Give the writer a little more — a sentence or two about the idea.";
+    $id("ideaText").focus();
+    return;
+  }
+  $id("ideaBtn").disabled = true;
+  st.className = "status";
+  st.textContent = "Drafting the title, script, and prompts from your idea… (~half a minute)";
+  try {
+    const r = await api("/api/produce/draft-idea", {
+      idea,
+      title: $id("ideaTitle").value.trim(),
+      kind: $id("ideaKind").value,
+      clips: Number($id("clipCount").value) || 7,
+      mood: $id("moodSel").value,
+    });
+    if (r.error) throw new Error(r.error);
+    await loadQueues();
+    const sel = $id("pkgSelect");
+    const opt = [...sel.options].find(o => o.value === r.file + "|" + r.slot);
+    if (opt) { sel.value = opt.value; sel.dispatchEvent(new Event("change")); }
+    st.className = "status good";
+    st.textContent = `✓ Drafted “${r.title}” — opened below; tweak the script or prompts and render.`;
+    $id("ideaText").value = "";
+    $id("ideaTitle").value = "";
+  } catch (e) {
+    st.className = "status bad";
+    st.textContent = "Drafting failed: " + e.message;
+  }
+  $id("ideaBtn").disabled = false;
+});
 
 loadQueues();
 morningStatus();

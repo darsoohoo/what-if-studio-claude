@@ -286,11 +286,17 @@ def beat_word_budget(runtime, beats=5):
     return words, pace
 
 
-def draft_prompt(title, category, runtime=60, beats=5):
+def draft_prompt(title, category, runtime=60, beats=5, idea=None, mood=None):
     words, pace = beat_word_budget(runtime, beats)
     shape = (
         'reply with ONLY minified JSON, no markdown fences, exactly this shape: '
         '{"premise":"...","beats":[' + ",".join(['"..."'] * beats) + '],"tags":["...","...","..."],"emoji":"..."} '
+        # The creator's own summary/details ground the whole draft; an
+        # explicit 🎭 mood flavors the register on top of the category's own.
+        # (MOODS is defined later in the module - resolved at call time.)
+        + ('Build the whole thing from these details the creator supplied - keep every '
+           f'named fact, person, and place: "{idea}" ' if idea else "")
+        + (f"Tell it in a {MOODS[mood]} voice. " if mood and mood in MOODS else "")
     )
     if category == "Scary Story":
         # Narrative horror in the modern social-thriller register (the
@@ -386,11 +392,12 @@ def parse_draft(raw, engine, want=5):
     }
 
 
-def ai_draft_openai(title, category, key, runtime=60, beats=5):
+def ai_draft_openai(title, category, key, runtime=60, beats=5, idea=None, mood=None):
     """Draft via the OpenAI API (fast, no rate-limit queue; needs credits)."""
     body = json.dumps({
         "model": OPENAI_MODEL,
-        "messages": [{"role": "user", "content": draft_prompt(title, category, runtime, beats)}],
+        "messages": [{"role": "user",
+                      "content": draft_prompt(title, category, runtime, beats, idea, mood)}],
         "response_format": {"type": "json_object"},
         "temperature": 0.9,
         # Longer runtimes need room: beats x up to ~75 words plus premise/tags.
@@ -411,12 +418,13 @@ def ai_draft_openai(title, category, key, runtime=60, beats=5):
     return parse_draft(raw, "openai", beats)
 
 
-def ai_draft_pollinations(title, category, runtime=60, beats=5):
+def ai_draft_pollinations(title, category, runtime=60, beats=5, idea=None, mood=None):
     """Draft via the free Pollinations text API. Runs server-side because the
     API blocks direct browser requests (Turnstile) but allows plain server calls."""
     raw = None
     for attempt in range(3):
-        url = TEXT_AI + quote(draft_prompt(title, category, runtime, beats)) + f"?seed={int(time.time())}"
+        url = (TEXT_AI + quote(draft_prompt(title, category, runtime, beats, idea, mood))
+               + f"?seed={int(time.time())}")
         req = urllib.request.Request(url, headers={"User-Agent": "WhatIfStudio-review/1.0"})
         try:
             with urllib.request.urlopen(req, timeout=90) as resp:
@@ -433,18 +441,20 @@ def ai_draft_pollinations(title, category, runtime=60, beats=5):
     return parse_draft(raw, "pollinations", beats)
 
 
-def ai_draft(title, category, runtime=60, beats=5):
+def ai_draft(title, category, runtime=60, beats=5, idea=None, mood=None):
     """Draft premise/beats/tags/emoji for a scenario title, scaled to the
-    selected runtime and beat count (clips = beats + hook + outro). Prefers
-    the OpenAI API when a key is configured; falls back to the free
-    Pollinations API otherwise (or if the OpenAI call fails)."""
+    selected runtime and beat count (clips = beats + hook + outro). `idea`
+    grounds the draft in the creator's own summary/details; an explicit
+    `mood` flavors the register. Prefers the OpenAI API when a key is
+    configured; falls back to the free Pollinations API otherwise (or if
+    the OpenAI call fails)."""
     key = openai_key()
     if key:
         try:
-            return ai_draft_openai(title, category, key, runtime, beats)
+            return ai_draft_openai(title, category, key, runtime, beats, idea, mood)
         except Exception as exc:
             print(f"OpenAI draft failed ({exc}); falling back to the free writer")
-    return ai_draft_pollinations(title, category, runtime, beats)
+    return ai_draft_pollinations(title, category, runtime, beats, idea, mood)
 
 
 # ---------------- draft batches ----------------
@@ -594,10 +604,10 @@ def batch_titles(kind, recent, count):
     return pool[:count]
 
 
-def scaffold_batch_package(kind, title, draft, runtime):
+def scaffold_batch_package(conf, title, draft, runtime):
     """A full render-ready package from an AI draft (server-side sibling of
-    the app's buildPackage, styled per batch kind)."""
-    conf = BATCHES[kind]
+    the app's buildPackage, styled per kind conf - a BATCHES or IDEA_KINDS
+    entry)."""
     first = draft["premise"].split(". ")[0].rstrip(".") + "."
     return {
         "scenarioId": f"{conf['prefix']}-" + mv.slugify(title)[:28],
@@ -623,6 +633,53 @@ def scaffold_batch_package(kind, title, draft, runtime):
     }
 
 
+def write_package_export(pkg, prefix, title):
+    """Archive one drafted package as a one-item queue export; returns the
+    dropdown-ready 'exports/<name>' path."""
+    EXPORTS_DIR.mkdir(exist_ok=True)
+    name = (f"whatifstudio-queue-{prefix}-{mv.slugify(title)[:40]}"
+            f"-{time.strftime('%Y%m%d-%H%M%S')}.json")
+    (EXPORTS_DIR / name).write_text(json.dumps({
+        "app": "what-if-studio", "format": 1,
+        "exportedAt": pkg["generatedAt"],
+        "items": [{"slot": 1, "status": "planned", "notes": "", "package": pkg}],
+    }, indent=2), encoding="utf-8")
+    return f"exports/{name}"
+
+
+# Kinds the 💡 draft-from-your-idea box offers: the two batch kinds plus
+# True History (which has no daily batch of its own).
+IDEA_KINDS = dict(BATCHES)
+IDEA_KINDS["history"] = {
+    "label": "true history", "runtime": 90,
+    "category": "True History", "prefix": "idea",
+    "colors": {"from": "#241a10", "to": "#8a6d2f"},
+    "pacing": "Documentary pace: let the facts land.",
+    "safety": "Real documented history - accuracy over drama, nothing invented.",
+    "outro": "History keeps receipts. Follow for more true history.",
+    "extra_caption": "The wildest part is documented.",
+    "fallback_tag": "true history",
+}
+
+
+def title_from_idea(idea, category):
+    """A short video title distilled from the creator's summary. Falls back
+    to the idea's opening words if the writer is unreachable."""
+    try:
+        raw = _ai_text(
+            f'You title short-form {category} videos. Distill this idea into one '
+            f'title of 5-12 words - specific, no quotes, no "what if" unless the '
+            f'idea is a what-if question: "{idea[:600]}". '
+            'Reply with ONLY minified JSON, exactly: {"title":"..."}')
+        start, end = raw.find("{"), raw.rfind("}")
+        title = re.sub(r"\s+", " ", str(json.loads(raw[start:end + 1]).get("title", ""))).strip(" \"'")
+        if 3 <= len(title.split()) <= 16:
+            return title[:120]
+    except Exception:
+        pass
+    return " ".join(idea.split()[:10])
+
+
 def batch_run(kind="scary", force=False, beats=5):
     """Draft one kind's packages into exports/ (once per day unless forced).
     `beats` = spoken story beats per package; clips = beats + hook + outro."""
@@ -639,15 +696,8 @@ def batch_run(kind="scary", force=False, beats=5):
         for title in batch_titles(kind, recent, conf["count"]):
             try:
                 draft = ai_draft(title, conf["category"], conf["runtime"], beats)
-                pkg = scaffold_batch_package(kind, title, draft, conf["runtime"])
-                EXPORTS_DIR.mkdir(exist_ok=True)
-                name = (f"whatifstudio-queue-{conf['prefix']}-{mv.slugify(title)[:40]}"
-                        f"-{time.strftime('%Y%m%d-%H%M%S')}.json")
-                (EXPORTS_DIR / name).write_text(json.dumps({
-                    "app": "what-if-studio", "format": 1,
-                    "exportedAt": pkg["generatedAt"],
-                    "items": [{"slot": 1, "status": "planned", "notes": "", "package": pkg}],
-                }, indent=2), encoding="utf-8")
+                pkg = scaffold_batch_package(conf, title, draft, conf["runtime"])
+                write_package_export(pkg, conf["prefix"], title)
                 made.append(title)
             except Exception as exc:
                 print(f"{kind} batch: '{title}' failed: {exc}")
@@ -701,6 +751,8 @@ Draft batches: while the dashboard runs, it drafts 3 fresh 90s Scary Story packa
 Dashboard pages (this server, 127.0.0.1:8765): Videos (review renders), Produce (per-beat visuals, voices, re-render), Results (log posted videos' views/likes by hand; rollups by category show what's winning), Spend (API costs), Help.
 Produce per-beat references: attach an image and/or your own video to any beat; the radio picks which one the beat uses and it ALWAYS lands in the final video - image = the picture is that beat's visual with gentle motion (in AI-video mode it's animated as the clip's first frame instead), video = the clip plays as-is (never billed). A 🎭 Mood dropdown (Auto = category default, or Eerie, Funny, Sarcastic, Witty, Adventurous, Dramatic, Mysterious, Wholesome, Inspiring, Deadpan) steers two rewrite buttons: "Script from prompts" writes the whole spoken script fitted to the visual prompts, "Prompts from script" re-imagines every visual prompt from the spoken lines; both save with the old version kept in History. The same mood flavors every ✨ line rewrite, and an explicit (non-Auto) mood also restyles generated visuals at render time.
 🎵 Ironic cheerful music (Render checkbox, or --ironic-music): a sincerely happy bed (music/ironic - 1950s swing, ragtime, elevator muzak; python get_music.py fetches them) that contradicts scary visuals, plays straight until the reveal beat, then tape-stops on its first word with a soft impact and resumes slowed + quiet. Any category, any visuals mode. With Mood on Auto it also renders generated visuals in Wholesome mood - smiling pictures, cheerful song, dark script - the full Jordan Peele contradiction in one click (an explicit mood overrides the look).
+🎬 Movie-trailer feel (Render checkbox, or --trailer; excludes the ironic checkbox): epic cinematic bed from music/trailer + the riser and impact on the reveal for any category; with Mood on Auto, generated visuals render in Trailer mood (anamorphic teal-and-orange). Pick the Trailer mood + "Script from prompts" for trailer-speak narration.
+💡 Draft from your own idea (top of Produce): paste a summary or details, pick scary/what-if/true-history, and Draft it builds the title, script, and shot prompts from YOUR notes (keeps every named fact), honoring Clips and Mood; the package opens ready to render.
 Optional API keys, one per file in pipeline/: openai_key.txt (better writing), elevenlabs_key.txt (premium voices), tryinfer_key.txt (paid AI video), pexels_key.txt (stock). Free fallbacks exist for everything.
 Everything runs locally; no accounts, no tracking, no auto-posting. Never promise views, virality, or income."""
 
@@ -1232,6 +1284,9 @@ MOODS = {
     "wholesome": "wholesome - warm, kind, quietly uplifting",
     "inspiring": "inspiring - hopeful, motivating, big-picture wonder",
     "deadpan": "deadpan - flat matter-of-fact delivery that lets the absurdity speak",
+    "trailer": "movie-trailer - short punchy escalating lines that land like cut cards, "
+               "epic stakes, each beat raising the tension another notch, built to a "
+               "final line that hits like a title card",
 }
 
 
@@ -1465,6 +1520,8 @@ def start_render(queue_file, slot, staging, opts):
     ironic = str(opts.get("ironic_music") or "").strip()
     if ironic in ("tail", "stop"):
         cmd += ["--ironic-music", ironic]
+    if opts.get("trailer"):
+        cmd.append("--trailer")
     if opts.get("elevenlabs"):
         cmd.append("--elevenlabs")
     if opts.get("charts"):
@@ -2284,6 +2341,39 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(batch_run(kind, force=True, beats=beats))
             except Exception as exc:
                 self.send_json({"error": str(exc)}, 500)
+            return
+
+        if self.path == "/api/produce/draft-idea":
+            # 💡 Draft ONE package from the creator's own summary/details:
+            # title (invented unless supplied), script, and prompts, honoring
+            # the Clips count and 🎭 mood. Outside the state lock - AI calls
+            # take a while.
+            try:
+                idea = re.sub(r"\s+", " ", str(data.get("idea", ""))).strip()[:1500]
+                if len(idea) < 12:
+                    raise RuntimeError("give the writer a little more - a sentence or two about the idea")
+                kind = str(data.get("kind") or "scary")
+                if kind not in IDEA_KINDS:
+                    raise RuntimeError("unknown kind")
+                # Same styling as the batch kind, but idea drafts carry their
+                # own scenario prefix so caches/exports are recognizably yours.
+                conf = dict(IDEA_KINDS[kind])
+                conf["prefix"] = "idea"
+                try:
+                    beats = max(3, min(18, int(data.get("clips") or 7) - 2))
+                except (TypeError, ValueError):
+                    beats = 5
+                mood = str(data.get("mood") or "")
+                mood = mood if mood in MOODS else None   # Auto = the category's own register
+                title = re.sub(r"\s+", " ", str(data.get("title", ""))).strip()[:120] \
+                    or title_from_idea(idea, conf["category"])
+                draft = ai_draft(title, conf["category"], conf["runtime"], beats,
+                                 idea=idea, mood=mood)
+                pkg = scaffold_batch_package(conf, title, draft, conf["runtime"])
+                file = write_package_export(pkg, "idea", title)
+                self.send_json({"ok": True, "file": file, "slot": 1, "title": title})
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 400)
             return
 
         with _lock:

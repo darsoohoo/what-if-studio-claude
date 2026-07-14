@@ -112,6 +112,7 @@ MOOD_LOOKS = {
     "wholesome": "soft warm cozy light, gentle expressions, pastel tones",
     "inspiring": "sunrise glow, hopeful upward framing, expansive sky",
     "deadpan": "flat symmetrical composition, even lighting, expressionless subjects held perfectly still",
+    "trailer": "epic movie-trailer frame, anamorphic cinematic look, teal and orange grade, dramatic rim light, atmospheric haze, larger-than-life scale",
 }
 
 
@@ -258,16 +259,18 @@ def pick_file(directory, exts):
     return random.choice(files) if files else None
 
 
-def pick_music(pkg, music_dir, ironic=False):
+def pick_music(pkg, music_dir, override=None):
     """Pick a track matching the scenario's mood; fall back to loose files.
-    `ironic` overrides the category mood with a sincerely cheerful bed
-    (music/ironic, fetched by get_music.py; upbeat fills in if it's empty)."""
+    `override` replaces the category mood: "ironic" = a sincerely cheerful
+    bed (upbeat fills in if the folder is empty), "trailer" = an epic
+    cinematic bed (tense fills in). Both folders come from get_music.py."""
     root = Path(music_dir) if music_dir else None
     if not root or not root.is_dir():
         return None
-    if ironic:
-        return (pick_file(root / "ironic", AUDIO_EXTS)
-                or pick_file(root / "upbeat", AUDIO_EXTS)
+    fallback = {"ironic": "upbeat", "trailer": "tense"}
+    if override in fallback:
+        return (pick_file(root / override, AUDIO_EXTS)
+                or pick_file(root / fallback[override], AUDIO_EXTS)
                 or pick_file(root, AUDIO_EXTS))
     mood = MOOD_BY_CATEGORY.get(pkg.get("category", ""), "wonder")
     return pick_file(root / mood, AUDIO_EXTS) or pick_file(root, AUDIO_EXTS)
@@ -1755,6 +1758,11 @@ def main():
     parser.add_argument("--music", default="music", help="Folder of background music (optional)")
     parser.add_argument("--ai-visuals", action="store_true",
                         help="Generate one free AI image per beat (Pollinations, no account) instead of using backgrounds/")
+    parser.add_argument("--trailer", action="store_true",
+                        help="Movie-trailer treatment: an epic cinematic bed from music/trailer "
+                             "(python get_music.py fetches the tracks) and the riser + impact on "
+                             "the reveal beat for EVERY category. Pair with --mood trailer for "
+                             "trailer-look visuals and trailer-speak rewrites on the Produce page.")
     parser.add_argument("--ironic-music", nargs="?", const="tail", choices=["tail", "stop"],
                         default=None,
                         help="Sincerely cheerful music that contradicts the visuals and tape-stops "
@@ -1975,7 +1983,7 @@ def main():
                         synth_reveal_sfx(tmp / "sfx.wav", riser=0.3)
                         sfx_delay_ms = int((reveal_start - 0.3) * 1000)
                         print(f"  sfx: soft impact on the reveal at {reveal_start:.1f}s")
-                    elif branding_for(pkg).get("sfx") == "reveal":
+                    elif branding_for(pkg).get("sfx") == "reveal" or args.trailer:
                         lead = min(3.0, reveal_start - 1.0)
                         synth_reveal_sfx(tmp / "sfx.wav", riser=lead)
                         sfx_delay_ms = int((reveal_start - lead) * 1000)
@@ -2062,7 +2070,9 @@ def main():
                 else:
                     print("  visuals: generated gradient")
 
-                music = pick_music(pkg, args.music, ironic=bool(args.ironic_music))
+                music = pick_music(pkg, args.music,
+                                   override=("ironic" if args.ironic_music
+                                             else "trailer" if args.trailer else None))
                 if music:
                     shutil.copy(music, tmp / ("music" + music.suffix))
                     print(f"  music: {music.parent.name}/{music.name}")
