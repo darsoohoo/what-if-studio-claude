@@ -135,7 +135,29 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
     <div style="display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap">
       <button type="button" id="morningBtn" data-kind="scary">🌅 Draft 3 fresh scary scenarios</button>
       <button type="button" id="whatifBtn" data-kind="whatif">💭 Draft 3 realistic what-ifs</button>
+      <label class="opt" style="margin:0" title="Total clips per video: hook + story beats + outro. More clips = faster cuts — the writer splits the same story across shorter lines, so the video stays the same length and the reveal still lands on the second-to-last beat.">Clips:
+        <select id="clipCount" style="width:auto">
+          <option value="7">7 — classic</option>
+          <option value="9">9</option>
+          <option value="12">12</option>
+          <option value="15">15</option>
+        </select>
+      </label>
       <span class="hint" id="morningStatus" style="margin:0"></span>
+    </div>
+    <div style="margin-top:12px;border-top:1px dashed var(--border-strong);padding-top:10px">
+      <p class="hint" style="margin:0 0 6px">💡 <strong>Or draft from your own idea</strong> — paste a summary or a few details and the writer builds the title, full script, and per-beat shot prompts from it (honors the <strong>Clips</strong> count above and the <strong>🎭 Mood</strong> in step 2).</p>
+      <textarea id="ideaText" rows="3" style="width:100%;font:inherit;font-size:13px;color:var(--text);background:var(--bg-inset);border:1px solid var(--border-strong);border-radius:8px;padding:8px 10px;resize:vertical" placeholder="e.g. A night-shift nurse notices every patient in ward 6 draws the same door — and last night someone drew it open."></textarea>
+      <div class="row">
+        <input type="text" id="ideaTitle" placeholder="Title (optional — the writer invents one)" style="flex:1;min-width:220px;font:inherit;color:var(--text);background:var(--bg-inset);border:1px solid var(--border-strong);border-radius:8px;padding:8px 10px">
+        <select id="ideaKind" style="width:auto">
+          <option value="scary">😱 Scary story</option>
+          <option value="whatif">💭 Realistic what-if</option>
+          <option value="history">📜 True history</option>
+        </select>
+        <button type="button" id="ideaBtn" class="primary">💡 Draft it</button>
+      </div>
+      <p class="status" id="ideaStatus" role="status" aria-live="polite" style="margin:4px 0 0"></p>
     </div>
   </section>
 
@@ -181,6 +203,14 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
           </select>
         </label>
       </div>
+      <div class="row" style="margin:4px 0 10px">
+        <label class="opt" title="One mood steers everything AI-written here: the two rewrite buttons, every ✨ line rewrite, and (when set to something other than Auto) the look of generated visuals at render time. Auto = each category's own register, visuals unchanged.">🎭 Mood:
+          <select id="moodSel" style="width:auto"></select>
+        </label>
+        <button type="button" id="scriptFromPromptsBtn" title="AI-write the whole spoken script (hook, beats, outro) FROM the visual prompts below, in the selected mood — every line is fitted to what's on screen. The old script stays in 🕘 History.">📝 Script from prompts</button>
+        <button type="button" id="promptsFromScriptBtn" title="AI-write every visual prompt FROM the spoken script, in the selected mood — one shot per line, mood expressed through the imagery. The old prompts stay in 🕘 History.">🎬 Prompts from script</button>
+        <span class="status" id="moodStatus" style="margin:0" role="status" aria-live="polite"></span>
+      </div>
       <div id="manualPrompts">
         <p class="hint" id="manualHint">Manual path — in <a href="https://tryinfer.com" target="_blank" rel="noopener" style="color:var(--accent-strong)">tryinfer Studio</a>: <strong>9:16 vertical · 5s</strong> · your chosen model. Copy each prompt, generate, download — in order, then:</p>
         <div class="row" id="importRow">
@@ -188,7 +218,7 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
           <span class="hint" style="margin:0">oldest first = generation order; each lands on its beat with the radio set to video. Or drop files straight onto the rows (several at once fill consecutive beats).</span>
         </div>
         <p class="status" id="importStatus" role="status" aria-live="polite" style="margin:4px 0 0"></p>
-        <p class="hint">Click any prompt to rewrite it — <strong>Save prompts</strong> keeps your wording for the Copy buttons <em>and</em> the AI modes above. Attach a picture or your own clip to a beat — <strong>＋ image</strong> / <strong>＋ video</strong>, drop a file on the row, or point at a row and paste (<strong>Ctrl+V</strong>). The <strong>radio button</strong> picks which one that beat uses: image = the AI animates from it, video = your clip plays as-is (nothing billed for that beat). <strong>🎥 From image</strong> writes the prompt for you: a video description of the picture.</p>
+        <p class="hint">Click any prompt to rewrite it — <strong>Save prompts</strong> keeps your wording for the Copy buttons <em>and</em> the AI modes above. Attach a picture or your own clip to a beat — <strong>＋ image</strong> / <strong>＋ video</strong>, drop a file on the row, or point at a row and paste (<strong>Ctrl+V</strong>). The <strong>radio button</strong> picks which one that beat uses — and it always ends up in the video: image = the picture IS the beat's visual (shown with gentle motion; in ⚡ AI video mode it's animated as the clip's first frame instead), video = your clip plays as-is (nothing billed for that beat). <strong>🎥 From image</strong> writes the prompt for you: a video description of the picture.</p>
         <div id="prompts"></div>
         <input type="file" id="refFile" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" hidden>
         <input type="file" id="refVidFile" accept=".mp4,video/mp4" hidden>
@@ -213,7 +243,11 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
         <button type="button" id="voiceStarBtn" title="Pin the selected voice to the top and make it the default narrator">☆ Make default</button>
         <label class="opt"><input type="checkbox" id="optCharts" checked> Animated numbers</label>
         <label class="opt"><input type="checkbox" id="optClipAudio"> Keep clip sound (LTX)</label>
+        <label class="opt" title="The Jordan Peele trick: a sincerely cheerful song (1950s swing, ragtime, elevator muzak) that contradicts the visuals — it plays straight, a notch louder than a normal bed, then tape-stops on the reveal beat's first word and resumes slowed and quiet, like it's playing from another room. Replaces the riser with a single soft impact on the stop. With 🎭 Mood on Auto, generated visuals render 🌤️ Wholesome so the pictures smile as sincerely as the song."><input type="checkbox" id="optIronic"> 🎵 Ironic cheerful music</label>
+        <label class="opt" title="Movie-trailer treatment: an epic cinematic bed (percussion hits, swelling strings) with the riser + impact landing on the reveal beat, whatever the category. With 🎭 Mood on Auto, generated visuals render in Trailer mood — anamorphic teal-and-orange, dramatic rim light. For trailer-speak narration, set 🎭 Trailer and hit 📝 Script from prompts."><input type="checkbox" id="optTrailer"> 🎬 Movie-trailer feel</label>
       </div>
+      <p class="hint" id="ironicHint" hidden>🎵 + 🌤️ The full contradiction: the song stays sincerely cheerful and generated visuals render in <strong>Wholesome</strong> mood (soft warm light, gentle smiles) while the script goes wrong — until the tape-stop on the reveal. Pick an explicit 🎭 mood above to override the visual look; already-cached visuals keep their old look until you delete the scenario's cache entry.</p>
+      <p class="hint" id="trailerHint" hidden>🎬 Epic bed + riser and impact on the reveal, and generated visuals render in <strong>Trailer</strong> mood (anamorphic teal-and-orange, dramatic rim light). For trailer-speak narration too, pick <strong>🎬 Trailer</strong> in the 🎭 Mood dropdown and hit <strong>📝 Script from prompts</strong>. Pick any explicit mood to override the visual look.</p>
       <div class="row">
         <button type="button" id="renderBtn" class="primary">🎬 Render video</button>
         <button type="button" id="openVideosBtn" hidden>See it in Videos →</button>
@@ -532,6 +566,70 @@ function setTone(v) {
   document.querySelectorAll("#prompts select.tone").forEach(s => { s.value = v; });
 }
 
+/* ---------- mood + cross-generation: script <-> prompts ----------
+   One shared mood steers both buttons: 📝 writes the whole spoken script
+   FROM the visual prompts (shots stay, words re-fit to them), 🎬 writes
+   every visual prompt FROM the script (words stay, shots re-imagined).
+   Both save immediately — the old version is always in 🕘 History. */
+const MOODS = [
+  ["auto", "🎯 Auto — match the category"],
+  ["eerie", "🕯️ Eerie"],
+  ["funny", "😂 Funny"],
+  ["sarcastic", "🙄 Sarcastic"],
+  ["witty", "🧠 Witty"],
+  ["adventurous", "🧗 Adventurous"],
+  ["trailer", "🎞️ Trailer"],
+  ["dramatic", "🎬 Dramatic"],
+  ["mysterious", "🌫️ Mysterious"],
+  ["wholesome", "🌤️ Wholesome"],
+  ["inspiring", "🚀 Inspiring"],
+  ["deadpan", "😐 Deadpan"],
+];
+(() => {
+  const sel = $id("moodSel");
+  MOODS.forEach(([id, label]) => {
+    const o = document.createElement("option");
+    o.value = id; o.textContent = label;
+    sel.appendChild(o);
+  });
+  try {
+    const m = localStorage.getItem("wis.mood");
+    if (m && MOODS.some(([id]) => id === m)) sel.value = m;
+  } catch (e) {}
+  sel.addEventListener("change", () => {
+    try { localStorage.setItem("wis.mood", sel.value); } catch (e) {}
+  });
+})();
+function moodLabel() {
+  const m = MOODS.find(([id]) => id === $id("moodSel").value);
+  return m ? m[1] : $id("moodSel").value;
+}
+async function moodGenerate(path, busyMsg, doneMsg) {
+  const st = $id("moodStatus");
+  const btns = [$id("scriptFromPromptsBtn"), $id("promptsFromScriptBtn")];
+  btns.forEach(b => { b.disabled = true; });
+  st.className = "status"; st.textContent = busyMsg;
+  try {
+    const r = await api(path, { queue: S.queue, slot: S.slot, mood: $id("moodSel").value });
+    if (r.error) throw new Error(r.error);
+    await refreshAll(false);   // rows re-render from the fresh script/prompts
+    fillScript(S.script);
+    if ($id("histBox").open) loadHistory();
+    st.className = "status good"; st.textContent = doneMsg;
+  } catch (e) {
+    st.className = "status bad"; st.textContent = e.message;
+  }
+  btns.forEach(b => { b.disabled = false; });
+}
+$id("scriptFromPromptsBtn").addEventListener("click", () => moodGenerate(
+  "/api/produce/script-from-prompts",
+  `Writing the script from the prompts (${moodLabel()})… (~half a minute)`,
+  `✓ Script rewritten to fit the prompts (${moodLabel()}) — voice, captions, and post kit follow; the old script is in 🕘 History.`));
+$id("promptsFromScriptBtn").addEventListener("click", () => moodGenerate(
+  "/api/produce/prompts-from-script",
+  `Writing the prompts from the script (${moodLabel()})… (~half a minute)`,
+  `✓ Prompts rewritten from the script (${moodLabel()}) — Copy buttons and AI renders use them now; the old prompts are in 🕘 History.`));
+
 /* ---------- step 2: prompts (click to edit, Save persists) ----------
    The boxes hold the prompt CORE; the style tail (cinematic, 9:16, …) is
    shown under each one and re-appended on Copy and at render time, so it
@@ -642,7 +740,7 @@ function renderPrompts(prompts, keepPending = true) {
     enh.addEventListener("click", async () => {
       enh.disabled = true; enh.textContent = "…";
       const r = await api("/api/produce/enhance-line",
-        { queue: S.queue, slot: S.slot, index: i, tone: S.tone });
+        { queue: S.queue, slot: S.slot, index: i, tone: S.tone, mood: $id("moodSel").value });
       enh.disabled = false; enh.textContent = "✨";
       if (r.error) {
         $id("prSaveRow").hidden = false;
@@ -1156,6 +1254,33 @@ function notifyDone(ok) {
   else setTimeout(restore, 10000);
 }
 
+/* The mood the RENDER sends: with 🎭 on Auto, 🎵 Ironic pairs the cheerful
+   song with Wholesome visuals (the Peele contradiction) and 🎬 Trailer pairs
+   the epic bed with Trailer-look visuals. An explicit mood always wins; the
+   ✨/rewrite buttons are untouched, so the script keeps its own register. */
+function renderMood() {
+  const m = $id("moodSel").value;
+  if (m !== "auto") return m;
+  if ($id("optIronic").checked) return "wholesome";
+  if ($id("optTrailer").checked) return "trailer";
+  return m;
+}
+function updatePairHints() {
+  const auto = $id("moodSel").value === "auto";
+  $id("ironicHint").hidden = !(auto && $id("optIronic").checked);
+  $id("trailerHint").hidden = !(auto && $id("optTrailer").checked);
+}
+/* One musical identity per video: the two treatments exclude each other. */
+$id("optIronic").addEventListener("change", () => {
+  if ($id("optIronic").checked) $id("optTrailer").checked = false;
+  updatePairHints();
+});
+$id("optTrailer").addEventListener("change", () => {
+  if ($id("optTrailer").checked) $id("optIronic").checked = false;
+  updatePairHints();
+});
+$id("moodSel").addEventListener("change", updatePairHints);
+
 /* ---------- step 4: render ---------- */
 let pollTimer = null;
 $id("renderBtn").addEventListener("click", async () => {
@@ -1191,6 +1316,9 @@ $id("renderBtn").addEventListener("click", async () => {
     charts: $id("optCharts").checked,
     clip_audio: $id("optClipAudio").checked ? 0.25 : 0,
     voice: $id("optVoice").value,
+    mood: renderMood(),
+    ironic_music: $id("optIronic").checked ? "tail" : "",
+    trailer: $id("optTrailer").checked,
   });
   if (r.error) { setRenderStatus(r.error, "bad"); return; }
   $id("renderBtn").disabled = true;
@@ -1243,14 +1371,29 @@ async function morningStatus() {
       : `Fresh scary drafts appear every morning after ${m.hour}:00 while the studio runs — or draft either kind on demand.`;
   } catch (e) { /* dashboard hiccup - buttons still work */ }
 }
+/* Clips per drafted video (hook + beats + outro) — remembered across sessions.
+   The writer splits the same total narration across the beats, so more clips
+   = faster cuts at the same video length, and every clip still lands on its
+   own spoken beat (the reveal stays on the second-to-last one). */
+(() => {
+  const sel = $id("clipCount");
+  try {
+    const c = localStorage.getItem("wis.clipCount");
+    if (c && [...sel.options].some(o => o.value === c)) sel.value = c;
+  } catch (e) {}
+  sel.addEventListener("change", () => {
+    try { localStorage.setItem("wis.clipCount", sel.value); } catch (e) {}
+  });
+})();
 ["morningBtn", "whatifBtn"].forEach(id => $id(id).addEventListener("click", async () => {
   const btn = $id(id);
   const kind = btn.dataset.kind;
+  const clips = Number($id("clipCount").value) || 7;
   btn.disabled = true;
   $id("morningStatus").textContent =
-    `Drafting 3 fresh ${kind === "whatif" ? "realistic what-ifs" : "scary scenarios"}… (about half a minute)`;
+    `Drafting 3 fresh ${kind === "whatif" ? "realistic what-ifs" : "scary scenarios"} at ${clips} clips each… (about half a minute)`;
   try {
-    const r = await api("/api/morning/run", { kind });
+    const r = await api("/api/morning/run", { kind, clips });
     if (r.error) throw new Error(r.error);
     $id("morningStatus").textContent = r.made.length
       ? `Drafted: ${r.made.join(" · ")} — loading them into the package list…`
@@ -1262,6 +1405,43 @@ async function morningStatus() {
   }
   btn.disabled = false;
 }));
+
+/* ---------- 💡 draft from the creator's own idea ---------- */
+$id("ideaBtn").addEventListener("click", async () => {
+  const idea = $id("ideaText").value.trim();
+  const st = $id("ideaStatus");
+  if (idea.length < 12) {
+    st.className = "status bad";
+    st.textContent = "Give the writer a little more — a sentence or two about the idea.";
+    $id("ideaText").focus();
+    return;
+  }
+  $id("ideaBtn").disabled = true;
+  st.className = "status";
+  st.textContent = "Drafting the title, script, and prompts from your idea… (~half a minute)";
+  try {
+    const r = await api("/api/produce/draft-idea", {
+      idea,
+      title: $id("ideaTitle").value.trim(),
+      kind: $id("ideaKind").value,
+      clips: Number($id("clipCount").value) || 7,
+      mood: $id("moodSel").value,
+    });
+    if (r.error) throw new Error(r.error);
+    await loadQueues();
+    const sel = $id("pkgSelect");
+    const opt = [...sel.options].find(o => o.value === r.file + "|" + r.slot);
+    if (opt) { sel.value = opt.value; sel.dispatchEvent(new Event("change")); }
+    st.className = "status good";
+    st.textContent = `✓ Drafted “${r.title}” — opened below; tweak the script or prompts and render.`;
+    $id("ideaText").value = "";
+    $id("ideaTitle").value = "";
+  } catch (e) {
+    st.className = "status bad";
+    st.textContent = "Drafting failed: " + e.message;
+  }
+  $id("ideaBtn").disabled = false;
+});
 
 loadQueues();
 morningStatus();

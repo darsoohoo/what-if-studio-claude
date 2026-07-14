@@ -88,12 +88,19 @@ input.stat.saved { border-color: var(--good); }
     <div class="card"><div class="label">Posted videos</div><div class="value" id="cPosted">0</div><div class="note">marked on the Videos page</div></div>
     <div class="card"><div class="label">Total views logged</div><div class="value" id="cViews">0</div></div>
     <div class="card"><div class="label">Best category</div><div class="value" id="cBest">—</div><div class="note" id="cBestNote"></div></div>
+    <div class="card"><div class="label">Best format</div><div class="value" id="cBestFmt">—</div><div class="note" id="cBestFmtNote"></div></div>
   </div>
 
   <section>
     <h2>By category</h2>
     <table><thead><tr><th>Category</th><th class="num">Posted</th><th class="num">With numbers</th><th class="num">Total views</th><th class="num">Avg views / video</th><th class="num">Like rate</th></tr></thead><tbody id="catRows"></tbody></table>
     <p class="empty" id="catEmpty" hidden>Log some numbers below and the category comparison appears here.</p>
+  </section>
+
+  <section>
+    <h2>By format <span class="hint" style="margin:0;display:inline">— the render recipe: classic bed, 🎵 ironic cheerful music, or 🎬 movie-trailer feel</span></h2>
+    <table><thead><tr><th>Format</th><th class="num">Posted</th><th class="num">With numbers</th><th class="num">Total views</th><th class="num">Avg views / video</th><th class="num">Like rate</th></tr></thead><tbody id="fmtRows"></tbody></table>
+    <p class="empty" id="fmtEmpty" hidden>Log some numbers below and the format comparison appears here — every new render records whether it was classic, ironic, or trailer.</p>
   </section>
 
   <section>
@@ -138,19 +145,26 @@ function vidLikes(v) {
   return DATA.platforms.reduce((n, p) => n + ((v.stats[p] || {}).likes || 0), 0);
 }
 
+/* The render recipe's display name (meta "format" values from make_videos). */
+const FORMAT_LABELS = { classic: "Classic", ironic: "🎵 Ironic cheerful", trailer: "🎬 Movie trailer" };
+const fmtLabel = (f) => FORMAT_LABELS[f] || f || "Classic";
+
 function renderCards() {
   $id("cPosted").textContent = DATA.videos.length;
   $id("cViews").textContent = fmt(DATA.videos.reduce((n, v) => n + vidViews(v), 0));
-  const cats = rollup().filter(c => c.views > 0).sort((a, b) => b.avg - a.avg);
-  $id("cBest").textContent = cats.length ? cats[0].category : "—";
+  const cats = rollup(v => v.category || "Unknown").filter(c => c.views > 0).sort((a, b) => b.avg - a.avg);
+  $id("cBest").textContent = cats.length ? cats[0].key : "—";
   $id("cBestNote").textContent = cats.length ? `${fmt(Math.round(cats[0].avg))} avg views/video` : "log views to compare";
+  const fmts = rollup(v => fmtLabel(v.format)).filter(c => c.views > 0).sort((a, b) => b.avg - a.avg);
+  $id("cBestFmt").textContent = fmts.length ? fmts[0].key : "—";
+  $id("cBestFmtNote").textContent = fmts.length ? `${fmt(Math.round(fmts[0].avg))} avg views/video` : "log views to compare";
 }
 
-function rollup() {
+function rollup(keyFn) {
   const by = {};
   DATA.videos.forEach(v => {
-    const cat = v.category || "Unknown";
-    const r = by[cat] || (by[cat] = { category: cat, posted: 0, logged: 0, views: 0, likes: 0 });
+    const key = keyFn(v);
+    const r = by[key] || (by[key] = { key, posted: 0, logged: 0, views: 0, likes: 0 });
     r.posted += 1;
     const views = vidViews(v);
     if (views > 0 || vidLikes(v) > 0) r.logged += 1;
@@ -161,20 +175,25 @@ function rollup() {
   return Object.values(by);
 }
 
-function renderCats() {
-  const rows = rollup().sort((a, b) => b.views - a.views);
-  const body = $id("catRows");
+function renderRollup(keyFn, bodyId, emptyId) {
+  const rows = rollup(keyFn).sort((a, b) => b.views - a.views);
+  const body = $id(bodyId);
   body.innerHTML = "";
   const any = rows.some(r => r.views > 0);
-  $id("catEmpty").hidden = any;
+  $id(emptyId).hidden = any;
   if (!any) return;
   rows.forEach(r => {
     const tr = document.createElement("tr");
     const rate = r.views ? (100 * r.likes / r.views).toFixed(1) + "%" : "—";
-    tr.innerHTML = `<td>${r.category}</td><td class="num">${r.posted}</td><td class="num">${r.logged}</td>` +
+    tr.innerHTML = `<td>${r.key}</td><td class="num">${r.posted}</td><td class="num">${r.logged}</td>` +
       `<td class="num">${fmt(r.views)}</td><td class="num">${fmt(Math.round(r.avg))}</td><td class="num">${rate}</td>`;
     body.appendChild(tr);
   });
+}
+
+function renderCats() {
+  renderRollup(v => v.category || "Unknown", "catRows", "catEmpty");
+  renderRollup(v => fmtLabel(v.format), "fmtRows", "fmtEmpty");
 }
 
 function statInput(v, platform, field, value) {
@@ -220,9 +239,16 @@ function renderVideos() {
     const t = document.createElement("td");
     t.className = "vtitle";
     t.textContent = v.title;
-    if (v.category) {
+    const extras = [
+      v.category || null,
+      v.runtime ? (v.runtime === 180 ? "3 min" : v.runtime + "s") : null,
+      v.format && v.format !== "classic" ? fmtLabel(v.format) : null,
+      v.mood ? `🎭 ${v.mood}` : null,
+      { "ai-video": "AI video", "paid-images": "AI images (paid)", "stock": "stock",
+        "free-images": "AI images" }[v.visuals] || null,
+    ].filter(Boolean);
+    if (extras.length) {
       const b = document.createElement("div");
-      const extras = [v.category, v.runtime ? (v.runtime === 180 ? "3 min" : v.runtime + "s") : null].filter(Boolean);
       b.innerHTML = `<span class="badge">${extras.join(" · ")}</span>`;
       t.appendChild(b);
     }
