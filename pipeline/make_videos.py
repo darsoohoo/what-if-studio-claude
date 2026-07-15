@@ -426,8 +426,50 @@ def strip_dialogue_markup(text):
                     for sp, t in split_dialogue(text)).strip()
 
 
+def lipsync_map(ref_dir):
+    """{1-based beat index: True} from lipsync.json in the staging dir: beats
+    whose staged video's OWN audio is the spoken line (OpenArt talking
+    clips). The voice track goes silent there, the clip audio plays instead,
+    and captions are estimated across the clip's speech."""
+    if not ref_dir:
+        return {}
+    try:
+        data = json.loads((Path(ref_dir) / "lipsync.json").read_text(encoding="utf-8"))
+        return {int(k): True for k, v in data.items() if v}
+    except Exception:
+        return {}
+
+
+def detect_speech_span(ffmpeg, media, total):
+    """(start, end) of the speech region in a clip via silencedetect, for
+    caption timing on clip-voiced beats. Falls back to a centered window."""
+    try:
+        out = run([ffmpeg, "-i", str(Path(media).resolve()),
+                   "-af", "silencedetect=noise=-32dB:d=0.2", "-f", "null", "-"])
+        log = (out.stderr or "") + (out.stdout or "")
+        sil = []
+        for m in re.finditer(r"silence_start: ([\d.]+)", log):
+            sil.append([float(m.group(1)), total])
+        for i, m in enumerate(re.finditer(r"silence_end: ([\d.]+)", log)):
+            if i < len(sil):
+                sil[i][1] = float(m.group(1))
+        # speech regions = complement of the silences
+        speech, t = [], 0.0
+        for s0, s1 in sil:
+            if s0 - t > 0.15:
+                speech.append((t, s0))
+            t = max(t, s1)
+        if total - t > 0.15:
+            speech.append((t, total))
+        if speech:
+            return speech[0][0], speech[-1][1]
+    except Exception:
+        pass
+    return 0.15 * total, 0.9 * total
+
+
 def synthesize_cast(segments, vconf, out_mp3, tmp, ffmpeg, ffprobe, eleven=None,
-                    narrator_tempo=1.0, pad=0.15):
+                    narrator_tempo=1.0, pad=0.15, clip_voiced=None):
     """Multi-voice narration for segments carrying [Name] "line" dialogue.
     Synthesizes each chunk with its voice, gives character lines a subtle
     in-scene treatment (thinner low end + a touch of slap echo), stitches
@@ -435,9 +477,9 @@ def synthesize_cast(segments, vconf, out_mp3, tmp, ffmpeg, ffprobe, eleven=None,
     (start, end, word) on the stitched track, same shape as synthesize().
     `eleven` = {key, model, narrator_id, voices} switches the whole cast to
     ElevenLabs; None uses free edge-tts throughout."""
-    chunks = []
-    for seg in segments:
-        chunks.extend(split_dialogue(seg))
+    clip_voiced = clip_voiced or {}
+    seg_chunks = [split_dialogue(seg) for seg in segments]
+    chunks = [c for sc in seg_chunks for c in sc]
     characters = []
     for sp, _ in chunks:
         if sp and sp not in characters:
@@ -464,8 +506,48 @@ def synthesize_cast(segments, vconf, out_mp3, tmp, ffmpeg, ffprobe, eleven=None,
     dlg_settings = {"stability": 0.3, "similarity_boost": 0.75,
                     "style": 0.45, "use_speaker_boost": True}
     words, parts, offset = [], [], 0.0
-    for idx, (speaker, chunk_text) in enumerate(chunks):
+    flat = []   # (chunk, or a clip-voiced segment marker) in timeline order
+    for si, sc in enumerate(seg_chunks):
+        if si in clip_voiced:
+            flat.append(("__clip__", si))
+        else:
+            flat.extend(sc)
+    for idx, (speaker, chunk_text) in enumerate(flat):
         part = tmp / f"vc-{idx:02d}.mp3"
+        if speaker == "__clip__":
+            # Clip-voiced beat: the staged talking clip IS the spoken line.
+            # The voice track holds silence for exactly the clip's length;
+            # captions estimate word timings across the clip's speech region,
+            # keeping the speaker tag for tint + the — NAME flash.
+            si = chunk_text
+            vid_path = clip_voiced[si]
+            dur = probe_duration(ffprobe, vid_path)
+            s0, s1 = detect_speech_span(ffmpeg, vid_path, dur)
+            toks = []
+            for sp, txt in seg_chunks[si]:
+                spoken = _strip_emotion_tags(txt) if sp else txt
+                if SILENCE_RE.match(spoken):
+                    continue
+                toks.extend((wd, sp) for wd in spoken.split())
+            span = max(0.5, s1 - s0)
+            weight = sum(len(wd) + 1 for wd, _ in toks) or 1
+            t = s0
+            first = len(words)
+            for wd, sp in toks:
+                w_d = span * (len(wd) + 1) / weight
+                words.append((offset + t, offset + min(t + w_d, s1), wd, sp))
+                t += w_d
+            if len(words) > first:
+                # Anchor the beat span at the CLIP's start, not the speech
+                # start - the visual must play from frame 0 or lips shift.
+                s, e, wd, sp = words[first]
+                words[first] = (offset + 0.02, e, wd, sp)
+            wav = tmp / f"vc-{idx:02d}.wav"
+            run([ffmpeg, "-y", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono",
+                 "-t", f"{max(0.5, dur):.3f}", "-c:a", "pcm_s16le", str(wav)])
+            parts.append(wav)
+            offset += probe_duration(ffprobe, wav)
+            continue
         if speaker is None and SILENCE_RE.match(chunk_text):
             # A held wordless shot: pure silence, one invisible word so the
             # beat keeps its time span (and clears the captions while it holds).
@@ -1794,13 +1876,18 @@ def render_segment_clip(ffmpeg, visual, duration, out_path, index=0, chart=None,
     run(cmd, cwd=cwd)
 
 
-def build_clip_base(ffmpeg, visuals, spans, tmp, charts=None, font_ff=None, keep_audio=False, ffprobe=None):
+def build_clip_base(ffmpeg, visuals, spans, tmp, charts=None, font_ff=None, keep_audio=False, ffprobe=None,
+                    audio_gains=None):
     """One clip per beat with alternating motion, joined by crossfades.
     Segments before the last are rendered XFADE_DUR longer so the fades
     consume the extra tail and the visual timeline stays in sync with audio.
     `charts` (aligned to spans) overlays an animated number on chart beats.
     With `keep_audio`, each segment's sound is trimmed to its exact span and
-    hard-concatenated, so the ambience track stays aligned with the voice."""
+    hard-concatenated, so the ambience track stays aligned with the voice.
+    `audio_gains` (aligned to spans) sets a per-beat volume - clip-voiced
+    beats play their own audio at 1.0 while the rest follow --clip-audio."""
+    if audio_gains is not None:
+        keep_audio = any(g > 0 for g in audio_gains)
     durs = [round(max(0.4, end - start), 2) for start, end in spans]
     seg_files = []
     for i, dur in enumerate(durs):
@@ -1830,7 +1917,8 @@ def build_clip_base(ffmpeg, visuals, spans, tmp, charts=None, font_ff=None, keep
     codecs = []
     if keep_audio:
         for i, d in enumerate(durs):
-            chain.append(f"[{i}:a]atrim=0:{d},asetpts=PTS-STARTPTS[a{i}]")
+            g = (audio_gains[i] if audio_gains is not None and i < len(audio_gains) else 1.0)
+            chain.append(f"[{i}:a]atrim=0:{d},asetpts=PTS-STARTPTS,volume={g:.2f}[a{i}]")
         chain.append("".join(f"[a{i}]" for i in range(len(durs))) + f"concat=n={len(durs)}:v=0:a=1[aout]")
         maps += ["-map", "[aout]"]
         codecs = ["-c:a", "aac", "-b:a", "160k"]
@@ -2270,10 +2358,21 @@ def main():
         # word timings, spans, captions, charts, and prompts all line up with.
         raw_segments = narration_segments(pkg, hook_index)
         segments = [strip_dialogue_markup(s) for s in raw_segments]
-        # Cast synthesis handles character voices AND (silence) holds - the
-        # plain path would read the marker aloud.
+        # Clip-voiced beats (lipsync.json): the staged talking clip carries
+        # the spoken line - the voice track holds silence there instead.
+        clip_voiced = {}
+        for idx1 in lipsync_map(args.backgrounds):
+            si = idx1 - 1
+            if (0 <= si < len(segments)
+                    and _ref_choice(args.backgrounds, idx1) == "video"):
+                v = _ref_video(args.backgrounds, idx1)
+                if v:
+                    clip_voiced[si] = v
+        # Cast synthesis handles character voices, (silence) holds, and
+        # clip-voiced beats - the plain path would read markers aloud.
         has_dialogue = (any(sp for s in raw_segments for sp, _ in split_dialogue(s))
-                        or any(SILENCE_RE.match(s) for s in raw_segments))
+                        or any(SILENCE_RE.match(s) for s in raw_segments)
+                        or bool(clip_voiced))
         text = " ".join(segments)
         if not text:
             print("  SKIP: package has no narration text\n")
@@ -2305,7 +2404,8 @@ def main():
                                     "voices": elevenlabs_voices(el_key),
                                     "settings": el_settings},
                             narrator_tempo=TRAILER_TEMPO if args.trailer else 1.0,
-                            pad=0.7 if args.trailer else 0.15)
+                            pad=0.7 if args.trailer else 0.15,
+                            clip_voiced=clip_voiced)
                     else:
                         words = synthesize_elevenlabs(text, el_voice_id, args.el_model,
                                                       tmp / "voice.mp3", el_key,
@@ -2328,7 +2428,8 @@ def main():
                     if has_dialogue:
                         words, cast = synthesize_cast(
                             raw_segments, vconf, tmp / "voice.mp3", tmp, ffmpeg, ffprobe,
-                            pad=0.7 if args.trailer else 0.15)
+                            pad=0.7 if args.trailer else 0.15,
+                            clip_voiced=clip_voiced)
                     else:
                         words = asyncio.run(synthesize(text, vconf, tmp / "voice.mp3"))
                     total = probe_duration(ffprobe, tmp / "voice.mp3")
@@ -2427,14 +2528,23 @@ def main():
                 # colon breaks the ffmpeg filtergraph parser.
                 font_ff = CAPTION_FONT_FILE.name if CAPTION_FONT_FILE.exists() else None
 
-                keep_audio = args.clip_audio > 0
+                # Per-beat audio: clip-voiced beats play their own sound (the
+                # character speaking) at full volume; everything else follows
+                # --clip-audio (0 = muted, the default).
+                keep_audio = args.clip_audio > 0 or bool(clip_voiced)
+                gains = None
+                if clip_voiced:
+                    gains = [1.0 if i in clip_voiced else args.clip_audio
+                             for i in range(len(segments))]
+                    print(f"  lipsync: {len(clip_voiced)} beat(s) speak from their clip")
                 base = None
                 if len(item_visuals) > 1:
                     spans = segment_spans(segments, words, total)
                     base = build_clip_base(ffmpeg, item_visuals, spans, tmp, charts=charts, font_ff=font_ff,
-                                           keep_audio=keep_audio, ffprobe=ffprobe)
+                                           keep_audio=keep_audio, ffprobe=ffprobe,
+                                           audio_gains=gains)
                     print(f"  visuals: {len(spans)} beat clips from {len(item_visuals)} source file(s)"
-                          + (f" (clip audio at {args.clip_audio})" if keep_audio else ""))
+                          + (f" (clip audio at {args.clip_audio})" if args.clip_audio > 0 else ""))
                 elif len(item_visuals) == 1:
                     seg = tmp / "base.mp4"
                     render_segment_clip(ffmpeg, item_visuals[0], total + 0.4, seg,
@@ -2477,8 +2587,11 @@ def main():
                               f" then tape-stop"
                               + (" + warped tail" if args.ironic_music == "tail" else " to silence"))
 
+                # Clip-voiced gains are baked per beat in the base track, so
+                # the final mix takes it at unity instead of --clip-audio.
+                mix_gain = (1.0 if clip_voiced else args.clip_audio)
                 final_render(ffmpeg, base, pkg, total, bool(music) or dread, out_path.resolve(), tmp,
-                             clip_audio=args.clip_audio if base is not None else 0.0,
+                             clip_audio=mix_gain if base is not None else 0.0,
                              sfx_delay_ms=sfx_delay_ms)
 
                 thumb_made = False

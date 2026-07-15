@@ -64,15 +64,17 @@ line.**
 - Each hero dialogue beat generates with portrait + voice sample + the line
   in the prompt ("says exactly: ..."). The clip's own audio IS the spoken
   line, lips already perfect.
-- PIPELINE WORK NEEDED ("clip-voiced beats"): for a lip-synced beat the
-  voice track goes silent for that span (a silence chunk sized to the clip's
-  line), the clip's audio passes through at full volume for that beat only
-  (per-beat clip audio - today --clip-audio is global and quiet), and
-  captions estimate word timings evenly across the clip's speech. The
-  character caption tint/name flash keep working off the script's [Name] tag.
-- Human QA: listen to openart-cast/canary2-mara-elvoice.mp4 - if the cloned
-  voice reads close enough to Bella, ship; if not, try the 10s sample (2s
-  may be thin for cloning) before judging.
+- **Clip-voiced beats: BUILT and verified 2026-07-15.** Mark beats in
+  `lipsync.json` in the staging dir ({"<1-based row>": true}); the beat must
+  also have its refv-NN.mp4 staged with the radio on video. The renderer
+  then: holds silence in the voice track for exactly the clip's length,
+  plays that beat's clip audio at full volume (others follow --clip-audio),
+  estimates caption word timings across the clip's detected speech region
+  (silencedetect), keeps the speaker tint + — NAME flash from the [Name]
+  tag, and anchors the beat span at the clip's first frame so lips never
+  shift. Verified end-to-end: canary2 clip as beat 2 of a 4-row dialogue
+  trailer - clip on screen, captions tinted, no double-voice.
+- Canary voice QA: PASSED by Darren ("canary voice looks good").
 
 Future upgrade: OpenArt character elements carry a `voice` field supporting
 `provider: "elevenlabs"` + voiceId (seen in the form schema) — when Character
