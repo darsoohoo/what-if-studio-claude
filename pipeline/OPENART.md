@@ -85,8 +85,12 @@ pipeline casts would remove the cloning step entirely.
 
 Ask Claude: "lipsync <package>" → reads the script, picks hero dialogue
 beats, reuses/creates portraits, generates Seedance Mini clips per line,
-downloads to the staging dir as refv-NN.mp4 + sets ref-choice, reports
-credits spent (before/after via openart_account_get), then render as usual.
+downloads to the staging dir as refv-NN.mp4 + sets ref-choice, LOGS EVERY
+generation to the Spend ledger:
+  python -c "import make_videos as mv; mv.record_spend('openart','talking clip',None,'seedance-2-mini','<scenarioId>',credits=80)"
+(credits are the source of truth; USD is estimated at the plan rate,
+override via openart_rate.txt), verifies the total against
+openart_account_get before/after, then renders as usual.
 
 ## Voice acting (field feedback 2026-07-15: "sounds like someone reading a book")
 

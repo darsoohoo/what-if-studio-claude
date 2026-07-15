@@ -1310,10 +1310,26 @@ def _find_video_url(obj):
 SPEND_LEDGER = Path(__file__).resolve().parent / "spend-ledger.json"
 
 
-def record_spend(service, kind, price_usd, model="", scenario="", estimated=False):
-    """Append one paid event to the ledger. Never raises - a bookkeeping
-    failure must not break a render."""
+def openart_usd_per_credit():
+    """USD per OpenArt credit, for spend ESTIMATES only. Defaults to the
+    Essential plan's effective rate (~$14 / 4000 credits); put one number in
+    pipeline/openart_rate.txt to override."""
     try:
+        return float((Path(__file__).resolve().parent / "openart_rate.txt")
+                     .read_text(encoding="utf-8").strip())
+    except Exception:
+        return 14.0 / 4000.0
+
+
+def record_spend(service, kind, price_usd, model="", scenario="", estimated=False,
+                 credits=None):
+    """Append one paid event to the ledger. Never raises - a bookkeeping
+    failure must not break a render. `credits` records an OpenArt charge in
+    its native unit; the USD figure is then estimated at the plan rate."""
+    try:
+        if price_usd is None and credits is not None:
+            price_usd = float(credits) * openart_usd_per_credit()
+            estimated = True
         if price_usd is None:
             return
         entries = []
@@ -1323,12 +1339,15 @@ def record_spend(service, kind, price_usd, model="", scenario="", estimated=Fals
                 entries = []
         except Exception:
             pass
-        entries.append({
+        entry = {
             "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "service": service, "kind": kind, "model": model,
             "scenario": scenario, "price_usd": round(float(price_usd), 6),
             "estimated": bool(estimated),
-        })
+        }
+        if credits is not None:
+            entry["credits"] = int(round(float(credits)))
+        entries.append(entry)
         SPEND_LEDGER.write_text(json.dumps(entries, indent=1), encoding="utf-8")
     except Exception:
         pass

@@ -1652,6 +1652,7 @@ def spend_summary():
     today = time.strftime("%Y-%m-%d")
     month = time.strftime("%Y-%m")
     total = today_sum = month_sum = est_sum = 0.0
+    cr_total = cr_month = cr_today = 0
     by_service, by_scenario = {}, {}
     for e in entries:
         p = float(e.get("price_usd") or 0)
@@ -1663,6 +1664,13 @@ def spend_summary():
             month_sum += p
         if e.get("estimated"):
             est_sum += p
+        cr = int(e.get("credits") or 0)
+        if cr:
+            cr_total += cr
+            if ts.startswith(month):
+                cr_month += cr
+            if ts.startswith(today):
+                cr_today += cr
         svc = e.get("service", "?")
         by_service[svc] = by_service.get(svc, 0.0) + p
         sc = e.get("scenario") or "(none)"
@@ -1673,6 +1681,7 @@ def spend_summary():
         "today": round(today_sum, 4),
         "month": round(month_sum, 4),
         "estimated_portion": round(est_sum, 4),
+        "openart_credits": {"total": cr_total, "month": cr_month, "today": cr_today},
         "by_service": {k: round(v, 4) for k, v in sorted(by_service.items(), key=lambda kv: -kv[1])},
         "by_scenario": [{"scenario": k, "usd": round(v, 4)} for k, v in top_scenarios],
         "entries": list(reversed(entries[-80:])),
