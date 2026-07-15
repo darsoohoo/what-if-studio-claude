@@ -377,6 +377,16 @@ _DLG_RE = re.compile(r'\[([A-Za-z][A-Za-z0-9 .\'-]{0,24})\]\s*("([^"]*)"|â€œ([^â
 SILENCE_RE = re.compile(r"^\s*[(\[]\s*(?:silence|quiet|hold|pause)\s*[)\]]\s*$", re.I)
 SILENCE_SECONDS = 2.4
 
+# Emotion cues INSIDE a dialogue line - [Mara] "[whispers] It knows my name."
+# ElevenLabs v3 performs them natively; every other voice path strips them
+# (they are direction, not words), and they never reach the captions.
+_EMO_TAG_RE = re.compile(r"\[[A-Za-z][A-Za-z ']{1,24}\]\s*")
+ELEVEN_DIALOGUE_MODEL = "eleven_v3"
+
+
+def _strip_emotion_tags(text):
+    return _EMO_TAG_RE.sub("", text).strip()
+
 # Trailer VO tempo for voices that have no rate knob (ElevenLabs): atempo
 # keeps the pitch, word timings are rescaled to match. Edge voices use their
 # native rate parameter instead (-15% in trailer mode).
@@ -410,8 +420,10 @@ def split_dialogue(text):
 
 
 def strip_dialogue_markup(text):
-    """The spoken form of a line: [Name] tags gone, the quoted words kept."""
-    return " ".join(t for _, t in split_dialogue(text))
+    """The spoken form of a line: [Name] tags gone, emotion cues gone, the
+    quoted words kept - what captions and beat spans line up with."""
+    return " ".join((_strip_emotion_tags(t) if sp else t)
+                    for sp, t in split_dialogue(text)).strip()
 
 
 def synthesize_cast(segments, vconf, out_mp3, tmp, ffmpeg, ffprobe, eleven=None,
@@ -466,14 +478,34 @@ def synthesize_cast(segments, vconf, out_mp3, tmp, ffmpeg, ffprobe, eleven=None,
             continue
         if eleven:
             vid = eleven["narrator_id"] if speaker is None else cast[speaker][1]
-            w = synthesize_elevenlabs(chunk_text, vid, eleven["model"], part, eleven["key"],
-                                      settings=(eleven.get("settings") if speaker is None
-                                                else dlg_settings))
+            if speaker is None:
+                w = synthesize_elevenlabs(chunk_text, vid, eleven["model"], part,
+                                          eleven["key"], settings=eleven.get("settings"))
+            else:
+                # Dialogue ACTS on the expressive model (v3 performs the
+                # [whispers]/[terrified] cues in the line); if the account
+                # can't use it, fall back to the narration model with hot
+                # settings and the cues stripped.
+                try:
+                    w = synthesize_elevenlabs(chunk_text, vid,
+                                              eleven.get("dlg_model") or ELEVEN_DIALOGUE_MODEL,
+                                              part, eleven["key"], settings=None)
+                except Exception as exc:
+                    print(f"    dialogue model fell back to {eleven['model']} ({str(exc)[:80]})")
+                    w = synthesize_elevenlabs(_strip_emotion_tags(chunk_text), vid,
+                                              eleven["model"], part, eleven["key"],
+                                              settings=dlg_settings)
         elif speaker is None:
             w = asyncio.run(synthesize(chunk_text, vconf, part))
         else:
-            w = asyncio.run(synthesize(chunk_text, {"voice": cast[speaker][1],
-                                                    "rate": "+0%", "pitch": "+0Hz"}, part))
+            w = asyncio.run(synthesize(_strip_emotion_tags(chunk_text),
+                                       {"voice": cast[speaker][1],
+                                        "rate": "+0%", "pitch": "+0Hz"}, part))
+        # Emotion cues are direction, not words: if the alignment carried the
+        # bracket tokens (whole or split, e.g. "[nervous" + "laugh]"), keep
+        # them out of the captions and the beat spans.
+        w = [x for x in w
+             if not (str(x[2]).startswith("[") or str(x[2]).endswith("]"))]
         # Normalize every chunk to one wav format so the concat is seamless;
         # dialogue gets the in-scene tone; a short pad keeps a beat of air
         # between speakers (word timings are unaffected - it's trailing).

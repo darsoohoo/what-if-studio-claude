@@ -782,7 +782,7 @@ Draft batches: while the dashboard runs, it drafts 3 fresh 90s Scary Story packa
 Dashboard pages (this server, 127.0.0.1:8765): Videos (review renders), Produce (per-beat visuals, voices, re-render), Results (log posted videos' views/likes by hand; rollups by category AND by render format - Classic vs Ironic cheerful vs Movie trailer, with mood/visuals badges - show what's winning), Spend (API costs), Help.
 Produce per-beat references: attach an image and/or your own video to any beat; the radio picks which one the beat uses and it ALWAYS lands in the final video - image = the picture is that beat's visual with gentle motion (in AI-video mode it's animated as the clip's first frame instead), video = the clip plays as-is (never billed). A 🎭 Mood dropdown (Auto = category default, or Eerie, Funny, Sarcastic, Witty, Adventurous, Dramatic, Mysterious, Wholesome, Inspiring, Deadpan) steers two rewrite buttons: "Script from prompts" writes the whole spoken script fitted to the visual prompts, "Prompts from script" re-imagines every visual prompt from the spoken lines; both save with the old version kept in History. The same mood flavors every ✨ line rewrite, and an explicit (non-Auto) mood also restyles generated visuals at render time.
 🎵 Ironic cheerful music (Render checkbox, or --ironic-music): a sincerely happy bed (music/ironic - 1950s swing, ragtime, elevator muzak; python get_music.py fetches them) that contradicts scary visuals, plays straight until the reveal beat, then tape-stops on its first word with a soft impact and resumes slowed + quiet. Any category, any visuals mode. With Mood on Auto it also renders generated visuals in Wholesome mood - smiling pictures, cheerful song, dark script - the full Jordan Peele contradiction in one click (an explicit mood overrides the look).
-🎬 Movie-trailer feel (Render checkbox, or --trailer; excludes the ironic checkbox): for horror categories the soundtrack is a synthesized AHS-style dread bed (heartbeat pulse, detuned drone, metallic shrieks - nothing to license), other categories get an epic bed from music/trailer (--trailer-bed overrides); plus riser + impact on the reveal, extra breathing room between dialogue lines, slower narrator delivery, and Trailer-mood visuals when Mood is Auto. Two trailer moods write the script: "Trailer - dialogue only" (DEFAULT, modern: no narrator, every beat is 1-2 character lines OR exactly (silence) for a held wordless shot, character-line cold open, silent outro under the follow card) and "Trailer - narrated" (classic VO fragments with 2-3 dialogue lines). Pick one + "Script from prompts", then render. Users can type (silence) into any spoken line to hold a shot. For a real story arc use 12-15 clips: with a trailer mood selected, "Script from prompts" GROWS the script to the Clips count from step 1 (re-tells the story across more scenes; prompts re-derive from the new beats). With ElevenLabs on, character lines use expressive settings (low stability + style boost) so dialogue sounds acted, not narrated.
+🎬 Movie-trailer feel (Render checkbox, or --trailer; excludes the ironic checkbox): for horror categories the soundtrack is a synthesized AHS-style dread bed (heartbeat pulse, detuned drone, metallic shrieks - nothing to license), other categories get an epic bed from music/trailer (--trailer-bed overrides); plus riser + impact on the reveal, extra breathing room between dialogue lines, slower narrator delivery, and Trailer-mood visuals when Mood is Auto. Two trailer moods write the script: "Trailer - dialogue only" (DEFAULT, modern: no narrator, every beat is 1-2 character lines OR exactly (silence) for a held wordless shot, character-line cold open, silent outro under the follow card) and "Trailer - narrated" (classic VO fragments with 2-3 dialogue lines). Pick one + "Script from prompts", then render. Users can type (silence) into any spoken line to hold a shot. For a real story arc use 12-15 clips: with a trailer mood selected, "Script from prompts" GROWS the script to the Clips count from step 1 (re-tells the story across more scenes; prompts re-derive from the new beats). With ElevenLabs on, character lines render on ElevenLabs v3 (the expressive acting model) and can open with an emotion cue inside the quotes - [Mara] "[whispers] It knows my name." - performed by the voice, never spoken or captioned ([whispers], [terrified], [angry], [sighs], [shouting]...). The trailer writers add cues themselves; users can type them into any line. Non-v3 paths strip cues safely.
 🎙 Character dialogue: any spoken line can embed [Name] "the line" (the Trailer script writer adds 2-3 itself; users can type them into any beat). Each named character gets their own TTS voice automatically (edge-tts cast, or the ElevenLabs account's voices), with a light in-scene room tone; the narrator keeps the chosen voice, captions stay word-synced, the render log prints the cast. Dialogue captions are speaker-aware: italic + a per-character tint with a small "- NAME" flash when a character starts speaking. No lip-sync - trailer-style cuts carry it.
 🧬 Cast memory: new drafts and "Script from prompts" write a cast (name + fixed 6-12 word look) into the package; every visual prompt that mentions a character pins that exact look (polish is instructed, the free path expands the first name mention), so the same person appears across clips - prompt-level consistency, strong resemblance rather than a perfect face lock.
 💡 Draft from your own idea (top of Produce): paste a summary or details, pick scary/what-if/true-history, and Draft it builds the title, script, and shot prompts from YOUR notes (keeps every named fact), honoring Clips and Mood; the package opens ready to render.
@@ -1339,7 +1339,9 @@ TRAILER_DIALOGUE_RULE = (
     'But someone always does. '
     'The square-bracket name tag is REQUIRED and is not a stage direction - the '
     'renderer reads it to give each character their own real voice, then each '
-    'named character speaks aloud in the video. Use the SAME names as the cast '
+    'named character speaks aloud in the video. A line may open with one emotion '
+    'cue in brackets INSIDE the quotes ([whispers], [terrified], [angry]) - the '
+    'voice performs it. Use the SAME names as the cast '
     'list so their look and voice stay tied. Keep the narrator carrying the '
     'story; never open a beat with dialogue. ')
 
@@ -1355,10 +1357,15 @@ TRAILER_ONLY_RULE = (
     "Use 1-2 (silence) beats as breathing room at tension points - after a "
     "hard line, or right before the reveal. "
     "The square-bracket tag is REQUIRED and is not a stage direction - the "
-    "renderer gives each named character their own real voice. Use 2-3 "
-    "recurring characters with the SAME names as the cast list, tell an "
-    "ACTUAL STORY across the beats - setup, escalation, reveal - purely "
-    "through what the characters say to each other. ")
+    "renderer gives each named character their own real voice. DIRECT the "
+    "actors - this is REQUIRED: AT LEAST HALF the lines must open with one "
+    "emotion cue in square brackets INSIDE the quotes - [whispers], "
+    "[terrified], [angry], [sighs], [shouting], [nervous], [crying], "
+    "[coldly] - e.g. [Mara] \"[whispers] It knows my name.\" The voices "
+    "perform the cue; it is never spoken or shown. "
+    "Use 2-3 recurring characters with the SAME names as the cast list, "
+    "tell an ACTUAL STORY across the beats - setup, escalation, reveal - "
+    "purely through what the characters say to each other. ")
 
 _DLG_MARK_RE = re.compile(r'\[[A-Za-z][A-Za-z0-9 .\'-]{0,24}\]\s*["“]')
 
@@ -1379,6 +1386,9 @@ def require_trailer_dialogue(beats, mood):
             raise RuntimeError('every beat needs a [Name] "line" character line or (silence) - try again')
         if sum(1 for b in beats if _DLG_MARK_RE.search(b)) < 2:
             raise RuntimeError("a dialogue-only trailer needs at least 2 spoken beats - try again")
+        # The acting lives in the cues - a cue-less script reads flat.
+        if sum(1 for b in beats if re.search(r'["“]\s*\[[A-Za-z]', b)) < 2:
+            raise RuntimeError("the writer left out the [whispers]/[terrified] emotion cues - try again")
         # Up to 2 stray words tolerated (a dangling "Later -"); a narrated
         # sentence is not. Silence beats are exempt (the marker is the beat).
         if any(_narrator_words(b) > 2 for b in beats if not mv.SILENCE_RE.match(b)):
@@ -1406,6 +1416,62 @@ def _retry_generate(attempt, tries=3):
             last = exc
             print(f"mood generate: retrying ({exc})")
     raise last
+
+
+CUE_WORDS = ["whispers", "terrified", "angry", "sighs", "shouting",
+             "nervous", "crying", "coldly"]
+
+
+def _inject_emotion_cues(lines):
+    """Add a performance cue to every dialogue line - [Mara] "[whispers] ...".
+    The model only PICKS the emotion word per line; the brackets are spliced
+    in by code, so the format can't come back wrong. If the picker call
+    fails, a tone-appropriate rotation fills in - this never raises."""
+    flat = []   # (line_idx, chunk_idx, speaker, text) for uncued dialogue
+    parsed = [mv.split_dialogue(l) for l in lines]
+    for li, chunks in enumerate(parsed):
+        for ci, (sp, txt) in enumerate(chunks):
+            if sp and not txt.strip().startswith("["):
+                flat.append((li, ci, sp, txt))
+    if not flat:
+        return lines
+    cues = None
+    try:
+        numbered = "\n".join(f'{i + 1}. [{sp}] "{txt}"'
+                             for i, (_, _, sp, txt) in enumerate(flat))
+        raw = _ai_text(
+            "For each numbered horror-trailer line, pick ONE word for how the "
+            "actor should deliver it, from exactly this list: "
+            + ", ".join(CUE_WORDS) + ". "
+            'Reply with ONLY minified JSON, exactly: {"cues":["...", ...]} - '
+            f"exactly {len(flat)} entries, same order.\n\n" + numbered,
+            max_tokens=100 + 12 * len(flat))
+        start, end = raw.find("{"), raw.rfind("}")
+        got = [str(c).strip().lower() for c in
+               (json.loads(raw[start:end + 1]).get("cues") or [])]
+        if len(got) == len(flat):
+            cues = [c if c in CUE_WORDS else "nervous" for c in got]
+    except Exception:
+        pass
+    if cues is None:   # heuristic fallback: punctuation-guided rotation
+        cues = []
+        for _, _, _, txt in flat:
+            cues.append("shouting" if txt.rstrip('"”').endswith("!")
+                        else "whispers" if txt.rstrip('"”').endswith("...")
+                        else "nervous" if txt.rstrip('"”').endswith("?")
+                        else CUE_WORDS[len(cues) % len(CUE_WORDS)])
+    cue_at = {(li, ci): cues[i] for i, (li, ci, _, _) in enumerate(flat)}
+    out = []
+    for li, chunks in enumerate(parsed):
+        rebuilt = []
+        for ci, (sp, txt) in enumerate(chunks):
+            if sp:
+                body = f"[{cue_at[(li, ci)]}] {txt}" if (li, ci) in cue_at else txt
+                rebuilt.append(f'[{sp}] "{body}"')
+            else:
+                rebuilt.append(txt)
+        out.append(" ".join(rebuilt))
+    return out
 
 
 def script_from_prompts(pkg, mood, target_rows=0):
@@ -1489,6 +1555,12 @@ def script_from_prompts(pkg, mood, target_rows=0):
             if not _DLG_MARK_RE.search(hook) or _narrator_words(hook) > 4:
                 raise RuntimeError('the cold-open hook must be a [Name] "line" character line - try again')
             outro = ""   # nobody speaks over the closing card
+            # Cue-less scripts read flat: run the focused cue pass rather
+            # than rerolling a structurally good script. Same scope as the
+            # validator below (beats only), so they can never disagree.
+            if sum(1 for b in beats if re.search(r'["“]\s*\[[A-Za-z]', b)) < 2:
+                cued = _inject_emotion_cues([hook] + beats)
+                hook, beats = cued[0], cued[1:]
         else:
             # The video is exactly as long as the narration - a rewrite that
             # undershoots the word budget silently shrinks the whole video
