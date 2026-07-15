@@ -1541,48 +1541,70 @@ def synth_reveal_sfx(path, riser=3.0, tail=2.2):
 DREAD_RATE = 24000   # rumble + metallic highs live well below 12 kHz
 
 
-def synth_dread_bed(path, duration, seed=911):
+def synth_dread_bed(path, duration, seed=911, climax=None):
     """Write a mono WAV bed of unsettling sound design in the American Horror
-    Story title-theme school: a detuned sub drone slowly beating against
-    itself, a double heartbeat thump, breath-like noise swells, and sparse
-    metallic shrieks. Synthesized from scratch - no samples, nothing to
-    license. Deterministic per seed so re-renders sound identical.
-    Used as the default --trailer bed for horror instead of epic orchestra."""
+    Story / Whisper Man trailer school: the SAME few motifs cycling - a
+    detuned sub drone, a double heartbeat, breath-like noise swells, sparse
+    metallic shrieks - but everything ESCALATES toward `climax` (default 85%
+    in; callers pass the reveal time): the heartbeat accelerates, the drone
+    beats faster and swells, the shrieks come closer together and hotter,
+    and the whole master rises. Synthesized from scratch - no samples,
+    nothing to license. Deterministic per seed."""
+    climax = min(duration, climax or 0.85 * duration)
     n = int(duration * DREAD_RATE)
     rng = random.Random(seed)
-    out = array.array("h", bytes(2 * n))
-    shrieks, t = [], 3.5
-    while t < duration - 2.5:
-        shrieks.append((t, rng.uniform(0.7, 1.0), rng.choice((1490.0, 1730.0, 2090.0))))
-        t += rng.uniform(4.5, 9.5)
+    two_pi = 2.0 * math.pi
+
+    def esc(t):   # escalation 0..1, eased so the build back-loads
+        return min(1.0, max(0.0, t / climax)) ** 1.4
+
+    buf = array.array("f", bytes(4 * n))
+    # Base layer per-sample: drone (detune widens + swells) and breaths.
     ph1 = ph2 = 0.0
     lp = 0.0
-    two_pi = 2.0 * math.pi
     for i in range(n):
         t = i / DREAD_RATE
-        # detuned drone pair (48 vs 48.7 Hz) breathing on a 13 s cycle
+        e = esc(t)
         ph1 += two_pi * 48.0 / DREAD_RATE
-        ph2 += two_pi * 48.7 / DREAD_RATE
-        amp = 0.16 * (math.sin(ph1) + math.sin(ph2)) * (0.65 + 0.35 * math.sin(two_pi * t / 13.0))
-        # double heartbeat every 1.6 s
-        hb_t = t % 1.6
-        for off in (0.0, 0.24):
-            d = hb_t - off
-            if 0.0 <= d < 0.2:
-                amp += 0.34 * math.exp(-d * 26.0) * math.sin(two_pi * 52.0 * d)
-        # breath: lowpassed noise swelling on a 7 s cycle
+        ph2 += two_pi * (48.7 + 0.9 * e) / DREAD_RATE
+        a = (0.16 * (1.0 + 0.8 * e) * (math.sin(ph1) + math.sin(ph2))
+             * (0.65 + 0.35 * math.sin(two_pi * t / 13.0)))
         lp += 0.03 * (rng.uniform(-1, 1) - lp)
-        amp += lp * 1.7 * max(0.0, math.sin(two_pi * t / 7.0 - 1.2)) ** 3
-        # sparse metallic shrieks: inharmonic cluster, slow attack, long decay
-        for st, gain, base in shrieks:
-            d = t - st
-            if 0.0 <= d < 2.4:
-                env = min(1.0, d / 0.3) * math.exp(-d * 1.7) * 0.16 * gain
-                amp += env * (math.sin(two_pi * base * d)
-                              + 0.7 * math.sin(two_pi * base * 1.38 * d)
-                              + 0.5 * math.sin(two_pi * base * 1.83 * d))
-        # Hotter master than a typical bed: this IS the soundtrack.
-        out[i] = int(32767 * max(-1.0, min(1.0, amp * 1.35)))
+        a += lp * (1.5 + 1.2 * e) * max(0.0, math.sin(two_pi * t / 7.0 - 1.2)) ** 3
+        buf[i] = a
+    # Heartbeat: an accelerating clock (1.6 s apart -> ~1.05 s at the climax),
+    # each beat a double thump that also hits harder as it builds.
+    hb_len = int(0.2 * DREAD_RATE)
+    t = 0.4
+    while t < duration:
+        e = esc(t)
+        for off in (0.0, 0.24 - 0.06 * e):
+            i0 = int((t + off) * DREAD_RATE)
+            for j in range(min(hb_len, n - i0)):
+                d = j / DREAD_RATE
+                buf[i0 + j] += (0.34 + 0.22 * e) * math.exp(-d * 26.0) * math.sin(two_pi * 52.0 * d)
+        t += 1.6 - 0.55 * e
+    # Metallic shrieks: sparse early, closing in and heating up near the climax.
+    sh_len = int(2.4 * DREAD_RATE)
+    t = 3.0
+    while t < duration - 1.5:
+        e = esc(t)
+        gain = (0.14 + 0.14 * e) * rng.uniform(0.8, 1.1)
+        base = rng.choice((1490.0, 1730.0, 2090.0))
+        i0 = int(t * DREAD_RATE)
+        for j in range(min(sh_len, n - i0)):
+            d = j / DREAD_RATE
+            env = min(1.0, d / 0.3) * math.exp(-d * 1.7) * gain
+            buf[i0 + j] += env * (math.sin(two_pi * base * d)
+                                  + 0.7 * math.sin(two_pi * base * 1.38 * d)
+                                  + 0.5 * math.sin(two_pi * base * 1.83 * d))
+        t += max(1.6, rng.uniform(6.5, 10.0) - e * rng.uniform(3.5, 5.5))
+    # Master: the whole bed rises into the climax. Hotter than a typical
+    # music bed - this IS the soundtrack.
+    out = array.array("h", bytes(2 * n))
+    for i in range(n):
+        g = 1.15 * (0.78 + 0.5 * esc(i / DREAD_RATE))
+        out[i] = int(32767 * max(-1.0, min(1.0, buf[i] * g)))
     with wave.open(str(path), "wb") as w:
         w.setnchannels(1)
         w.setsampwidth(2)
@@ -2372,9 +2394,12 @@ def main():
                         and branding_for(pkg).get("sfx") == "reveal"))
                 music = None
                 if dread:
-                    synth_dread_bed(tmp / "music.wav", total + 1.0)
-                    print("  music: synthesized dread bed (heartbeat pulse, detuned drone,"
-                          " metallic shrieks)")
+                    # The build peaks on the reveal when the timing allows,
+                    # else ~85% in - repetitive motifs, climaxing near the end.
+                    synth_dread_bed(tmp / "music.wav", total + 1.0, climax=reveal_start)
+                    peak_at = reveal_start if reveal_start else 0.85 * (total + 1.0)
+                    print(f"  music: synthesized dread bed, building to a climax at {peak_at:.1f}s"
+                          " (heartbeat pulse, detuned drone, metallic shrieks)")
                 else:
                     music = pick_music(pkg, args.music,
                                        override=("ironic" if args.ironic_music
