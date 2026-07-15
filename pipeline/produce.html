@@ -207,7 +207,7 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
         <label class="opt" title="One mood steers everything AI-written here: the two rewrite buttons, every ✨ line rewrite, and (when set to something other than Auto) the look of generated visuals at render time. Auto = each category's own register, visuals unchanged.">🎭 Mood:
           <select id="moodSel" style="width:auto"></select>
         </label>
-        <button type="button" id="scriptFromPromptsBtn" title="AI-write the whole spoken script (hook, beats, outro) FROM the visual prompts below, in the selected mood — every line is fitted to what's on screen. The old script stays in 🕘 History.">📝 Script from prompts</button>
+        <button type="button" id="scriptFromPromptsBtn" title="AI-write the whole spoken script (hook, beats, outro) FROM the visual prompts below, in the selected mood — every line is fitted to what's on screen. With a 🎭 trailer mood it GROWS the script to the Clips count picked in step 1 (the story is re-told across more scenes; prompts then re-derive from the new beats). The old script stays in 🕘 History.">📝 Script from prompts</button>
         <button type="button" id="promptsFromScriptBtn" title="AI-write every visual prompt FROM the spoken script, in the selected mood — one shot per line, mood expressed through the imagery. The old prompts stay in 🕘 History.">🎬 Prompts from script</button>
         <span class="status" id="moodStatus" style="margin:0" role="status" aria-live="polite"></span>
       </div>
@@ -611,7 +611,8 @@ async function moodGenerate(path, busyMsg, doneMsg) {
   btns.forEach(b => { b.disabled = true; });
   st.className = "status"; st.textContent = busyMsg;
   try {
-    const r = await api(path, { queue: S.queue, slot: S.slot, mood: $id("moodSel").value });
+    const r = await api(path, { queue: S.queue, slot: S.slot, mood: $id("moodSel").value,
+                                clips: Number($id("clipCount").value) || 0 });
     if (r.error) throw new Error(r.error);
     await refreshAll(false);   // rows re-render from the fresh script/prompts
     fillScript(S.script);
