@@ -94,6 +94,8 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
 .apibox { background: rgba(139,123,255,0.08); border: 1px solid var(--accent); border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; }
 .apibox label.opt { color: var(--text); flex-wrap: wrap; }
 .apibox label.opt + label.opt { margin-top: 8px; }
+.stepbadge { display: inline-block; background: var(--accent); color: #fff; border-radius: 50%; width: 20px; height: 20px; line-height: 20px; text-align: center; font-size: 12px; font-weight: 700; margin-right: 5px; }
+button.next-step { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(139,123,255,0.35); }
 .skipped { opacity: 0.4; pointer-events: none; }
 :focus-visible { outline: 3px solid var(--accent-strong); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
@@ -183,6 +185,18 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
 
     <section>
       <h2><span class="step">2</span>Get the clips</h2>
+      <div class="row" style="margin:0 0 10px">
+        <label class="opt" title="Pick what you're making and the page sets itself up: the 🎭 mood, the music checkboxes, and a numbered ①②③ trail on the buttons to follow. Free-form leaves everything alone.">🎯 Workflow:
+          <select id="presetSel" style="width:auto">
+            <option value="">Free-form</option>
+            <option value="modern-trailer">🎞️ Modern trailer — characters talk, no narrator</option>
+            <option value="narrated-trailer">🎙 Narrated trailer — classic epic VO</option>
+            <option value="ironic">🎵 Ironic horror — cheerful song, dark story</option>
+            <option value="classic">📖 Classic narrated video</option>
+          </select>
+        </label>
+        <span class="hint" id="presetHint" style="margin:0"></span>
+      </div>
       <div class="apibox" id="visualsBox">
         <label class="opt"><input type="radio" name="visMode" value="manual" checked> 🎬 <strong>My own clips</strong> — tryinfer Studio or drag-drop (steps 2–3 below)</label>
         <label class="opt" id="modeInfer" hidden><input type="radio" name="visMode" value="infer"> ⚡ <strong>AI video (tryinfer API)</strong> Model:
@@ -207,8 +221,8 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
         <label class="opt" title="One mood steers everything AI-written here: the two rewrite buttons, every ✨ line rewrite, and (when set to something other than Auto) the look of generated visuals at render time. Auto = each category's own register, visuals unchanged.">🎭 Mood:
           <select id="moodSel" style="width:auto"></select>
         </label>
-        <button type="button" id="scriptFromPromptsBtn" title="AI-write the whole spoken script (hook, beats, outro) FROM the visual prompts below, in the selected mood — every line is fitted to what's on screen. With a 🎭 trailer mood it GROWS the script to the Clips count picked in step 1 (the story is re-told across more scenes; prompts then re-derive from the new beats). The old script stays in 🕘 History.">📝 Script from prompts</button>
-        <button type="button" id="promptsFromScriptBtn" title="AI-write every visual prompt FROM the spoken script, in the selected mood — one shot per line, mood expressed through the imagery. The old prompts stay in 🕘 History.">🎬 Prompts from script</button>
+        <button type="button" id="scriptFromPromptsBtn" title="AI-write the whole spoken script (hook, beats, outro) FROM the visual prompts below, in the selected mood — every line is fitted to what's on screen. With a 🎭 trailer mood it GROWS the script to the Clips count picked in step 1 (the story is re-told across more scenes; prompts then re-derive from the new beats). The old script stays in 🕘 History."><span class="stepbadge" id="sb1" hidden>1</span>📝 Script from prompts</button>
+        <button type="button" id="promptsFromScriptBtn" title="AI-write every visual prompt FROM the spoken script, in the selected mood — one shot per line, mood expressed through the imagery. The old prompts stay in 🕘 History."><span class="stepbadge" id="sb2" hidden>2</span>🎬 Prompts from script</button>
         <span class="status" id="moodStatus" style="margin:0" role="status" aria-live="polite"></span>
       </div>
       <div id="manualPrompts">
@@ -249,7 +263,7 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
       <p class="hint" id="ironicHint" hidden>🎵 + 🌤️ The full contradiction: the song stays sincerely cheerful and generated visuals render in <strong>Wholesome</strong> mood (soft warm light, gentle smiles) while the script goes wrong — until the tape-stop on the reveal. Pick an explicit 🎭 mood above to override the visual look; already-cached visuals keep their old look until you delete the scenario's cache entry.</p>
       <p class="hint" id="trailerHint" hidden>🎬 This checkbox changes the <strong>sound and look</strong>: for horror it lays a <strong>synthesized dread bed</strong> (heartbeat pulse, detuned drone, metallic shrieks — the AHS-intro school) under the lines, other categories get the epic orchestral bed; plus the riser + impact on the reveal, breathing room between dialogue lines, slower narrator delivery, and Trailer-mood visuals. <strong>It does NOT rewrite your script</strong> — first pick <strong>🎞️ Trailer — dialogue only</strong> (modern: no narrator, just character lines trading against the sound design) or <strong>🎙 Trailer — narrated</strong> (the classic VO) in the 🎭 Mood dropdown and hit <strong>📝 Script from prompts</strong>, then render. You can also type <code>[Name] "line"</code> into any spoken line yourself.</p>
       <div class="row">
-        <button type="button" id="renderBtn" class="primary">🎬 Render video</button>
+        <button type="button" id="renderBtn" class="primary"><span class="stepbadge" id="sb3" hidden>3</span><span id="renderBtnLabel">🎬 Render video</span></button>
         <button type="button" id="openVideosBtn" hidden>See it in Videos →</button>
       </div>
       <p class="status" id="renderStatus" role="status" aria-live="polite"></p>
@@ -508,7 +522,7 @@ function applyVisMode() {
   // boxes stay live, since saved edits feed the AI generation too.
   $id("manualHint").classList.toggle("skipped", auto);
   $id("importRow").classList.toggle("skipped", auto);
-  $id("renderBtn").textContent =
+  $id("renderBtnLabel").textContent =
     visMode() === "infer" ? "⚡ Generate clips + render" :
     visMode() === "images" ? "🖼️ Generate images + render" : "🎬 Render video";
 }
@@ -1282,6 +1296,47 @@ $id("optTrailer").addEventListener("change", () => {
   updatePairHints();
 });
 $id("moodSel").addEventListener("change", updatePairHints);
+
+/* ---------- 🎯 workflow presets: one pick sets the whole page up ----------
+   Cascading on explicit selection only - reloading never stomps settings,
+   it just restores the badges/hint for the remembered preset. */
+const PRESETS = {
+  "modern-trailer": { mood: "trailer", trailer: true, ironic: false, clips: 12,
+    hint: "Follow the numbers: ① grow the script — characters talk, (silence) holds — then ② write the shots, ③ render with the dread bed." },
+  "narrated-trailer": { mood: "trailer-vo", trailer: true, ironic: false, clips: 9,
+    hint: "① write the epic VO script → ② write the shots → ③ render with the orchestral bed." },
+  "ironic": { mood: "auto", trailer: false, ironic: true, clips: 0,
+    hint: "① script in the category's dark register → ② shots render Wholesome → ③ the cheerful song tape-stops on the reveal." },
+  "classic": { mood: "auto", trailer: false, ironic: false, clips: 0,
+    hint: "Everything default — tweak the script or prompts if you like, then render." },
+};
+function applyPreset(id, cascade) {
+  const p = PRESETS[id];
+  const showTrail = !!p && id !== "classic";
+  ["sb1", "sb2", "sb3"].forEach(b => { $id(b).hidden = !showTrail; });
+  $id("presetHint").textContent = p ? p.hint : "";
+  // Animated numbers count nothing in a dialogue-only trailer — dim, don't hide.
+  $id("optCharts").parentElement.style.opacity = id === "modern-trailer" ? 0.45 : "";
+  if (!p || !cascade) return;
+  $id("moodSel").value = p.mood;
+  $id("moodSel").dispatchEvent(new Event("change"));
+  $id("optTrailer").checked = p.trailer;
+  $id("optIronic").checked = p.ironic;
+  if (p.clips && Number($id("clipCount").value) < p.clips) {
+    $id("clipCount").value = String(p.clips);
+    try { localStorage.setItem("wis.clipCount", String(p.clips)); } catch (e) {}
+  }
+  updatePairHints();
+}
+$id("presetSel").addEventListener("change", () => {
+  try { localStorage.setItem("wis.preset", $id("presetSel").value); } catch (e) {}
+  applyPreset($id("presetSel").value, true);
+});
+(() => {
+  let p = null;
+  try { p = localStorage.getItem("wis.preset"); } catch (e) {}
+  if (p && PRESETS[p]) { $id("presetSel").value = p; applyPreset(p, false); }
+})();
 
 /* ---------- step 4: render ---------- */
 let pollTimer = null;
