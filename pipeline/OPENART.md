@@ -47,29 +47,37 @@ ready-to-use `visualReference` object. Failed submits cost nothing.
 4. Cache key: (character portrait URL + line text + duration) — regenerating a
    video re-bills nothing unless a line changed.
 
-## Voice consistency (open decision, next canary)
+## Voice consistency — SETTLED by canary #2 (2026-07-15, 80 cr)
 
-Options, best first:
-a. **Audio element per line**: upload the ElevenLabs v3 line audio as the
-   audio element → if Seedance performs it verbatim, mute the clip in the mix
-   and the pipeline's own EL track stays the voice (captions stay perfect,
-   lips match because same audio). Blocker: no programmatic upload via MCP —
-   `openart_upload_pick` mounts a browser widget (worked: `ready: true`);
-   per-line uploads are manual. Test whether the widget renders in the
-   desktop app; if per-line is too manual, fall back to (b).
-b. **Voice sample per character**: upload ONE 10s ElevenLabs sample per cast
-   character (one-time, via widget or openart.ai uploads page) → Seedance
-   clones that voice per clip; the clip's own audio IS the line. Pipeline
-   change needed: "clip-voiced beat" = voice track goes silent for that
-   span, clip audio passes through at full volume, captions estimated from
-   clip duration.
-c. **Prompt-only voice** (what the canary did): Seedance invents a fitting
-   voice per clip. Zero setup, voice drifts between clips/videos.
-d. Future: OpenArt character elements carry a `voice` field supporting
-   `provider: "elevenlabs"` + voiceId (seen in the form schema) — Character
-   Builder isn't MCP-exposed yet, but a character created in their web UI
-   with the SAME ElevenLabs voice the pipeline casts would make voices match
-   exactly across narration and lips. Revisit when MCP exposes characters.
+Uploaded a real ElevenLabs v3 line (Bella whispering) as the audio element:
+Seedance **re-performs the line in that voice** rather than copying the
+waveform (peak normalized cross-correlation 0.232 vs our source — a clone,
+not a copy). The upload widget DOES render in the Claude desktop app, so
+uploads are drag-and-drop.
+
+**Adopted architecture: one voice sample per character, clip audio IS the
+line.**
+- One ~10s ElevenLabs sample per cast character, uploaded once (drag into the
+  widget), cached: `openart-cast/<name>-voice.mp3` + its upload id/URL in
+  `openart-cast/cast.json`. Reused for every line, every video. Voice stays
+  consistent because every clip clones the same sample.
+- Each hero dialogue beat generates with portrait + voice sample + the line
+  in the prompt ("says exactly: ..."). The clip's own audio IS the spoken
+  line, lips already perfect.
+- PIPELINE WORK NEEDED ("clip-voiced beats"): for a lip-synced beat the
+  voice track goes silent for that span (a silence chunk sized to the clip's
+  line), the clip's audio passes through at full volume for that beat only
+  (per-beat clip audio - today --clip-audio is global and quiet), and
+  captions estimate word timings evenly across the clip's speech. The
+  character caption tint/name flash keep working off the script's [Name] tag.
+- Human QA: listen to openart-cast/canary2-mara-elvoice.mp4 - if the cloned
+  voice reads close enough to Bella, ship; if not, try the 10s sample (2s
+  may be thin for cloning) before judging.
+
+Future upgrade: OpenArt character elements carry a `voice` field supporting
+`provider: "elevenlabs"` + voiceId (seen in the form schema) — when Character
+Builder reaches MCP, a character bound to the SAME ElevenLabs voice id the
+pipeline casts would remove the cloning step entirely.
 
 ## Session workflow (until a skill wraps it)
 
