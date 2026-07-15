@@ -372,6 +372,11 @@ async def synthesize(text, vconf, mp3_path):
 
 _DLG_RE = re.compile(r'\[([A-Za-z][A-Za-z0-9 .\'-]{0,24})\]\s*("([^"]*)"|“([^”]*)”|([^\[]+))')
 
+# A beat that is ONLY this marker is a held wordless shot: nothing is spoken,
+# captions clear, and the sound design carries it (~2.4s + the trailer gap).
+SILENCE_RE = re.compile(r"^\s*[(\[]\s*(?:silence|quiet|hold|pause)\s*[)\]]\s*$", re.I)
+SILENCE_SECONDS = 2.4
+
 # Trailer VO tempo for voices that have no rate knob (ElevenLabs): atempo
 # keeps the pitch, word timings are rescaled to match. Edge voices use their
 # native rate parameter instead (-15% in trailer mode).
@@ -441,13 +446,29 @@ def synthesize_cast(segments, vconf, out_mp3, tmp, ffmpeg, ffprobe, eleven=None,
             v = pool[i % len(pool)]
             cast[ch] = (v.split("-")[-1].replace("Neural", ""), v)
 
+    # Character lines read hotter than narration: lower stability + style
+    # exaggeration gives ElevenLabs dialogue real acting instead of an even
+    # narrator read.
+    dlg_settings = {"stability": 0.3, "similarity_boost": 0.75,
+                    "style": 0.45, "use_speaker_boost": True}
     words, parts, offset = [], [], 0.0
     for idx, (speaker, chunk_text) in enumerate(chunks):
         part = tmp / f"vc-{idx:02d}.mp3"
+        if speaker is None and SILENCE_RE.match(chunk_text):
+            # A held wordless shot: pure silence, one invisible word so the
+            # beat keeps its time span (and clears the captions while it holds).
+            wav = tmp / f"vc-{idx:02d}.wav"
+            run([ffmpeg, "-y", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono",
+                 "-t", str(SILENCE_SECONDS + pad), "-c:a", "pcm_s16le", str(wav)])
+            words.append((offset + 0.02, offset + SILENCE_SECONDS, "", None))
+            parts.append(wav)
+            offset += probe_duration(ffprobe, wav)
+            continue
         if eleven:
             vid = eleven["narrator_id"] if speaker is None else cast[speaker][1]
             w = synthesize_elevenlabs(chunk_text, vid, eleven["model"], part, eleven["key"],
-                                      settings=eleven.get("settings"))
+                                      settings=(eleven.get("settings") if speaker is None
+                                                else dlg_settings))
         elif speaker is None:
             w = asyncio.run(synthesize(chunk_text, vconf, part))
         else:
@@ -760,6 +781,10 @@ def _raw_shot_text(pkg, seg_index, seg_count):
     else:
         beats = pkg.get("beats") or []
         src = beats[seg_index - 1] if 1 <= seg_index <= len(beats) else shots[pick]
+    if SILENCE_RE.match(str(src)):
+        # A silent hold still needs a picture: a wordless static frame of
+        # the story's world (writers usually replace this with a real shot).
+        src = f"{shots[pick]}, a held static frame, nothing moves, unsettling stillness"
     src = re.sub(r"^[A-Za-z /-]{2,20}:", "", src)                      # "Hook:" style prefixes
     src = re.sub(r"\[[A-Za-z][A-Za-z0-9 .'-]{0,24}\]", "", src)        # [Name] dialogue tags
     src = re.sub(r"[\"“”‘’']", "", src)
@@ -2213,7 +2238,10 @@ def main():
         # word timings, spans, captions, charts, and prompts all line up with.
         raw_segments = narration_segments(pkg, hook_index)
         segments = [strip_dialogue_markup(s) for s in raw_segments]
-        has_dialogue = any(sp for s in raw_segments for sp, _ in split_dialogue(s))
+        # Cast synthesis handles character voices AND (silence) holds - the
+        # plain path would read the marker aloud.
+        has_dialogue = (any(sp for s in raw_segments for sp, _ in split_dialogue(s))
+                        or any(SILENCE_RE.match(s) for s in raw_segments))
         text = " ".join(segments)
         if not text:
             print("  SKIP: package has no narration text\n")

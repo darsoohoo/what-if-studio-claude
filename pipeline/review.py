@@ -782,7 +782,7 @@ Draft batches: while the dashboard runs, it drafts 3 fresh 90s Scary Story packa
 Dashboard pages (this server, 127.0.0.1:8765): Videos (review renders), Produce (per-beat visuals, voices, re-render), Results (log posted videos' views/likes by hand; rollups by category AND by render format - Classic vs Ironic cheerful vs Movie trailer, with mood/visuals badges - show what's winning), Spend (API costs), Help.
 Produce per-beat references: attach an image and/or your own video to any beat; the radio picks which one the beat uses and it ALWAYS lands in the final video - image = the picture is that beat's visual with gentle motion (in AI-video mode it's animated as the clip's first frame instead), video = the clip plays as-is (never billed). A 🎭 Mood dropdown (Auto = category default, or Eerie, Funny, Sarcastic, Witty, Adventurous, Dramatic, Mysterious, Wholesome, Inspiring, Deadpan) steers two rewrite buttons: "Script from prompts" writes the whole spoken script fitted to the visual prompts, "Prompts from script" re-imagines every visual prompt from the spoken lines; both save with the old version kept in History. The same mood flavors every ✨ line rewrite, and an explicit (non-Auto) mood also restyles generated visuals at render time.
 🎵 Ironic cheerful music (Render checkbox, or --ironic-music): a sincerely happy bed (music/ironic - 1950s swing, ragtime, elevator muzak; python get_music.py fetches them) that contradicts scary visuals, plays straight until the reveal beat, then tape-stops on its first word with a soft impact and resumes slowed + quiet. Any category, any visuals mode. With Mood on Auto it also renders generated visuals in Wholesome mood - smiling pictures, cheerful song, dark script - the full Jordan Peele contradiction in one click (an explicit mood overrides the look).
-🎬 Movie-trailer feel (Render checkbox, or --trailer; excludes the ironic checkbox): for horror categories the soundtrack is a synthesized AHS-style dread bed (heartbeat pulse, detuned drone, metallic shrieks - nothing to license), other categories get an epic bed from music/trailer (--trailer-bed overrides); plus riser + impact on the reveal, extra breathing room between dialogue lines, slower narrator delivery, and Trailer-mood visuals when Mood is Auto. Two trailer moods write the script: "Trailer - dialogue only" (DEFAULT, modern: no narrator, every beat is 1-2 character lines, character-line cold open, silent outro under the follow card) and "Trailer - narrated" (classic VO fragments with 2-3 dialogue lines). Pick one + "Script from prompts", then render.
+🎬 Movie-trailer feel (Render checkbox, or --trailer; excludes the ironic checkbox): for horror categories the soundtrack is a synthesized AHS-style dread bed (heartbeat pulse, detuned drone, metallic shrieks - nothing to license), other categories get an epic bed from music/trailer (--trailer-bed overrides); plus riser + impact on the reveal, extra breathing room between dialogue lines, slower narrator delivery, and Trailer-mood visuals when Mood is Auto. Two trailer moods write the script: "Trailer - dialogue only" (DEFAULT, modern: no narrator, every beat is 1-2 character lines OR exactly (silence) for a held wordless shot, character-line cold open, silent outro under the follow card) and "Trailer - narrated" (classic VO fragments with 2-3 dialogue lines). Pick one + "Script from prompts", then render. Users can type (silence) into any spoken line to hold a shot; for a real story arc draft trailers at 12-15 clips. With ElevenLabs on, character lines use expressive settings (low stability + style boost) so dialogue sounds acted, not narrated.
 🎙 Character dialogue: any spoken line can embed [Name] "the line" (the Trailer script writer adds 2-3 itself; users can type them into any beat). Each named character gets their own TTS voice automatically (edge-tts cast, or the ElevenLabs account's voices), with a light in-scene room tone; the narrator keeps the chosen voice, captions stay word-synced, the render log prints the cast. Dialogue captions are speaker-aware: italic + a per-character tint with a small "- NAME" flash when a character starts speaking. No lip-sync - trailer-style cuts carry it.
 🧬 Cast memory: new drafts and "Script from prompts" write a cast (name + fixed 6-12 word look) into the package; every visual prompt that mentions a character pins that exact look (polish is instructed, the free path expands the first name mention), so the same person appears across clips - prompt-level consistency, strong resemblance rather than a perfect face lock.
 💡 Draft from your own idea (top of Produce): paste a summary or details, pick scary/what-if/true-history, and Draft it builds the title, script, and shot prompts from YOUR notes (keeps every named fact), honoring Clips and Mood; the package opens ready to render.
@@ -1347,14 +1347,18 @@ TRAILER_DIALOGUE_RULE = (
 # every spoken word belongs to a character; the "narrator" is the sound design.
 TRAILER_ONLY_RULE = (
     "This is a MODERN DIALOGUE-ONLY TRAILER - there is NO narrator anywhere. "
-    "EVERY beat is just 1-2 short in-scene character lines in exactly this "
-    'format: [Name] "the line" (3-10 words each), and NOTHING outside the '
-    "bracketed lines. Example of a correct beat: "
-    '[Mara] "You hear it too, don\'t you?" [Sheriff] "Go home. Now." '
+    "Each beat is either 1-2 short in-scene character lines in exactly this "
+    'format: [Name] "the line" (3-10 words each, NOTHING outside the '
+    "bracketed lines), or exactly the single word (silence) - a held wordless "
+    "shot where only the sound design plays. Example of a correct dialogue "
+    'beat: [Mara] "You hear it too, don\'t you?" [Sheriff] "Go home. Now." '
+    "Use 1-2 (silence) beats as breathing room at tension points - after a "
+    "hard line, or right before the reveal. "
     "The square-bracket tag is REQUIRED and is not a stage direction - the "
     "renderer gives each named character their own real voice. Use 2-3 "
-    "recurring characters with the SAME names as the cast list, and escalate "
-    "the dread purely through what they say to each other. ")
+    "recurring characters with the SAME names as the cast list, tell an "
+    "ACTUAL STORY across the beats - setup, escalation, reveal - purely "
+    "through what the characters say to each other. ")
 
 _DLG_MARK_RE = re.compile(r'\[[A-Za-z][A-Za-z0-9 .\'-]{0,24}\]\s*["“]')
 
@@ -1371,11 +1375,13 @@ def require_trailer_dialogue(beats, mood):
         if sum(1 for b in beats if _DLG_MARK_RE.search(b)) < 2:
             raise RuntimeError('the writer left out the [Name] "line" character dialogue - try again')
     elif mood == "trailer":
-        if any(not _DLG_MARK_RE.search(b) for b in beats):
-            raise RuntimeError('every beat needs a [Name] "line" character line - try again')
+        if any(not (_DLG_MARK_RE.search(b) or mv.SILENCE_RE.match(b)) for b in beats):
+            raise RuntimeError('every beat needs a [Name] "line" character line or (silence) - try again')
+        if sum(1 for b in beats if _DLG_MARK_RE.search(b)) < 2:
+            raise RuntimeError("a dialogue-only trailer needs at least 2 spoken beats - try again")
         # Up to 2 stray words tolerated (a dangling "Later -"); a narrated
-        # sentence is not.
-        if any(_narrator_words(b) > 2 for b in beats):
+        # sentence is not. Silence beats are exempt (the marker is the beat).
+        if any(_narrator_words(b) > 2 for b in beats if not mv.SILENCE_RE.match(b)):
             raise RuntimeError("the writer added narrator text to a dialogue-only trailer - try again")
 
 
@@ -1507,6 +1513,8 @@ def prompts_from_script(pkg, mood):
         "those are appended separately. "
         f"EVERY line gets a shot - all {n} of them, including the last one "
         "(the outro/call-to-action plays over a closing shot, not a blank). "
+        "A line that is exactly (silence) is a held wordless shot - describe "
+        "an unsettling static frame that fits the story, nothing moving. "
         'Reply with ONLY minified JSON, no markdown fences, exactly: '
         '{"prompts":[' + ",".join(['"..."'] * n) + ']} - '
         f"exactly {n} prompts, one per line, same order.\n\n"
