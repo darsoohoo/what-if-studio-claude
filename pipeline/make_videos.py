@@ -565,13 +565,15 @@ def synthesize_cast(segments, vconf, out_mp3, tmp, ffmpeg, ffprobe, eleven=None,
                                           eleven["key"], settings=eleven.get("settings"))
             else:
                 # Dialogue ACTS on the expressive model (v3 performs the
-                # [whispers]/[terrified] cues in the line); if the account
-                # can't use it, fall back to the narration model with hot
-                # settings and the cues stripped.
+                # [whispers]/[terrified] cues in the line) in Creative mode -
+                # stability 0.0 is v3's emotional register; the default reads
+                # like an audiobook. If the account can't use v3, fall back
+                # to the narration model with hot settings, cues stripped.
                 try:
                     w = synthesize_elevenlabs(chunk_text, vid,
                                               eleven.get("dlg_model") or ELEVEN_DIALOGUE_MODEL,
-                                              part, eleven["key"], settings=None)
+                                              part, eleven["key"],
+                                              settings={"stability": 0.0})
                 except Exception as exc:
                     print(f"    dialogue model fell back to {eleven['model']} ({str(exc)[:80]})")
                     w = synthesize_elevenlabs(_strip_emotion_tags(chunk_text), vid,

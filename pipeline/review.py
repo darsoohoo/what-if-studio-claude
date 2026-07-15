@@ -1350,20 +1350,27 @@ TRAILER_DIALOGUE_RULE = (
 # every spoken word belongs to a character; the "narrator" is the sound design.
 TRAILER_ONLY_RULE = (
     "This is a MODERN DIALOGUE-ONLY TRAILER - there is NO narrator anywhere. "
-    "Each beat is either 1-2 short in-scene character lines in exactly this "
-    'format: [Name] "the line" (3-10 words each, NOTHING outside the '
+    "Each beat is either 1-2 in-scene character lines in exactly this "
+    'format: [Name] "the line" (5-15 words each, NOTHING outside the '
     "bracketed lines), or exactly the single word (silence) - a held wordless "
-    "shot where only the sound design plays. Example of a correct dialogue "
-    'beat: [Mara] "You hear it too, don\'t you?" [Sheriff] "Go home. Now." '
-    "Use 1-2 (silence) beats as breathing room at tension points - after a "
-    "hard line, or right before the reveal. "
+    "shot where only the sound design plays. Use 1-2 (silence) beats as "
+    "breathing room at tension points - after a hard line, or right before "
+    "the reveal. "
     "The square-bracket tag is REQUIRED and is not a stage direction - the "
-    "renderer gives each named character their own real voice. DIRECT the "
-    "actors - this is REQUIRED: AT LEAST HALF the lines must open with one "
-    "emotion cue in square brackets INSIDE the quotes - [whispers], "
+    "renderer gives each named character their own real voice. "
+    "WRITE SPEECH, NOT PROSE - people under stress do not talk in clean "
+    "sentences: use false starts (I- I hear it), stutters, trail-offs "
+    "(don't...), repeated words (no. No no no.), and AT MOST one word in "
+    "CAPS per line for the word they lose control on. "
+    "DIRECT the actors - this is REQUIRED: AT LEAST HALF the lines must "
+    "open with emotion cues in square brackets INSIDE the quotes, and cues "
+    "may be combined and dropped mid-line as non-verbal beats: [whispers], "
     "[terrified], [angry], [sighs], [shouting], [nervous], [crying], "
-    "[coldly] - e.g. [Mara] \"[whispers] It knows my name.\" The voices "
-    "perform the cue; it is never spoken or shown. "
+    "[coldly], [gasps], [shaky breath], [swallows hard]. "
+    'Example of a correct beat: [Mara] "[whispers][terrified] It\'s... '
+    '[gasps] no. No no no. It\'s coming from MY garage... [shaky breath] '
+    'it\'s inside my house." '
+    "The voices perform the cues; they are never spoken or shown. "
     "Use 2-3 recurring characters with the SAME names as the cast list, "
     "tell an ACTUAL STORY across the beats - setup, escalation, reveal - "
     "purely through what the characters say to each other. ")

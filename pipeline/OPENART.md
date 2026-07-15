@@ -87,3 +87,23 @@ Ask Claude: "lipsync <package>" → reads the script, picks hero dialogue
 beats, reuses/creates portraits, generates Seedance Mini clips per line,
 downloads to the staging dir as refv-NN.mp4 + sets ref-choice, reports
 credits spent (before/after via openart_account_get), then render as usual.
+
+## Voice acting (field feedback 2026-07-15: "sounds like someone reading a book")
+
+Three levers, all applied:
+1. **v3 Creative mode**: dialogue chunks synthesize with voice_settings
+   {"stability": 0.0} - v3's emotional register. The default read IS the
+   audiobook voice. (previous_text/next_text are NOT supported on v3 yet.)
+2. **Acted text**: the trailer writer now writes SPEECH under stress, not
+   prose - false starts (I- I hear it), stutters, trail-offs, repeats,
+   one CAPS word max, cue combos and mid-line non-verbals ([gasps],
+   [shaky breath], [swallows hard]).
+3. **Better clone source**: openart-cast/mara-voice-sample.mp3 is a 10.9s
+   emotionally varied v3-Creative sample for Seedance voice cloning
+   (replaces the flat 2s whisper - re-upload via the widget and update
+   cast.json's voice_upload_id/voice_url). Seedance clip prompts should
+   also carry voice direction: "voice trembling and breathy, ragged
+   breathing between words, genuinely frightened - not performed".
+
+A/B/C listening set in openart-cast/voice-tests/: a-default.mp3 (old),
+b-creative.mp3 (stability 0), c-acted.mp3 (stability 0 + acted text).
