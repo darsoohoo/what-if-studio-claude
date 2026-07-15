@@ -442,7 +442,7 @@ def ai_draft_openai(title, category, key, runtime=60, beats=5, idea=None, mood=N
                     OPENAI_MODEL, title[:60], estimated=True)
     raw = reply["choices"][0]["message"]["content"]
     draft = parse_draft(raw, "openai", beats)
-    require_trailer_dialogue(draft["beats"], mood)
+    draft["beats"] = finish_trailer_beats(draft["beats"], mood)
     return draft
 
 
@@ -467,7 +467,7 @@ def ai_draft_pollinations(title, category, runtime=60, beats=5, idea=None, mood=
     if raw is None:
         raise RuntimeError("the free writing service is busy - try again in a minute")
     draft = parse_draft(raw, "pollinations", beats)
-    require_trailer_dialogue(draft["beats"], mood)
+    draft["beats"] = finish_trailer_beats(draft["beats"], mood)
     return draft
 
 
@@ -1376,6 +1376,17 @@ def _narrator_words(text):
     return sum(len(t.split()) for sp, t in mv.split_dialogue(text) if sp is None)
 
 
+def finish_trailer_beats(beats, mood):
+    """Validate trailer structure (raises -> reroll/fallback) and inject the
+    emotion cues when the writer skipped them - a missing cue is fixable in
+    one focused pass and never a reason to throw a good script away."""
+    require_trailer_dialogue(beats, mood)
+    if mood == "trailer" and sum(1 for b in beats
+                                 if re.search(r'["“]\s*\[[A-Za-z]', b)) < 2:
+        beats = _inject_emotion_cues(beats)
+    return beats
+
+
 def require_trailer_dialogue(beats, mood):
     """Trailer scripts that ignore the dialogue contract defeat the point -
     reject so the retry (or the engine fallback) rolls again."""
@@ -1387,9 +1398,6 @@ def require_trailer_dialogue(beats, mood):
             raise RuntimeError('every beat needs a [Name] "line" character line or (silence) - try again')
         if sum(1 for b in beats if _DLG_MARK_RE.search(b)) < 2:
             raise RuntimeError("a dialogue-only trailer needs at least 2 spoken beats - try again")
-        # The acting lives in the cues - a cue-less script reads flat.
-        if sum(1 for b in beats if re.search(r'["“]\s*\[[A-Za-z]', b)) < 2:
-            raise RuntimeError("the writer left out the [whispers]/[terrified] emotion cues - try again")
         # Up to 2 stray words tolerated (a dangling "Later -"); a narrated
         # sentence is not. Silence beats are exempt (the marker is the beat).
         if any(_narrator_words(b) > 2 for b in beats if not mv.SILENCE_RE.match(b)):
