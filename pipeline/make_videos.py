@@ -81,6 +81,7 @@ MOOD_BY_CATEGORY = {
     "Pop Culture": "upbeat",
     "Scary Story": "eerie",
     "True History": "period",
+    "AI Remake": "trailer",
 }
 MUSIC_VOLUME = 0.12
 
@@ -158,6 +159,15 @@ CATEGORY_BRANDING = {
         "cta": "FOLLOW FOR MORE TRUE HISTORY", "anchor": "#history", "style": "archival",
         "font": "IMFellEnglishSC-Regular.ttf", "font_name": "IM FELL English SC",
         "title_color": r"&H007AC9E8&", "thumb_color": "0xE8C97A",   # parchment gold
+    },
+    # "If <movie> was AI-generated": trailer-first format - epic bed by
+    # default (MOOD_BY_CATEGORY sends it to music/trailer), electric violet
+    # title, reveal sound design like the story categories.
+    "AI Remake": {
+        "cta": "FOLLOW FOR MORE AI REMAKES", "anchor": "#aitrailer", "style": "cinematic",
+        "title_color": r"&H00F72F7B&", "thumb_color": "0xB05CFF",   # electric violet
+        "music_volume": 0.16,
+        "sfx": "reveal",
     },
 }
 
@@ -2076,6 +2086,7 @@ CATEGORY_HASHTAGS = {
     "Alternate Reality":   ["#alternatehistory", "#multiverse"],
     "Unsettling Everyday": ["#creepy", "#unsettling", "#liminal"],
     "Scary/Weird":         ["#creepy", "#scary", "#creepytok"],
+    "AI Remake":           ["#ai", "#aitrailer", "#aivideo", "#aimovie"],
     "Scary Story":         ["#horrortok", "#creepypasta", "#scary"],
     "True History":        ["#historytok", "#historyfacts", "#truestory"],
 }
