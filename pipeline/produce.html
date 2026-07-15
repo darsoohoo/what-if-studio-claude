@@ -158,6 +158,7 @@ button.next-step { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(139,1
           <option value="history">📜 True history</option>
           <option value="aimovie">🎬 If a movie was AI-generated</option>
         </select>
+        <button type="button" id="ideaSuggestBtn" title="Let the AI invent the idea too — one fresh suggestion for the selected kind lands in the box (a scary premise, a what-if, a documented event, or a movie pick). Edit it, then 💡 Draft it.">✨ Invent one</button>
         <button type="button" id="ideaBtn" class="primary">💡 Draft it</button>
       </div>
       <p class="status" id="ideaStatus" role="status" aria-live="polite" style="margin:4px 0 0"></p>
@@ -1471,6 +1472,22 @@ const IDEA_PLACEHOLDERS = {
 };
 $id("ideaKind").addEventListener("change", () => {
   $id("ideaText").placeholder = IDEA_PLACEHOLDERS[$id("ideaKind").value] || IDEA_PLACEHOLDERS._default;
+});
+$id("ideaSuggestBtn").addEventListener("click", async () => {
+  const btn = $id("ideaSuggestBtn"), st = $id("ideaStatus");
+  btn.disabled = true; btn.textContent = "✨ Inventing…";
+  st.className = "status"; st.textContent = "";
+  try {
+    const r = await api("/api/produce/idea-suggest", { kind: $id("ideaKind").value });
+    if (r.error) throw new Error(r.error);
+    $id("ideaText").value = r.idea;
+    st.className = "status good";
+    st.textContent = "✓ Idea invented — edit it if you like, then 💡 Draft it (or ✨ again for another).";
+  } catch (e) {
+    st.className = "status bad";
+    st.textContent = "Couldn't invent one: " + e.message;
+  }
+  btn.disabled = false; btn.textContent = "✨ Invent one";
 });
 $id("ideaBtn").addEventListener("click", async () => {
   const idea = $id("ideaText").value.trim();
