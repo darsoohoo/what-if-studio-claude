@@ -2686,6 +2686,46 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": str(exc)}, 500)
             return
 
+        if self.path == "/api/produce/openart-request":
+            # 🎨 OpenArt visuals mode: the pipeline can't call OpenArt's MCP
+            # itself (OAuth lives with Claude), so this stages a fulfillment
+            # request in the package's staging dir - Claude reads it,
+            # generates the clips via MCP (cast portraits as identity
+            # elements), drops them into the refv slots, and renders.
+            try:
+                queue = str(data.get("queue", ""))
+                slot = int(data.get("slot") or 0)
+                pkg = load_package(queue, slot)
+                d = produce_dir(staging_key(queue, slot, pkg))
+                segs = mv.narration_segments(pkg, 0)
+                req = {
+                    "created": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    "queue": queue, "slot": slot,
+                    "scenarioId": pkg.get("scenarioId", ""),
+                    "title": pkg.get("title", ""),
+                    "category": pkg.get("category", ""),
+                    "cast": pkg.get("cast") or [],
+                    "model": "byte-plus-seedance-2-mini",
+                    "resolution": str(data.get("resolution") or "480p"),
+                    "estimated_credits_per_clip": 80 if str(data.get("resolution") or "480p") == "480p" else 160,
+                    "rows": [{"row": i + 1,
+                              "spoken": mv.strip_dialogue_markup(s),
+                              "prompt": p}
+                             for i, (s, p) in enumerate(zip(segs, beat_prompts(pkg)))],
+                    "render": {"trailer": bool(data.get("trailer")),
+                               "elevenlabs": bool(data.get("elevenlabs")),
+                               "mood": str(data.get("mood") or "")},
+                    "status": "requested",
+                }
+                (d / "openart-request.json").write_text(json.dumps(req, indent=1),
+                                                        encoding="utf-8")
+                self.send_json({"ok": True, "rows": len(req["rows"]),
+                                "estimated_credits": len(req["rows"]) * req["estimated_credits_per_clip"],
+                                "dir": d.name})
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 400)
+            return
+
         if self.path == "/api/produce/idea-suggest":
             # ✨ Invent one: fill the idea box with a fresh AI-invented idea
             # for the selected kind. One tiny completion; drafting stays a

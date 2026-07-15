@@ -204,6 +204,7 @@ button.next-step { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(139,1
         <label class="opt" id="modeInfer" hidden><input type="radio" name="visMode" value="infer"> ⚡ <strong>AI video (tryinfer API)</strong> Model:
           <select id="vidModel" style="width:auto"></select>
           <span class="hint" id="apiHint" style="margin:0"></span></label>
+        <label class="opt" title="OpenArt's MCP is signed in through Claude, so the render can't call it directly — picking this stages a fulfillment request instead: tell Claude 'fulfill the OpenArt request' and it generates every beat as a Seedance Mini motion clip (cast portraits keep characters consistent), stages them, and renders. ≈80 credits (~$0.28) per clip at 480p — cheaper than seedance-pro via tryinfer."><input type="radio" name="visMode" value="openart"> 🎨 <strong>OpenArt AI video</strong> — via Claude MCP, one motion clip per beat, character-consistent. <span class="hint" style="margin:0;display:inline">≈80 cr/clip</span></label>
         <label class="opt"><input type="radio" name="visMode" value="images"> 🖼️ <strong>AI images</strong> — one styled picture per beat with gentle motion. Engine:
           <select id="imgEngine" style="width:auto">
             <option value="pollinations">Free — Pollinations</option>
@@ -526,7 +527,8 @@ function applyVisMode() {
   $id("importRow").classList.toggle("skipped", auto);
   $id("renderBtnLabel").textContent =
     visMode() === "infer" ? "⚡ Generate clips + render" :
-    visMode() === "images" ? "🖼️ Generate images + render" : "🎬 Render video";
+    visMode() === "images" ? "🖼️ Generate images + render" :
+    visMode() === "openart" ? "🎨 Stage OpenArt request" : "🎬 Render video";
 }
 document.querySelectorAll('input[name="visMode"]').forEach(r => r.addEventListener("change", applyVisMode));
 ["imgStyle", "imgEngine"].forEach(id => $id(id).addEventListener("change", () => {
@@ -1349,6 +1351,25 @@ $id("renderBtn").addEventListener("click", async () => {
     audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
   } catch (e) {}
   const mode = visMode();
+  if (mode === "openart") {
+    // No render here: stage the fulfillment request for Claude's MCP hands.
+    const rows = S.prompts.length;
+    if (!confirm(`This stages an OpenArt request for ${rows} motion clips `
+        + `(≈${rows * 80} credits at 480p, ~$${(rows * 80 * 0.0035).toFixed(2)}) — nothing is billed until `
+        + `Claude fulfills it. Continue?`)) return;
+    const r = await api("/api/produce/openart-request", {
+      queue: S.queue, slot: S.slot,
+      resolution: "480p",
+      trailer: $id("optTrailer").checked,
+      elevenlabs: $id("optEleven").checked,
+      mood: renderMood(),
+    });
+    if (r.error) { setRenderStatus(r.error, "bad"); return; }
+    setRenderStatus(`✓ Request staged (${r.rows} clips, ≈${r.estimated_credits} credits). `
+      + `Now tell Claude: “fulfill the OpenArt request” — it generates the clips via MCP, `
+      + `stages them on the beats, and renders.`, "good");
+    return;
+  }
   const engine = $id("imgEngine").value;
   const vidModel = $id("vidModel").value;
   const paidImages = mode === "images" && engine !== "pollinations";

@@ -111,3 +111,30 @@ Three levers, all applied:
 
 A/B/C listening set in openart-cast/voice-tests/: a-default.mp3 (old),
 b-creative.mp3 (stability 0), c-acted.mp3 (stability 0 + acted text).
+
+## 🎨 OpenArt visuals mode (fulfillment procedure)
+
+The Produce page's "OpenArt AI video" radio stages `openart-request.json` in
+the package's staging dir (the render can't call the MCP itself - OAuth
+lives with Claude). When Darren says "fulfill the OpenArt request":
+
+1. Find the newest `pipeline/produce/*/openart-request.json` with
+   status "requested". Confirm the estimated credits with Darren first if
+   the total exceeds 500.
+2. For each row: generate a Seedance Mini `element2video` clip
+   (resolution/model from the request, 9:16, duration 4-5s,
+   generateAudio true). Use the row's `prompt` + the trailer look; when a
+   cast character appears in the row's spoken line or prompt, attach their
+   cached portrait (openart-cast/cast.json) as an image element for
+   identity. These are ambience clips, NOT talking clips - do not attach
+   voice samples and do NOT mark lipsync.json (the TTS voice track carries
+   the lines; talking hero clips are the separate "lipsync it" flow, which
+   can layer on top afterward by overwriting specific rows).
+3. Respect the 2-concurrent generation limit; log EVERY clip to the spend
+   ledger as it completes; download each to refv-NN.mp4 (curl with a
+   browser User-Agent - urllib gets 403) and set ref-choice video for
+   every row.
+4. Set the request's status to "fulfilled" (+ credits spent), then render
+   via the CLI with the request's render flags (--trailer / --elevenlabs
+   as recorded), verify the log, and report per-clip + total spend with
+   the account balance before/after.
