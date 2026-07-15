@@ -113,6 +113,7 @@ MOOD_LOOKS = {
     "inspiring": "sunrise glow, hopeful upward framing, expansive sky",
     "deadpan": "flat symmetrical composition, even lighting, expressionless subjects held perfectly still",
     "trailer": "epic movie-trailer frame, anamorphic cinematic look, teal and orange grade, dramatic rim light, atmospheric haze, larger-than-life scale",
+    "trailer-vo": "epic movie-trailer frame, anamorphic cinematic look, teal and orange grade, dramatic rim light, atmospheric haze, larger-than-life scale",
 }
 
 
@@ -409,7 +410,7 @@ def strip_dialogue_markup(text):
 
 
 def synthesize_cast(segments, vconf, out_mp3, tmp, ffmpeg, ffprobe, eleven=None,
-                    narrator_tempo=1.0):
+                    narrator_tempo=1.0, pad=0.15):
     """Multi-voice narration for segments carrying [Name] "line" dialogue.
     Synthesizes each chunk with its voice, gives character lines a subtle
     in-scene treatment (thinner low end + a touch of slap echo), stitches
@@ -455,7 +456,7 @@ def synthesize_cast(segments, vconf, out_mp3, tmp, ffmpeg, ffprobe, eleven=None,
         # Normalize every chunk to one wav format so the concat is seamless;
         # dialogue gets the in-scene tone; a short pad keeps a beat of air
         # between speakers (word timings are unaffected - it's trailing).
-        filt = "aresample=44100,aformat=sample_fmts=s16:channel_layouts=mono,apad=pad_dur=0.15"
+        filt = f"aresample=44100,aformat=sample_fmts=s16:channel_layouts=mono,apad=pad_dur={pad}"
         if speaker is not None:
             filt = "highpass=f=140,aecho=0.8:0.55:14|29:0.18|0.09," + filt
         elif narrator_tempo != 1.0:
@@ -1537,6 +1538,58 @@ def synth_reveal_sfx(path, riser=3.0, tail=2.2):
         w.writeframes(out.tobytes())
 
 
+DREAD_RATE = 24000   # rumble + metallic highs live well below 12 kHz
+
+
+def synth_dread_bed(path, duration, seed=911):
+    """Write a mono WAV bed of unsettling sound design in the American Horror
+    Story title-theme school: a detuned sub drone slowly beating against
+    itself, a double heartbeat thump, breath-like noise swells, and sparse
+    metallic shrieks. Synthesized from scratch - no samples, nothing to
+    license. Deterministic per seed so re-renders sound identical.
+    Used as the default --trailer bed for horror instead of epic orchestra."""
+    n = int(duration * DREAD_RATE)
+    rng = random.Random(seed)
+    out = array.array("h", bytes(2 * n))
+    shrieks, t = [], 3.5
+    while t < duration - 2.5:
+        shrieks.append((t, rng.uniform(0.7, 1.0), rng.choice((1490.0, 1730.0, 2090.0))))
+        t += rng.uniform(4.5, 9.5)
+    ph1 = ph2 = 0.0
+    lp = 0.0
+    two_pi = 2.0 * math.pi
+    for i in range(n):
+        t = i / DREAD_RATE
+        # detuned drone pair (48 vs 48.7 Hz) breathing on a 13 s cycle
+        ph1 += two_pi * 48.0 / DREAD_RATE
+        ph2 += two_pi * 48.7 / DREAD_RATE
+        amp = 0.16 * (math.sin(ph1) + math.sin(ph2)) * (0.65 + 0.35 * math.sin(two_pi * t / 13.0))
+        # double heartbeat every 1.6 s
+        hb_t = t % 1.6
+        for off in (0.0, 0.24):
+            d = hb_t - off
+            if 0.0 <= d < 0.2:
+                amp += 0.34 * math.exp(-d * 26.0) * math.sin(two_pi * 52.0 * d)
+        # breath: lowpassed noise swelling on a 7 s cycle
+        lp += 0.03 * (rng.uniform(-1, 1) - lp)
+        amp += lp * 1.7 * max(0.0, math.sin(two_pi * t / 7.0 - 1.2)) ** 3
+        # sparse metallic shrieks: inharmonic cluster, slow attack, long decay
+        for st, gain, base in shrieks:
+            d = t - st
+            if 0.0 <= d < 2.4:
+                env = min(1.0, d / 0.3) * math.exp(-d * 1.7) * 0.16 * gain
+                amp += env * (math.sin(two_pi * base * d)
+                              + 0.7 * math.sin(two_pi * base * 1.38 * d)
+                              + 0.5 * math.sin(two_pi * base * 1.83 * d))
+        # Hotter master than a typical bed: this IS the soundtrack.
+        out[i] = int(32767 * max(-1.0, min(1.0, amp * 1.35)))
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(DREAD_RATE)
+        w.writeframes(out.tobytes())
+
+
 def segment_spans(segments, words, total):
     """Map each spoken segment to a (start, end) time span using word counts."""
     counts = [max(1, len(clean_for_tts(s).split())) for s in segments]
@@ -1950,6 +2003,10 @@ def main():
                              "(python get_music.py fetches the tracks) and the riser + impact on "
                              "the reveal beat for EVERY category. Pair with --mood trailer for "
                              "trailer-look visuals and trailer-speak rewrites on the Produce page.")
+    parser.add_argument("--trailer-bed", choices=["auto", "dread", "epic"], default="auto",
+                        help="Soundtrack for --trailer: 'dread' = the synthesized AHS-style "
+                             "unsettling bed, 'epic' = an orchestral track from music/trailer. "
+                             "'auto' (default) picks dread for horror categories, epic otherwise.")
     parser.add_argument("--ironic-music", nargs="?", const="tail", choices=["tail", "stop"],
                         default=None,
                         help="Sincerely cheerful music that contradicts the visuals and tape-stops "
@@ -2165,7 +2222,8 @@ def main():
                                     "narrator_id": el_voice_id,
                                     "voices": elevenlabs_voices(el_key),
                                     "settings": el_settings},
-                            narrator_tempo=TRAILER_TEMPO if args.trailer else 1.0)
+                            narrator_tempo=TRAILER_TEMPO if args.trailer else 1.0,
+                            pad=0.7 if args.trailer else 0.15)
                     else:
                         words = synthesize_elevenlabs(text, el_voice_id, args.el_model,
                                                       tmp / "voice.mp3", el_key,
@@ -2187,7 +2245,8 @@ def main():
                 else:
                     if has_dialogue:
                         words, cast = synthesize_cast(
-                            raw_segments, vconf, tmp / "voice.mp3", tmp, ffmpeg, ffprobe)
+                            raw_segments, vconf, tmp / "voice.mp3", tmp, ffmpeg, ffprobe,
+                            pad=0.7 if args.trailer else 0.15)
                     else:
                         words = asyncio.run(synthesize(text, vconf, tmp / "voice.mp3"))
                     total = probe_duration(ffprobe, tmp / "voice.mp3")
@@ -2303,9 +2362,23 @@ def main():
                 else:
                     print("  visuals: generated gradient")
 
-                music = pick_music(pkg, args.music,
-                                   override=("ironic" if args.ironic_music
-                                             else "trailer" if args.trailer else None))
+                # Trailer soundtrack: horror gets the synthesized AHS-style
+                # dread bed by default (pulse, drone, metallic shrieks -
+                # character lines trade against it); everything else keeps
+                # the epic orchestral folder. --trailer-bed overrides.
+                dread = args.trailer and (
+                    args.trailer_bed == "dread"
+                    or (args.trailer_bed == "auto"
+                        and branding_for(pkg).get("sfx") == "reveal"))
+                music = None
+                if dread:
+                    synth_dread_bed(tmp / "music.wav", total + 1.0)
+                    print("  music: synthesized dread bed (heartbeat pulse, detuned drone,"
+                          " metallic shrieks)")
+                else:
+                    music = pick_music(pkg, args.music,
+                                       override=("ironic" if args.ironic_music
+                                                 else "trailer" if args.trailer else None))
                 if music:
                     shutil.copy(music, tmp / ("music" + music.suffix))
                     print(f"  music: {music.parent.name}/{music.name}")
@@ -2319,7 +2392,7 @@ def main():
                               f" then tape-stop"
                               + (" + warped tail" if args.ironic_music == "tail" else " to silence"))
 
-                final_render(ffmpeg, base, pkg, total, bool(music), out_path.resolve(), tmp,
+                final_render(ffmpeg, base, pkg, total, bool(music) or dread, out_path.resolve(), tmp,
                              clip_audio=args.clip_audio if base is not None else 0.0,
                              sfx_delay_ms=sfx_delay_ms)
 

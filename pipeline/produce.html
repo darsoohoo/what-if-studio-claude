@@ -247,7 +247,7 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
         <label class="opt" title="Movie-trailer treatment: an epic cinematic bed (percussion hits, swelling strings) with the riser + impact landing on the reveal beat, whatever the category. With 🎭 Mood on Auto, generated visuals render in Trailer mood — anamorphic teal-and-orange, dramatic rim light. For trailer-speak narration, set 🎭 Trailer and hit 📝 Script from prompts."><input type="checkbox" id="optTrailer"> 🎬 Movie-trailer feel</label>
       </div>
       <p class="hint" id="ironicHint" hidden>🎵 + 🌤️ The full contradiction: the song stays sincerely cheerful and generated visuals render in <strong>Wholesome</strong> mood (soft warm light, gentle smiles) while the script goes wrong — until the tape-stop on the reveal. Pick an explicit 🎭 mood above to override the visual look; already-cached visuals keep their old look until you delete the scenario's cache entry.</p>
-      <p class="hint" id="trailerHint" hidden>🎬 This checkbox changes the <strong>sound and look</strong>: epic bed, riser + impact on the reveal, slower deeper narrator delivery, Trailer-mood visuals. <strong>It does NOT rewrite your script</strong> — for trailer-speak narration and <strong>talking characters</strong>, first pick <strong>🎞️ Trailer</strong> in the 🎭 Mood dropdown and hit <strong>📝 Script from prompts</strong> (it writes the cut-card lines and the <code>[Name] "line"</code> dialogue that gives each character their own voice), then render. You can also type <code>[Name] "line"</code> into any spoken line yourself.</p>
+      <p class="hint" id="trailerHint" hidden>🎬 This checkbox changes the <strong>sound and look</strong>: for horror it lays a <strong>synthesized dread bed</strong> (heartbeat pulse, detuned drone, metallic shrieks — the AHS-intro school) under the lines, other categories get the epic orchestral bed; plus the riser + impact on the reveal, breathing room between dialogue lines, slower narrator delivery, and Trailer-mood visuals. <strong>It does NOT rewrite your script</strong> — first pick <strong>🎞️ Trailer — dialogue only</strong> (modern: no narrator, just character lines trading against the sound design) or <strong>🎙 Trailer — narrated</strong> (the classic VO) in the 🎭 Mood dropdown and hit <strong>📝 Script from prompts</strong>, then render. You can also type <code>[Name] "line"</code> into any spoken line yourself.</p>
       <div class="row">
         <button type="button" id="renderBtn" class="primary">🎬 Render video</button>
         <button type="button" id="openVideosBtn" hidden>See it in Videos →</button>
@@ -578,7 +578,8 @@ const MOODS = [
   ["sarcastic", "🙄 Sarcastic"],
   ["witty", "🧠 Witty"],
   ["adventurous", "🧗 Adventurous"],
-  ["trailer", "🎞️ Trailer"],
+  ["trailer", "🎞️ Trailer — dialogue only"],
+  ["trailer-vo", "🎙 Trailer — narrated"],
   ["dramatic", "🎬 Dramatic"],
   ["mysterious", "🌫️ Mysterious"],
   ["wholesome", "🌤️ Wholesome"],

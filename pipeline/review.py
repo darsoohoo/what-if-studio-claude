@@ -307,7 +307,8 @@ def draft_prompt(title, category, runtime=60, beats=5, idea=None, mood=None):
         + ('Build the whole thing from these details the creator supplied - keep every '
            f'named fact, person, and place: "{idea}" ' if idea else "")
         + (f"Tell it in a {MOODS[mood]} voice. " if mood and mood in MOODS else "")
-        + (TRAILER_DIALOGUE_RULE if mood == "trailer" else "")
+        + (TRAILER_ONLY_RULE if mood == "trailer"
+           else TRAILER_DIALOGUE_RULE if mood == "trailer-vo" else "")
     )
     if category == "Scary Story":
         # Narrative horror in the modern social-thriller register (the
@@ -781,7 +782,7 @@ Draft batches: while the dashboard runs, it drafts 3 fresh 90s Scary Story packa
 Dashboard pages (this server, 127.0.0.1:8765): Videos (review renders), Produce (per-beat visuals, voices, re-render), Results (log posted videos' views/likes by hand; rollups by category AND by render format - Classic vs Ironic cheerful vs Movie trailer, with mood/visuals badges - show what's winning), Spend (API costs), Help.
 Produce per-beat references: attach an image and/or your own video to any beat; the radio picks which one the beat uses and it ALWAYS lands in the final video - image = the picture is that beat's visual with gentle motion (in AI-video mode it's animated as the clip's first frame instead), video = the clip plays as-is (never billed). A 🎭 Mood dropdown (Auto = category default, or Eerie, Funny, Sarcastic, Witty, Adventurous, Dramatic, Mysterious, Wholesome, Inspiring, Deadpan) steers two rewrite buttons: "Script from prompts" writes the whole spoken script fitted to the visual prompts, "Prompts from script" re-imagines every visual prompt from the spoken lines; both save with the old version kept in History. The same mood flavors every ✨ line rewrite, and an explicit (non-Auto) mood also restyles generated visuals at render time.
 🎵 Ironic cheerful music (Render checkbox, or --ironic-music): a sincerely happy bed (music/ironic - 1950s swing, ragtime, elevator muzak; python get_music.py fetches them) that contradicts scary visuals, plays straight until the reveal beat, then tape-stops on its first word with a soft impact and resumes slowed + quiet. Any category, any visuals mode. With Mood on Auto it also renders generated visuals in Wholesome mood - smiling pictures, cheerful song, dark script - the full Jordan Peele contradiction in one click (an explicit mood overrides the look).
-🎬 Movie-trailer feel (Render checkbox, or --trailer; excludes the ironic checkbox): epic cinematic bed from music/trailer + the riser and impact on the reveal for any category; with Mood on Auto, generated visuals render in Trailer mood (anamorphic teal-and-orange). Pick the Trailer mood + "Script from prompts" for trailer-speak narration WITH character dialogue.
+🎬 Movie-trailer feel (Render checkbox, or --trailer; excludes the ironic checkbox): for horror categories the soundtrack is a synthesized AHS-style dread bed (heartbeat pulse, detuned drone, metallic shrieks - nothing to license), other categories get an epic bed from music/trailer (--trailer-bed overrides); plus riser + impact on the reveal, extra breathing room between dialogue lines, slower narrator delivery, and Trailer-mood visuals when Mood is Auto. Two trailer moods write the script: "Trailer - dialogue only" (DEFAULT, modern: no narrator, every beat is 1-2 character lines, character-line cold open, silent outro under the follow card) and "Trailer - narrated" (classic VO fragments with 2-3 dialogue lines). Pick one + "Script from prompts", then render.
 🎙 Character dialogue: any spoken line can embed [Name] "the line" (the Trailer script writer adds 2-3 itself; users can type them into any beat). Each named character gets their own TTS voice automatically (edge-tts cast, or the ElevenLabs account's voices), with a light in-scene room tone; the narrator keeps the chosen voice, captions stay word-synced, the render log prints the cast. Dialogue captions are speaker-aware: italic + a per-character tint with a small "- NAME" flash when a character starts speaking. No lip-sync - trailer-style cuts carry it.
 🧬 Cast memory: new drafts and "Script from prompts" write a cast (name + fixed 6-12 word look) into the package; every visual prompt that mentions a character pins that exact look (polish is instructed, the free path expands the first name mention), so the same person appears across clips - prompt-level consistency, strong resemblance rather than a perfect face lock.
 💡 Draft from your own idea (top of Produce): paste a summary or details, pick scary/what-if/true-history, and Draft it builds the title, script, and shot prompts from YOUR notes (keeps every named fact), honoring Clips and Mood; the package opens ready to render.
@@ -1316,12 +1317,16 @@ MOODS = {
     "wholesome": "wholesome - warm, kind, quietly uplifting",
     "inspiring": "inspiring - hopeful, motivating, big-picture wonder",
     "deadpan": "deadpan - flat matter-of-fact delivery that lets the absurdity speak",
-    "trailer": "movie-trailer VOICEOVER - each beat is a CHAIN of short punchy fragments "
-               "(2-8 words each) separated by dramatic pauses written as ' - ' or '...', "
-               "stacked until the beat reaches its FULL word count (fragments are short, "
-               "beats are not - never hand back a 4-word beat), the 'In a world' cadence "
-               "without the cliche, epic escalating stakes, built to a final line that "
-               "hits like a title card",
+    "trailer": "modern movie-trailer - NO narrator at all: nothing but short in-scene "
+               "character lines trading against silence, each one raising the dread "
+               "another notch, the way current horror trailers cut dialogue snippets "
+               "against sound design",
+    "trailer-vo": "classic movie-trailer VOICEOVER - each beat is a CHAIN of short "
+                  "punchy fragments (2-8 words each) separated by dramatic pauses "
+                  "written as ' - ' or '...', stacked until the beat reaches its FULL "
+                  "word count (fragments are short, beats are not - never hand back a "
+                  "4-word beat), the 'In a world' cadence without the cliche, epic "
+                  "escalating stakes, built to a final line that hits like a title card",
 }
 
 # Trailer scripts trade the narrator against in-scene character lines - the
@@ -1338,14 +1343,40 @@ TRAILER_DIALOGUE_RULE = (
     'list so their look and voice stay tied. Keep the narrator carrying the '
     'story; never open a beat with dialogue. ')
 
+# Dialogue-ONLY trailers (the modern school - the default 🎞️ Trailer mood):
+# every spoken word belongs to a character; the "narrator" is the sound design.
+TRAILER_ONLY_RULE = (
+    "This is a MODERN DIALOGUE-ONLY TRAILER - there is NO narrator anywhere. "
+    "EVERY beat is just 1-2 short in-scene character lines in exactly this "
+    'format: [Name] "the line" (3-10 words each), and NOTHING outside the '
+    "bracketed lines. Example of a correct beat: "
+    '[Mara] "You hear it too, don\'t you?" [Sheriff] "Go home. Now." '
+    "The square-bracket tag is REQUIRED and is not a stage direction - the "
+    "renderer gives each named character their own real voice. Use 2-3 "
+    "recurring characters with the SAME names as the cast list, and escalate "
+    "the dread purely through what they say to each other. ")
+
 _DLG_MARK_RE = re.compile(r'\[[A-Za-z][A-Za-z0-9 .\'-]{0,24}\]\s*["“]')
 
 
+def _narrator_words(text):
+    """Words in a line spoken by the narrator (outside [Name] "..." chunks)."""
+    return sum(len(t.split()) for sp, t in mv.split_dialogue(text) if sp is None)
+
+
 def require_trailer_dialogue(beats, mood):
-    """Trailer scripts without character lines defeat the point - reject so
-    the retry (or the engine fallback) rolls again."""
-    if mood == "trailer" and sum(1 for b in beats if _DLG_MARK_RE.search(b)) < 2:
-        raise RuntimeError('the writer left out the [Name] "line" character dialogue - try again')
+    """Trailer scripts that ignore the dialogue contract defeat the point -
+    reject so the retry (or the engine fallback) rolls again."""
+    if mood == "trailer-vo":
+        if sum(1 for b in beats if _DLG_MARK_RE.search(b)) < 2:
+            raise RuntimeError('the writer left out the [Name] "line" character dialogue - try again')
+    elif mood == "trailer":
+        if any(not _DLG_MARK_RE.search(b) for b in beats):
+            raise RuntimeError('every beat needs a [Name] "line" character line - try again')
+        # Up to 2 stray words tolerated (a dangling "Later -"); a narrated
+        # sentence is not.
+        if any(_narrator_words(b) > 2 for b in beats):
+            raise RuntimeError("the writer added narrator text to a dialogue-only trailer - try again")
 
 
 def resolve_mood(mood, pkg):
@@ -1393,18 +1424,27 @@ def script_from_prompts(pkg, mood):
         'Reply with ONLY minified JSON, no markdown fences, exactly: '
         '{"hook":"...","beats":[' + ",".join(['"..."'] * (n - 2)) + '],"outro":"...",'
         '"cast":[{"name":"...","look":"..."}]} '
-        "hook = one gripping opening line. "
-        + (f"beats = exactly {n - 2} spoken lines, {words} words each. "
-           if mood != "trailer" else
+        + ("hook = one gripping opening line. "
+           f"beats = exactly {n - 2} spoken lines, {words} words each. "
+           "outro = a short payoff line plus a one-sentence follow call-to-action. "
+           if mood not in ("trailer", "trailer-vo") else
+           # Classic narrated trailer: fragments stacked to the full budget.
+           "hook = one gripping opening line. "
            f"beats = exactly {n - 2} spoken lines. This is a TRAILER: build each "
            f"beat as a chain of 3-5 short fragments separated by ' - ' or '...', "
            f"and every beat must still total {words} words - COUNT them, never "
-           "stop after one fragment. ")
-        + "outro = a short payoff line plus a one-sentence "
-        "follow call-to-action. cast = any recurring characters you named (0-3): "
+           "stop after one fragment. "
+           "outro = a short payoff line plus a one-sentence follow call-to-action. "
+           if mood == "trailer-vo" else
+           # Modern dialogue-only trailer: characters carry everything.
+           'hook = the cold open - also a character line in [Name] "line" format. '
+           f"beats = exactly {n - 2} beats. "
+           'outro = "" (an empty string - nobody speaks over the closing card). ')
+        + "cast = any recurring characters you named (0-3): "
         "first name + look, a 6-12 word visual description that stays identical "
         "on screen; empty list if none. No hashtags, no emoji, no stage directions. "
-        + (TRAILER_DIALOGUE_RULE if mood == "trailer" else "")
+        + (TRAILER_ONLY_RULE if mood == "trailer"
+           else TRAILER_DIALOGUE_RULE if mood == "trailer-vo" else "")
         + "\n\nSHOTS:\n" + numbered
     )
     def attempt():
@@ -1416,21 +1456,29 @@ def script_from_prompts(pkg, mood):
         clean = lambda v, cap: re.sub(r"\s+", " ", str(v)).strip()[:cap]
         beats = [clean(b, 900) for b in (data.get("beats") or []) if clean(b, 900)]
         hook, outro = clean(data.get("hook", ""), 600), clean(data.get("outro", ""), 600)
-        if not hook or not outro or len(beats) != n - 2:
+        if not hook or (not outro and mood != "trailer") or len(beats) != n - 2:
             raise RuntimeError(f"the writer returned {len(beats)} beats for {n - 2} shots - try again")
-        # The video is exactly as long as the narration - a rewrite that
-        # undershoots the word budget silently shrinks the whole video
-        # (trailer fragments are the classic offender).
-        lo = int(words.split("-")[0])
-        got = sum(len(b.split()) for b in beats)
-        if got < 0.6 * lo * (n - 2):
-            raise RuntimeError(f"the writer came back too short ({got} words for a "
-                               f"~{lo * (n - 2)}-word script) - try again")
+        if mood == "trailer":
+            # Dialogue-only: sparse is correct (lines trade against sound
+            # design), but the hook must be a character line too and no
+            # narrator text may sneak in anywhere.
+            if not _DLG_MARK_RE.search(hook) or _narrator_words(hook) > 4:
+                raise RuntimeError('the cold-open hook must be a [Name] "line" character line - try again')
+            outro = ""   # nobody speaks over the closing card
+        else:
+            # The video is exactly as long as the narration - a rewrite that
+            # undershoots the word budget silently shrinks the whole video
+            # (trailer-vo fragments are the classic offender).
+            lo = int(words.split("-")[0])
+            got = sum(len(b.split()) for b in beats)
+            if got < 0.6 * lo * (n - 2):
+                raise RuntimeError(f"the writer came back too short ({got} words for a "
+                                   f"~{lo * (n - 2)}-word script) - try again")
         require_trailer_dialogue(beats, mood)
         return {"hook": hook, "beats": beats, "outro": outro,
                 "cast": parse_cast(data.get("cast"))}
-    # Trailer asks for more (fragments + budget + dialogue) - allow more rolls.
-    return _retry_generate(attempt, tries=5 if mood == "trailer" else 3)
+    # Trailers ask for more (format + dialogue rules) - allow more rolls.
+    return _retry_generate(attempt, tries=5 if mood in ("trailer", "trailer-vo") else 3)
 
 
 def prompts_from_script(pkg, mood):
@@ -2448,17 +2496,25 @@ class Handler(BaseHTTPRequestHandler):
                 # own scenario prefix so caches/exports are recognizably yours.
                 conf = dict(IDEA_KINDS[kind])
                 conf["prefix"] = "idea"
-                try:
-                    beats = max(3, min(18, int(data.get("clips") or 7) - 2))
-                except (TypeError, ValueError):
-                    beats = 5
                 mood = str(data.get("mood") or "")
                 mood = mood if mood in MOODS else None   # Auto = the category's own register
+                try:
+                    clips = max(5, min(20, int(data.get("clips") or 7)))
+                except (TypeError, ValueError):
+                    clips = 7
+                # Dialogue-only trailers have no spoken outro and their hook
+                # is the first character line - ask for `clips` beats and
+                # redistribute; everything else is hook + beats + outro.
+                beats = clips if mood == "trailer" else max(3, min(18, clips - 2))
                 title = re.sub(r"\s+", " ", str(data.get("title", ""))).strip()[:120] \
                     or title_from_idea(idea, conf["category"])
                 draft = ai_draft(title, conf["category"], conf["runtime"], beats,
                                  idea=idea, mood=mood)
                 pkg = scaffold_batch_package(conf, title, draft, conf["runtime"])
+                if mood == "trailer":
+                    pkg["hooks"] = [pkg["beats"][0]]
+                    pkg["beats"] = pkg["beats"][1:]
+                    pkg["outro"] = ""
                 file = write_package_export(pkg, "idea", title)
                 self.send_json({"ok": True, "file": file, "slot": 1, "title": title})
             except Exception as exc:
