@@ -281,6 +281,8 @@ button.next-step { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(139,1
             <option value="tragedy">💔 Tragedy — emotional strings</option>
             <option value="wonder">✨ Wonder — awe, discovery</option>
           </select>
+          <button type="button" id="scoreAddBtn" title="Add your own tracks to the selected genre (YouTube Audio Library, purchased music, anything you have the rights to). They're saved into pipeline\music\trailer\<genre> and picked like stock tracks — loudness-normalized, so any recording level works. If the license requires attribution you can paste the credit line and every post kit that uses the track will carry it.">⬆ Add tracks</button>
+          <input type="file" id="scoreFiles" accept=".mp3,.m4a,.wav,.ogg,.flac" multiple hidden>
         </label>
       </div>
       <p class="hint" id="ironicHint" hidden>🎵 + 🌤️ The full contradiction: the song stays sincerely cheerful and generated visuals render in <strong>Wholesome</strong> mood (soft warm light, gentle smiles) while the script goes wrong — until the tape-stop on the reveal. Pick an explicit 🎭 mood above to override the visual look; already-cached visuals keep their old look until you delete the scenario's cache entry.</p>
@@ -1313,6 +1315,41 @@ function updatePairHints() {
 }
 $id("scoreSel").addEventListener("change", () => {
   try { localStorage.setItem("wis.score", $id("scoreSel").value); } catch (e) {}
+});
+/* ⬆ Add your own score tracks: files land in music\trailer\<genre> and the
+   picker treats them like stock. Optional credit line -> credits.json. */
+$id("scoreAddBtn").addEventListener("click", () => {
+  if (!$id("scoreSel").value) {
+    alert("Pick a genre first (not Auto) so the tracks land in the right folder.");
+    return;
+  }
+  $id("scoreFiles").click();
+});
+$id("scoreFiles").addEventListener("change", async () => {
+  const files = [...$id("scoreFiles").files];
+  $id("scoreFiles").value = "";
+  if (!files.length) return;
+  const genre = $id("scoreSel").value;
+  const credit = prompt(
+    "Attribution line for these tracks (added to every post kit that uses them).\n"
+    + 'Leave empty if the license needs none (e.g. YouTube Audio Library "no attribution required").', "");
+  if (credit === null) return;   // cancelled
+  setRenderStatus(`🎼 Uploading ${files.length} track(s) to ${genre}…`, "");
+  let ok = 0; const fail = [];
+  for (const f of files) {
+    try {
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      let bin = "";
+      for (let i = 0; i < bytes.length; i += 32768)
+        bin += String.fromCharCode(...bytes.subarray(i, i + 32768));
+      const r = await api("/api/music/upload",
+        { genre, name: f.name, credit: credit.trim(), data: btoa(bin) });
+      if (r && r.ok) ok++; else fail.push(`${f.name} (${(r && r.error) || "upload failed"})`);
+    } catch (e) { fail.push(`${f.name} (${e.message})`); }
+  }
+  setRenderStatus(`🎼 ${ok} track(s) added to ${genre} — the next ${genre} trailer can pick them`
+    + (credit.trim() ? ", credit line saved" : "")
+    + (fail.length ? `. Failed: ${fail.join(", ")}` : "."), fail.length ? "bad" : "good");
 });
 (() => {
   let s = null;

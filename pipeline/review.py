@@ -3063,6 +3063,41 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": str(exc)}, 502)
             return
 
+        if self.path == "/api/music/upload":
+            # 🎼 drop-in scores from the Produce page: save an audio file
+            # into its trailer genre folder and (optionally) its credit
+            # line into credits.json so the post kit carries it. Local
+            # dashboard only - the file never leaves this machine.
+            try:
+                genre = str(data.get("genre") or "").strip().lower()
+                if genre not in mv.TRAILER_SCORES:
+                    raise RuntimeError("unknown genre")
+                name = Path(str(data.get("name") or "")).name
+                name = re.sub(r"[^A-Za-z0-9 ._'()-]", "-", name).strip(" .")
+                if Path(name).suffix.lower() not in {".mp3", ".m4a", ".wav",
+                                                     ".ogg", ".flac"}:
+                    raise RuntimeError("audio files only (.mp3 .m4a .wav .ogg .flac)")
+                raw = base64.b64decode(str(data.get("data") or ""))
+                if len(raw) < 10_000:
+                    raise RuntimeError("that file looks empty/truncated")
+                if len(raw) > 80_000_000:
+                    raise RuntimeError("file too large (80 MB max)")
+                dest = HERE / "music" / "trailer" / genre
+                dest.mkdir(parents=True, exist_ok=True)
+                (dest / name).write_bytes(raw)
+                credit = re.sub(r"\s+", " ", str(data.get("credit") or "")).strip()[:300]
+                if credit:
+                    cpath = HERE / "music" / "credits.json"
+                    credits = (json.loads(cpath.read_text(encoding="utf-8"))
+                               if cpath.is_file() else {})
+                    credits[name] = credit
+                    cpath.write_text(json.dumps(credits, indent=2), encoding="utf-8")
+                self.send_json({"ok": True, "file": f"music/trailer/{genre}/{name}",
+                                "credited": bool(credit)})
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 400)
+            return
+
         if self.path == "/api/produce/draft-idea":
             # 💡 Draft ONE package from the creator's own summary/details:
             # title (invented unless supplied), script, and prompts, honoring
