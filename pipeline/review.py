@@ -753,7 +753,7 @@ IDEA_SUGGEST_PROMPTS = {
         'Suggest ONE famous movie for an "AI language" trailer riff (all '
         "dialogue becomes invented words) plus a language whose sound makes "
         "the gag land - pick from: english, chinese, spanish, french, "
-        'japanese, german. Iconic talky scenes work best; avoid Disney-owned '
+        'japanese, german, tagalog. Iconic talky scenes work best; avoid Disney-owned '
         'properties. Reply exactly as "<Movie> - <language>". '
         'Reply with ONLY minified JSON, exactly: {"idea":"..."}'),
 }
@@ -773,6 +773,9 @@ BABBLE_LANGS = {
                 "'Kanoshi tarumeki, sondato yuru!')",
     "german": "AI German - pseudo-German with hard compounds and clusters "
               "('Der schwanktel vurmacht ein grolzen, nichtbar!')",
+    "tagalog": "AI Tagalog - pseudo-Tagalog with its ma-/nag-/pag- prefixes, "
+               "-ng endings, syllable reduplication, and the po particle "
+               "('Nagkalambo ka ng talumpa, sige po!')",
 }
 
 
@@ -791,15 +794,18 @@ _BABBLE_SYLLABLES = {
                  "yu", "mi", "ha", "re", "tsu", "ko", "na", "ri"],
     "german": ["schwan", "ktel", "vur", "macht", "grol", "zen", "nicht", "bar",
                "ver", "stein", "hoff", "brau", "dun", "kel", "wald", "ge", "mor", "gen"],
+    "tagalog": ["ma", "na", "ka", "pa", "la", "ta", "ba", "ga", "sa", "lam",
+                "bo", "nag", "tan", "po", "gu", "han", "din", "yan"],
 }
 
 # Real words that must never survive inside babble dialogue (a leak detector,
 # not a dictionary - the fallback generator handles chronic leakers).
-_BABBLE_LEAKS = set("""the and you your yours it its is are was were be been this that
-these those what who why how when where we they them our their he she his her him
-not no yes never always feel feels felt wrong right everything nothing something
-listen look see hear know think want need must can cannot will would stop go come
-here there now then king queen father mother brother sister run hide help me""".split())
+_BABBLE_LEAKS = set("""i a an of to in on at do did am the and you your yours it its
+is are was were be been this that these those what who why how when where we they
+them our their he she his her him not no yes never always feel feels felt wrong
+right everything nothing something listen look see hear know think want need must
+can cannot will would stop go come here there now then king queen father mother
+brother sister run hide help me saw said says tell told""".split())
 
 
 def _fallback_babble(lang, n_words, seed_text):
