@@ -771,10 +771,14 @@ IDEA_SUGGEST_PROMPTS = {
 # "AI language" variant: the movie riff, but ALL dialogue is invented
 # pseudo-language - sounds like the target language, means nothing.
 BABBLE_LANGS = {
-    "english": "AI English - nonsense that has the rhythm, stress and phonology of "
-               "casual AMERICAN English (Simlish-style: 'Wanna nofar tu keeblin, da sarvo!'). "
-               "It must NOT drift German: no doubled 'oo/ah/eh' vowels, no 'weh/deh/zeh', "
-               "keep English word shapes ('nivir', 'tugithir', 'sumbrethin')",
+    "english": "AI English - the fake-English-gibberish genre: it sounds exactly like "
+               "casual AMERICAN English but the content words are invented. THE TRICK: "
+               "keep the small glue words REAL (I, you, the, that, just, gonna, wanna, "
+               "like, what, so, don't) - they carry the American sound - and invent every "
+               "NOUN, VERB and ADJECTIVE with hard English shapes: -er/-ing/-tion/-s "
+               "endings, r-colored vowels, consonant clusters (st-, br-, fl-), flapped t. "
+               "Words NEVER end in open vowels like -i/-o/-u (that reads French/Italian). "
+               "Example: 'I can't burlieve you jurst sorded that, man!'",
     "chinese": "AI Chinese - romanized pseudo-Mandarin syllables (zh/x/q/sh + ao/ang/ing/ou, "
                "1-2 syllable words: 'Zhao ming tselu, wang shi bao!')",
     "spanish": "AI Spanish - pseudo-Spanish with its vowel endings and rolling rhythm "
@@ -841,16 +845,44 @@ going came come better worse best worst enough much many miss missed lost foreve
 soon later once twice again heart hearts young happy sad cry cried tears""".split())
 
 
+# Fake-English glue: the real function/filler words that CARRY the American
+# sound (the genre trick: real glue + invented content words). These stay
+# untouched in AI-English lines; everything else real gets bent.
+_BABBLE_GLUE = set("""a an the i you he she it we they me him them my your his
+her its our their this that these those and but or so if just gonna wanna
+gotta kinda like really literally totally okay ok yeah no not man dude bro
+what who why how when where huh right well oh hey come on don't can't won't
+didn't ain't wasn't isn't it's i'm you're that's what's is are was were be
+been am do did does have has had will would could should of to at for with
+from about get got go one all some any more so much very too still even
+i'll you'll we're they're let's""".split())
+
+
 def _bend_word(word, lang):
-    """Mangle one leaked real word into pseudo-language while keeping its
-    phonetic shape ('never' -> 'nivir', 'together' -> 'tugithir') - so a
-    stray English word doesn't cost us the whole AI-written line. Single
-    vowel ROTATION, not doubling: 'ohoo/ehreh' digraphs read as German."""
-    swaps = {"a": "e", "e": "i", "i": "o", "o": "u", "u": "a"}
-    bent = "".join(swaps.get(c, c) for c in word.lower())
-    if bent == word.lower() or bent in _BABBLE_LEAKS:
-        syl = _BABBLE_SYLLABLES.get(lang, _BABBLE_SYLLABLES["english"])
-        bent = bent + syl[len(word) % len(syl)]
+    """Mangle one real word into pseudo-language while keeping its phonetic
+    shape, so a stray English word doesn't cost us the whole AI-written line.
+    English gets the AMERICAN treatment - swap the first vowel and wedge an
+    r after it, keep the word's English ending ('believe' -> 'burlieve',
+    'something' -> 'sarmething') - never open -i/-o/-u endings (that reads
+    French). Other languages rotate vowels."""
+    w = word.lower()
+    if lang == "english":
+        m = re.search(r"[aeiou]", w)
+        if not m:
+            bent = w + "er"
+        else:
+            swap = {"a": "o", "e": "u", "i": "e", "o": "a", "u": "i"}
+            bent = w[:m.start()] + swap[w[m.start()]] + w[m.end():]
+            if w[m.end():m.end() + 1] not in ("r", ""):
+                bent = bent[:m.end()] + "r" + bent[m.end():]
+        if bent == w or bent in _BABBLE_LEAKS:
+            bent += "er" if not bent.endswith("er") else "s"
+    else:
+        swaps = {"a": "e", "e": "i", "i": "o", "o": "u", "u": "a"}
+        bent = "".join(swaps.get(c, c) for c in w)
+        if bent == w or bent in _BABBLE_LEAKS:
+            syl = _BABBLE_SYLLABLES.get(lang, _BABBLE_SYLLABLES["english"])
+            bent = bent + syl[len(word) % len(syl)]
     if word.isupper():
         return bent.upper()
     return bent.capitalize() if word[:1].isupper() else bent
@@ -915,26 +947,34 @@ def babblify(lines, lang):
                 .replace("“", '"').replace("”", '"'))
         cand = cand.encode("ascii", "ignore").decode("ascii")
         words = re.findall(r"[a-zA-Z']+", cand.lower())
-        # Real-English leak check. A few stray function words ('it', 'up')
-        # get bent in place - the AI's phonology is worth keeping. A heavily
-        # leaking or empty line falls back: for AI English the ORIGINAL line
-        # is bent word by word (English gone wrong beats syllable soup);
-        # other languages use their syllable tables.
-        leaks = sum(1 for w in words if w in _BABBLE_LEAKS)
-        if not words or leaks * 3 > len(words):
-            if lang == "english" and orig.strip():
-                plain = (orig.replace("’", "'").replace("‘", "'")
-                         .encode("ascii", "ignore").decode("ascii"))
-                cand = re.sub(r"[a-zA-Z']+",
-                              lambda m: _bend_word(m.group(0), lang), plain)
-            else:
-                cand = _fallback_babble(lang, len(orig.split()), orig) + "!"
-        elif leaks:
+        if lang == "english":
+            # The fake-English-gibberish genre: real GLUE words stay (they
+            # carry the American sound), real CONTENT words get bent into
+            # American-shaped nonsense. Applied to the AI's line when it
+            # wrote one, else to the original script line - either way the
+            # result reads as English gone wrong, never French.
+            src = cand if words else (orig.replace("’", "'").replace("‘", "'")
+                                      .encode("ascii", "ignore").decode("ascii"))
             cand = re.sub(r"[a-zA-Z']+",
-                          lambda m: (_bend_word(m.group(0), lang)
+                          lambda m: (m.group(0)
+                                     if m.group(0).lower() in _BABBLE_GLUE
+                                     else _bend_word(m.group(0), lang)
                                      if m.group(0).lower() in _BABBLE_LEAKS
                                      else m.group(0)),
-                          cand)
+                          src)
+        else:
+            # Other languages: a few stray English words get bent in place;
+            # a heavily leaking or empty line falls back to the language's
+            # phonology-true syllable table.
+            leaks = sum(1 for w in words if w in _BABBLE_LEAKS)
+            if not words or leaks * 3 > len(words):
+                cand = _fallback_babble(lang, len(orig.split()), orig) + "!"
+            elif leaks:
+                cand = re.sub(r"[a-zA-Z']+",
+                              lambda m: (_bend_word(m.group(0), lang)
+                                         if m.group(0).lower() in _BABBLE_LEAKS
+                                         else m.group(0)),
+                              cand)
         flat[i] = (li, ci, cue, cand)
     by_pos = {(li, ci): (cue, txt) for li, ci, cue, txt in flat}
     out = []
