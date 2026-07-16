@@ -63,11 +63,17 @@ TRACKS = {
     # Trailer mode (--trailer): epic cinematic beds - percussion hits,
     # swelling strings, blockbuster tension under the riser + impact.
     "trailer": [
+        # action: percussion hits, battle strings
         "Five Armies",
         "Prelude and Action",
         "Volatile Reaction",
+        # dark: brooding, thriller tension
         "Stormfront",
         "Achilles",
+        # tragedy: emotional strings and piano (the Titanic register)
+        "Heartbreaking",
+        "Sad Trio",
+        "Long Note Three",
     ],
     # Ironic mode (--ironic-music): sincerely cheerful beds meant to
     # CONTRADICT scary visuals - vintage swing, naive sweetness, elevator

@@ -482,22 +482,29 @@ def ai_draft(title, category, runtime=60, beats=5, idea=None, mood=None):
     the OpenAI call fails)."""
     key = openai_key()
     last = None
+    draft = None
     if key:
         # Format misses (wrong beat count, cues in the name slot) deserve a
         # fresh roll on the good engine before falling to the free writer.
         for attempt in range(3):
             try:
-                return ai_draft_openai(title, category, key, runtime, beats, idea, mood)
+                draft = ai_draft_openai(title, category, key, runtime, beats, idea, mood)
+                break
             except Exception as exc:
                 last = exc
                 print(f"OpenAI draft retry {attempt + 1} ({str(exc)[:100]})")
-    try:
-        return ai_draft_pollinations(title, category, runtime, beats, idea, mood)
-    except Exception as exc:
-        raise RuntimeError(
-            "drafting failed - "
-            + (f"OpenAI: {str(last)[:90]}; " if last else "")
-            + f"free writer: {str(exc)[:90]}")
+    if draft is None:
+        try:
+            draft = ai_draft_pollinations(title, category, runtime, beats, idea, mood)
+        except Exception as exc:
+            raise RuntimeError(
+                "drafting failed - "
+                + (f"OpenAI: {str(last)[:90]}; " if last else "")
+                + f"free writer: {str(exc)[:90]}")
+    if (mood or "").startswith("trailer"):
+        draft["score"] = _pick_score(title, draft.get("premise", ""),
+                                     draft.get("tags"))
+    return draft
 
 
 # ---------------- draft batches ----------------
@@ -670,6 +677,7 @@ def scaffold_batch_package(conf, title, draft, runtime):
         "hooks": [first],
         "beats": draft["beats"],
         "cast": draft.get("cast") or [],
+        "score": draft.get("score") or "",
         "outro": conf["outro"],
         "captions": [title, conf["extra_caption"]],
         "thumbnails": [" ".join(title.split()[:4]).upper()],
@@ -1639,6 +1647,28 @@ def finish_trailer_beats(beats, mood):
     return beats
 
 
+def _pick_score(title, premise, tags=None):
+    """One focused AI pass picks the trailer score genre (action / dark /
+    tragedy / wonder) for the story; keyword inference (mv.infer_score) is
+    the deterministic fallback. Never raises."""
+    try:
+        raw = _ai_text(
+            "A movie trailer needs its score. Genres: action (percussion, "
+            "battle strings), dark (brooding horror tension), tragedy "
+            "(emotional strings - the Titanic register), wonder (awe, "
+            "discovery, fantasy). Story: " + title + ". "
+            + (premise or "")[:300] + " Reply with exactly ONE word: "
+            "action, dark, tragedy or wonder.", max_tokens=8)
+        got = next((w for w in re.findall(r"[a-z]+", raw.lower())
+                    if w in mv.TRAILER_SCORES), None)
+        if got:
+            return got
+    except Exception:
+        pass
+    return mv.infer_score({"title": title, "premise": premise or "",
+                           "tags": list(tags or [])})
+
+
 def require_trailer_dialogue(beats, mood):
     """Trailer scripts that ignore the dialogue contract defeat the point -
     reject so the retry (or the engine fallback) rolls again."""
@@ -2076,6 +2106,9 @@ def start_render(queue_file, slot, staging, opts):
         cmd += ["--ironic-music", ironic]
     if opts.get("trailer"):
         cmd.append("--trailer")
+        score = str(opts.get("score") or "").strip()
+        if score in mv.TRAILER_SCORES:
+            cmd += ["--score", score]
     if opts.get("elevenlabs"):
         cmd.append("--elevenlabs")
     if opts.get("charts"):
@@ -2806,6 +2839,11 @@ class Handler(BaseHTTPRequestHandler):
                 # doesn't keeps whatever the package already knew.
                 if script.get("cast"):
                     pkg["cast"] = script["cast"]
+                # Trailer rewrites (re)pick the score genre to fit the story.
+                if mood.startswith("trailer"):
+                    pkg["score"] = _pick_score(pkg.get("title", ""),
+                                               pkg.get("premise", ""),
+                                               pkg.get("tags"))
                 qpath.write_text(json.dumps(qdata, indent=2), encoding="utf-8")
                 # Same row count: the prompts the script was fitted to survive.
                 # A grown script has NEW scenes - prompts re-derive from the

@@ -273,9 +273,18 @@ button.next-step { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(139,1
         <label class="opt"><input type="checkbox" id="optClipAudio"> Keep clip sound (LTX)</label>
         <label class="opt" title="The Jordan Peele trick: a sincerely cheerful song (1950s swing, ragtime, elevator muzak) that contradicts the visuals — it plays straight, a notch louder than a normal bed, then tape-stops on the reveal beat's first word and resumes slowed and quiet, like it's playing from another room. Replaces the riser with a single soft impact on the stop. With 🎭 Mood on Auto, generated visuals render 🌤️ Wholesome so the pictures smile as sincerely as the song."><input type="checkbox" id="optIronic"> 🎵 Ironic cheerful music</label>
         <label class="opt" title="Movie-trailer treatment: an epic cinematic bed (percussion hits, swelling strings) with the riser + impact landing on the reveal beat, whatever the category. With 🎭 Mood on Auto, generated visuals render in Trailer mood — anamorphic teal-and-orange, dramatic rim light. For trailer-speak narration, set 🎭 Trailer and hit 📝 Script from prompts."><input type="checkbox" id="optTrailer"> 🎬 Movie-trailer feel</label>
+        <label class="opt" id="scoreWrap" hidden title="Which real score plays under the trailer. Auto: the writer picks the genre to fit the story when it drafts (or the render infers it from the title + premise). Horror packages layer the score with the synthesized dread bed either way, and the music always ducks under character lines.">🎼 Score
+          <select id="scoreSel" style="width:auto">
+            <option value="">Auto (fit the story)</option>
+            <option value="action">⚔️ Action — percussion, battle strings</option>
+            <option value="dark">🌑 Dark — brooding tension</option>
+            <option value="tragedy">💔 Tragedy — emotional strings</option>
+            <option value="wonder">✨ Wonder — awe, discovery</option>
+          </select>
+        </label>
       </div>
       <p class="hint" id="ironicHint" hidden>🎵 + 🌤️ The full contradiction: the song stays sincerely cheerful and generated visuals render in <strong>Wholesome</strong> mood (soft warm light, gentle smiles) while the script goes wrong — until the tape-stop on the reveal. Pick an explicit 🎭 mood above to override the visual look; already-cached visuals keep their old look until you delete the scenario's cache entry.</p>
-      <p class="hint" id="trailerHint" hidden>🎬 This checkbox changes the <strong>sound and look</strong>: for horror it lays a <strong>synthesized dread bed</strong> (heartbeat pulse, detuned drone, metallic shrieks — the AHS-intro school) under the lines, other categories get the epic orchestral bed; plus the riser + impact on the reveal, breathing room between dialogue lines, slower narrator delivery, and Trailer-mood visuals. <strong>It does NOT rewrite your script</strong> — first pick <strong>🎞️ Trailer — dialogue only</strong> (modern: no narrator, just character lines trading against the sound design) or <strong>🎙 Trailer — narrated</strong> (the classic VO) in the 🎭 Mood dropdown and hit <strong>📝 Script from prompts</strong>, then render. You can also type <code>[Name] "line"</code> into any spoken line yourself.</p>
+      <p class="hint" id="trailerHint" hidden>🎬 This checkbox changes the <strong>sound and look</strong>: a <strong>real score</strong> plays under every trailer — pick the genre with 🎼 or leave it on Auto and the writer/story decides — and it <strong>ducks under character lines</strong> so every word stays clear. Horror layers the score with a <strong>synthesized dread bed</strong> (heartbeat pulse, detuned drone, metallic shrieks — the AHS-intro school) building to a climax on the reveal; plus the riser + impact on the reveal, breathing room between dialogue lines, slower narrator delivery, and Trailer-mood visuals. <strong>It does NOT rewrite your script</strong> — first pick <strong>🎞️ Trailer — dialogue only</strong> (modern: no narrator, just character lines trading against the sound design) or <strong>🎙 Trailer — narrated</strong> (the classic VO) in the 🎭 Mood dropdown and hit <strong>📝 Script from prompts</strong>, then render. You can also type <code>[Name] "line"</code> into any spoken line yourself.</p>
       <div class="row">
         <button type="button" id="renderBtn" class="primary"><span class="stepbadge" id="sb3" hidden>3</span><span id="renderBtnLabel">🎬 Render video</span></button>
         <button type="button" id="openVideosBtn" hidden>See it in Videos →</button>
@@ -1300,7 +1309,17 @@ function updatePairHints() {
   const auto = $id("moodSel").value === "auto";
   $id("ironicHint").hidden = !(auto && $id("optIronic").checked);
   $id("trailerHint").hidden = !(auto && $id("optTrailer").checked);
+  $id("scoreWrap").hidden = !$id("optTrailer").checked;
 }
+$id("scoreSel").addEventListener("change", () => {
+  try { localStorage.setItem("wis.score", $id("scoreSel").value); } catch (e) {}
+});
+(() => {
+  let s = null;
+  try { s = localStorage.getItem("wis.score"); } catch (e) {}
+  if (s !== null) $id("scoreSel").value = s;
+  updatePairHints();
+})();
 /* One musical identity per video: the two treatments exclude each other. */
 $id("optIronic").addEventListener("change", () => {
   if ($id("optIronic").checked) $id("optTrailer").checked = false;
@@ -1415,6 +1434,7 @@ $id("renderBtn").addEventListener("click", async () => {
     mood: renderMood(),
     ironic_music: $id("optIronic").checked ? "tail" : "",
     trailer: $id("optTrailer").checked,
+    score: $id("optTrailer").checked ? $id("scoreSel").value : "",
   });
   if (r.error) { setRenderStatus(r.error, "bad"); return; }
   $id("renderBtn").disabled = true;

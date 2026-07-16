@@ -273,16 +273,67 @@ def pick_file(directory, exts):
     return random.choice(files) if files else None
 
 
-def pick_music(pkg, music_dir, override=None):
+# Score genres for --trailer: which tracks fit which kind of story. The
+# writer picks the genre (pkg["score"]), infer_score guesses from the story
+# when it didn't, --score forces one. Track stems are searched across every
+# music/ folder, so genres can borrow from mood folders (wonder does).
+TRAILER_SCORES = {
+    "action":  ["Five Armies", "Prelude and Action", "Volatile Reaction"],
+    "dark":    ["Stormfront", "Achilles", "Lightless Dawn"],
+    "tragedy": ["Heartbreaking", "Sad Trio", "Long Note Three"],
+    "wonder":  ["Frozen Star", "Floating Cities"],
+}
+
+_SCORE_HINTS = {
+    "tragedy": "love loss lost goodbye sink sinking sank drown drowning ocean liner "
+               "dies died death dying farewell heart tears widow funeral doomed "
+               "tragedy grief mourning titanic",
+    "action":  "war battle chase heist fight fighting soldier gun race escape "
+               "explosion mission agent revenge army invasion uprising rebellion "
+               "warrior sword arena",
+    "wonder":  "space stars galaxy magic wonder discover discovery dream fantasy "
+               "kingdom dinosaur miracle wish evolve evolved future civilization "
+               "planet universe",
+    "dark":    "haunted ghost demon monster curse cursed whisper shadow vanish "
+               "vanished missing basement ritual possessed evil scream horror "
+               "nightmare stalks lurks",
+}
+
+
+def infer_score(pkg):
+    """Guess the trailer score genre from the story when the writer didn't
+    set one - keyword hits on title + premise + tags, horror bias last."""
+    text = " ".join([pkg.get("title", ""), pkg.get("premise", ""),
+                     " ".join(pkg.get("tags") or [])]).lower()
+    words = set(re.findall(r"[a-z']+", text))
+    best, hits = None, 0
+    for genre, hint in _SCORE_HINTS.items():
+        n = len(words & set(hint.split()))
+        if n > hits:
+            best, hits = genre, n
+    if best:
+        return best
+    return "dark" if branding_for(pkg).get("sfx") == "reveal" else "action"
+
+
+def pick_music(pkg, music_dir, override=None, score=None):
     """Pick a track matching the scenario's mood; fall back to loose files.
     `override` replaces the category mood: "ironic" = a sincerely cheerful
     bed (upbeat fills in if the folder is empty), "trailer" = an epic
-    cinematic bed (tense fills in). Both folders come from get_music.py."""
+    cinematic bed (tense fills in). Both folders come from get_music.py.
+    `score` (trailer only) narrows to that genre's tracks from
+    TRAILER_SCORES wherever they live under music/."""
     root = Path(music_dir) if music_dir else None
     if not root or not root.is_dir():
         return None
     fallback = {"ironic": "upbeat", "trailer": "tense"}
     if override in fallback:
+        if override == "trailer" and score:
+            stems = {s.lower() for s in TRAILER_SCORES.get(score, ())}
+            pool = [f for f in root.rglob("*")
+                    if f.suffix.lower() in AUDIO_EXTS and f.stem.lower() in stems]
+            if pool:
+                return random.choice(pool)
         return (pick_file(root / override, AUDIO_EXTS)
                 or pick_file(root / fallback[override], AUDIO_EXTS)
                 or pick_file(root, AUDIO_EXTS))
@@ -2301,6 +2352,10 @@ def main():
                              "(python get_music.py fetches the tracks) and the riser + impact on "
                              "the reveal beat for EVERY category. Pair with --mood trailer for "
                              "trailer-look visuals and trailer-speak rewrites on the Produce page.")
+    parser.add_argument("--score", choices=sorted(TRAILER_SCORES), default=None,
+                        help="Force the trailer score genre. Default: the package's "
+                             "'score' field (the writer sets it), else inferred from "
+                             "the story (title + premise + tags).")
     parser.add_argument("--trailer-bed", choices=["auto", "dread", "epic"], default="auto",
                         help="Soundtrack for --trailer: 'dread' = ONLY the synthesized AHS-style "
                              "unsettling bed, 'epic' = ONLY an orchestral track from music/trailer. "
@@ -2694,13 +2749,18 @@ def main():
                 dread = args.trailer and args.trailer_bed != "epic" and (
                     args.trailer_bed == "dread"
                     or branding_for(pkg).get("sfx") == "reveal")
+                score = None
+                if args.trailer:
+                    score = args.score or pkg.get("score") or infer_score(pkg)
+                    if score not in TRAILER_SCORES:
+                        score = infer_score(pkg)
                 music = None
                 premixed = False
                 if dread:
                     synth_dread_bed(tmp / "dread.wav", total + 1.0, climax=reveal_start)
                     peak_at = reveal_start if reveal_start else 0.85 * (total + 1.0)
                     music = None if args.trailer_bed == "dread" else \
-                        pick_music(pkg, args.music, override="trailer")
+                        pick_music(pkg, args.music, override="trailer", score=score)
                     if music:
                         st = "aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo"
                         run([ffmpeg, "-y", "-i", str(music), "-i", str(tmp / "dread.wav"),
@@ -2710,8 +2770,8 @@ def main():
                              "[m][d]amix=inputs=2:duration=longest:normalize=0[out]",
                              "-map", "[out]", "-c:a", "pcm_s16le", str(tmp / "music.wav")])
                         premixed = True
-                        print(f"  music: {music.parent.name}/{music.name} + dread bed"
-                              f" (climax at {peak_at:.1f}s)")
+                        print(f"  music: {music.parent.name}/{music.name}"
+                              f" [{score} score] + dread bed (climax at {peak_at:.1f}s)")
                     else:
                         (tmp / "dread.wav").rename(tmp / "music.wav")
                         print(f"  music: synthesized dread bed, building to a climax at {peak_at:.1f}s"
@@ -2719,10 +2779,12 @@ def main():
                 else:
                     music = pick_music(pkg, args.music,
                                        override=("ironic" if args.ironic_music
-                                                 else "trailer" if args.trailer else None))
+                                                 else "trailer" if args.trailer else None),
+                                       score=score)
                 if music and not premixed:
                     shutil.copy(music, tmp / ("music" + music.suffix))
-                    print(f"  music: {music.parent.name}/{music.name}")
+                    print(f"  music: {music.parent.name}/{music.name}"
+                          + (f" [{score} score]" if args.trailer else ""))
                     if args.ironic_music and reveal_start is not None:
                         ironic_music_treatment(ffmpeg, tmp / ("music" + music.suffix),
                                                tmp / "music-ironic.wav", reveal_start,
@@ -2766,6 +2828,7 @@ def main():
                 "format": ("trailer" if args.trailer
                            else "ironic" if args.ironic_music else "classic"),
                 "mood": args.mood or "",
+                "score": score if args.trailer else "",
                 "visuals": ("ai-video" if args.infer
                             else "paid-images" if args.infer_images
                             else "stock" if args.stock
