@@ -138,3 +138,25 @@ lives with Claude). When Darren says "fulfill the OpenArt request":
    via the CLI with the request's render flags (--trailer / --elevenlabs
    as recorded), verify the log, and report per-clip + total spend with
    the account balance before/after.
+
+## First full production (Romeo & Juliet AI-English, 2026-07-16, 1000 cr)
+
+Whole-package pattern, verified end-to-end: 2 portraits (Kling 3 Omni,
+10 cr each) + 7 ambience clips (both portraits as identity elements) +
+5 hero talking clips (portrait + per-character voice sample + "says
+exactly" line + voice direction), all Seedance Mini 480p 9:16 4s (5s for
+the long cold-open line, 100 cr). lipsync.json marks the 5 hero rows;
+ref-choice.json puts all 12 rows on video; render with
+`--backgrounds produce/<staging> --trailer --elevenlabs --score <genre>
+--clip-audio 0.2`. Ledger matched openart_account_get exactly.
+
+Operational notes:
+- The concurrency limit is ~3 in-flight (not 2) and fluctuates; a
+  PARALLEL_LIMIT_EXCEEDED submit costs nothing - just retry after a
+  poll shows a slot freed.
+- Voice samples: ~13 s ElevenLabs v3-Creative (stability 0) in the
+  video's own language/register, one per character, cast with the SAME
+  EL voice the renderer picks (Charlie/Bella) so clip-voiced and
+  TTS-voiced lines match. Seedance caps audio elements at 15 s.
+- One upload widget with minFiles=2 collects both samples in a single
+  user action; upload ids + URLs land in openart-cast/cast.json.
