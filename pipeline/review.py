@@ -830,7 +830,11 @@ open close start show try use work end night day time year home house door windo
 water fire light dark eyes hand head heart life death world people man woman child
 name game rules trap escape choice game blood fear scared afraid sorry please wait
 love hate dead alive kill killed real true mister madam sir lady everyone someone
-anyone nobody""".split())
+anyone nobody like us mess even together maybe parents family would could should
+mine yours ours theirs him herself himself myself yourself thing things way ways
+place places word words face wake wakes woke sleep story stories done doing gone
+going came come better worse best worst enough much many miss missed lost forever
+soon later once twice again heart hearts young happy sad cry cried tears""".split())
 
 
 def _bend_word(word, lang):
@@ -900,13 +904,26 @@ def babblify(lines, lang):
     result = []
     for i, (li, ci, cue, orig) in enumerate(flat):
         cand = (out_texts[i] if out_texts else "") or ""
+        # Babble is plain ASCII: smart punctuation straightened, anything
+        # else non-ASCII dropped (the invented words never need it).
+        cand = (cand.replace("’", "'").replace("‘", "'")
+                .replace("“", '"').replace("”", '"'))
+        cand = cand.encode("ascii", "ignore").decode("ascii")
         words = re.findall(r"[a-zA-Z']+", cand.lower())
         # Real-English leak check. A few stray function words ('it', 'up')
-        # get bent in place - the AI's phonology is worth keeping. Only a
-        # heavily leaking or empty line falls back to the generator.
+        # get bent in place - the AI's phonology is worth keeping. A heavily
+        # leaking or empty line falls back: for AI English the ORIGINAL line
+        # is bent word by word (English gone wrong beats syllable soup);
+        # other languages use their syllable tables.
         leaks = sum(1 for w in words if w in _BABBLE_LEAKS)
         if not words or leaks * 3 > len(words):
-            cand = _fallback_babble(lang, len(orig.split()), orig) + "!"
+            if lang == "english" and orig.strip():
+                plain = (orig.replace("’", "'").replace("‘", "'")
+                         .encode("ascii", "ignore").decode("ascii"))
+                cand = re.sub(r"[a-zA-Z']+",
+                              lambda m: _bend_word(m.group(0), lang), plain)
+            else:
+                cand = _fallback_babble(lang, len(orig.split()), orig) + "!"
         elif leaks:
             cand = re.sub(r"[a-zA-Z']+",
                           lambda m: (_bend_word(m.group(0), lang)
