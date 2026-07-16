@@ -2053,8 +2053,21 @@ def render_thumbnail(ffmpeg, visual, pkg, out_path, tmp, font_ff):
     if brand_path:
         font_ff = brand_path.name
     thumb_color = branding_for(pkg)["thumb_color"]
-    lines = wrap_title((pkg.get("thumbnails") or [pkg.get("title", "")])[0])
-    fontsize = 128 if len(lines) == 1 else 106
+    # The cover carries the FULL title: scrollers should know what the video
+    # is without reading the platform caption.
+    text = sanitize_card_text(pkg.get("title", "") or (pkg.get("thumbnails") or [""])[0])
+    words = text.split()
+    lines, cur = [], ""
+    for w in words:
+        if cur and len(cur) + 1 + len(w) > 18:
+            lines.append(cur)
+            cur = w
+        else:
+            cur = (cur + " " + w).strip()
+    if cur:
+        lines.append(cur)
+    lines = lines[:5]
+    fontsize = {1: 128, 2: 106, 3: 88, 4: 74}.get(len(lines), 64)
     line_h = fontsize + 22
 
     if visual and visual.suffix.lower() in (IMAGE_EXTS | VIDEO_EXTS):
@@ -2082,12 +2095,28 @@ def render_thumbnail(ffmpeg, visual, pkg, out_path, tmp, font_ff):
          str(out_path)], cwd=tmp)
 
 
+def speech_intervals(words, pad=0.12, gap=0.35):
+    """Merged (start, end) spans where someone is speaking - drives the
+    music ducking so lines sit clearly on top of the score."""
+    spans = []
+    for w in words:
+        if not str(w[2]).strip():
+            continue   # silence placeholders aren't speech
+        s, e = max(0.0, w[0] - pad), w[1] + pad
+        if spans and s - spans[-1][1] <= gap:
+            spans[-1][1] = max(spans[-1][1], e)
+        else:
+            spans.append([s, e])
+    return spans
+
+
 def final_render(ffmpeg, base, pkg, total, has_music, out_path, tmp, clip_audio=0.0,
-                 sfx_delay_ms=None):
+                 sfx_delay_ms=None, duck=None):
     """Overlay captions and mix audio onto the base video (or a gradient).
     `clip_audio` > 0 mixes the base video's own sound (e.g. LTX-generated
     ambience) under the voice at that volume. `sfx_delay_ms` places tmp's
-    sfx.wav on the timeline (None = no beat SFX)."""
+    sfx.wav on the timeline (None = no beat SFX). `duck` = speech spans:
+    the music dips to ~a third while anyone talks, swells back between."""
     if base is not None:
         video_in = ["-i", base.name]
     else:
@@ -2107,7 +2136,11 @@ def final_render(ffmpeg, base, pkg, total, has_music, out_path, tmp, clip_audio=
     if has_music and music_files:
         inputs += ["-i", music_files[0].name]
         fade_start = max(0.0, total - 1.5)
-        filters.append(f"[2:a]volume={branding_for(pkg)['music_volume']},"
+        duck_f = ""
+        if duck:
+            expr = "+".join(f"between(t,{s:.2f},{e:.2f})" for s, e in duck[:80])
+            duck_f = f"volume=0.35:enable='{expr}',"
+        filters.append(f"[2:a]volume={branding_for(pkg)['music_volume']},{duck_f}"
                        f"afade=t=out:st={fade_start:.2f}:d=1.5[m]")
         mix.append("[m]")
     # Beat-timed sound design (sfx.wav + its start offset, prepared by the
@@ -2269,9 +2302,10 @@ def main():
                              "the reveal beat for EVERY category. Pair with --mood trailer for "
                              "trailer-look visuals and trailer-speak rewrites on the Produce page.")
     parser.add_argument("--trailer-bed", choices=["auto", "dread", "epic"], default="auto",
-                        help="Soundtrack for --trailer: 'dread' = the synthesized AHS-style "
-                             "unsettling bed, 'epic' = an orchestral track from music/trailer. "
-                             "'auto' (default) picks dread for horror categories, epic otherwise.")
+                        help="Soundtrack for --trailer: 'dread' = ONLY the synthesized AHS-style "
+                             "unsettling bed, 'epic' = ONLY an orchestral track from music/trailer. "
+                             "'auto' (default) layers score + dread bed for horror categories, "
+                             "score alone otherwise. Music always ducks under character lines.")
     parser.add_argument("--ironic-music", nargs="?", const="tail", choices=["tail", "stop"],
                         default=None,
                         help="Sincerely cheerful music that contradicts the visuals and tape-stops "
@@ -2652,27 +2686,41 @@ def main():
                 else:
                     print("  visuals: generated gradient")
 
-                # Trailer soundtrack: horror gets the synthesized AHS-style
-                # dread bed by default (pulse, drone, metallic shrieks -
-                # character lines trade against it); everything else keeps
-                # the epic orchestral folder. --trailer-bed overrides.
-                dread = args.trailer and (
+                # Trailer soundtrack: a REAL score always (music/trailer -
+                # orchestral by default, genre folders welcome); horror ALSO
+                # layers the synthesized dread bed under it, still climaxing
+                # on the reveal. --trailer-bed dread = bed only, epic = score
+                # only.
+                dread = args.trailer and args.trailer_bed != "epic" and (
                     args.trailer_bed == "dread"
-                    or (args.trailer_bed == "auto"
-                        and branding_for(pkg).get("sfx") == "reveal"))
+                    or branding_for(pkg).get("sfx") == "reveal")
                 music = None
+                premixed = False
                 if dread:
-                    # The build peaks on the reveal when the timing allows,
-                    # else ~85% in - repetitive motifs, climaxing near the end.
-                    synth_dread_bed(tmp / "music.wav", total + 1.0, climax=reveal_start)
+                    synth_dread_bed(tmp / "dread.wav", total + 1.0, climax=reveal_start)
                     peak_at = reveal_start if reveal_start else 0.85 * (total + 1.0)
-                    print(f"  music: synthesized dread bed, building to a climax at {peak_at:.1f}s"
-                          " (heartbeat pulse, detuned drone, metallic shrieks)")
+                    music = None if args.trailer_bed == "dread" else \
+                        pick_music(pkg, args.music, override="trailer")
+                    if music:
+                        st = "aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo"
+                        run([ffmpeg, "-y", "-i", str(music), "-i", str(tmp / "dread.wav"),
+                             "-filter_complex",
+                             f"[0:a]atrim=0:{total + 1:.2f},asetpts=PTS-STARTPTS,{st},volume=0.9[m];"
+                             f"[1:a]{st},volume=0.9[d];"
+                             "[m][d]amix=inputs=2:duration=longest:normalize=0[out]",
+                             "-map", "[out]", "-c:a", "pcm_s16le", str(tmp / "music.wav")])
+                        premixed = True
+                        print(f"  music: {music.parent.name}/{music.name} + dread bed"
+                              f" (climax at {peak_at:.1f}s)")
+                    else:
+                        (tmp / "dread.wav").rename(tmp / "music.wav")
+                        print(f"  music: synthesized dread bed, building to a climax at {peak_at:.1f}s"
+                              " (heartbeat pulse, detuned drone, metallic shrieks)")
                 else:
                     music = pick_music(pkg, args.music,
                                        override=("ironic" if args.ironic_music
                                                  else "trailer" if args.trailer else None))
-                if music:
+                if music and not premixed:
                     shutil.copy(music, tmp / ("music" + music.suffix))
                     print(f"  music: {music.parent.name}/{music.name}")
                     if args.ironic_music and reveal_start is not None:
@@ -2688,9 +2736,12 @@ def main():
                 # Clip-voiced gains are baked per beat in the base track, so
                 # the final mix takes it at unity instead of --clip-audio.
                 mix_gain = (1.0 if clip_voiced else args.clip_audio)
+                duck = speech_intervals(words) if args.trailer and words else None
+                if duck:
+                    print(f"  music: ducking under {len(duck)} spoken passages")
                 final_render(ffmpeg, base, pkg, total, bool(music) or dread, out_path.resolve(), tmp,
                              clip_audio=mix_gain if base is not None else 0.0,
-                             sfx_delay_ms=sfx_delay_ms)
+                             sfx_delay_ms=sfx_delay_ms, duck=duck)
 
                 thumb_made = False
                 if font_ff:

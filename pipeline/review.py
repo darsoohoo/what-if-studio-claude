@@ -753,7 +753,7 @@ IDEA_SUGGEST_PROMPTS = {
         'Suggest ONE famous movie for an "AI language" trailer riff (all '
         "dialogue becomes invented words) plus a language whose sound makes "
         "the gag land - pick from: english, chinese, spanish, french, "
-        'japanese, german, tagalog. Iconic talky scenes work best; avoid Disney-owned '
+        'japanese, german, tagalog, vietnamese. Iconic talky scenes work best; avoid Disney-owned '
         'properties. Reply exactly as "<Movie> - <language>". '
         'Reply with ONLY minified JSON, exactly: {"idea":"..."}'),
 }
@@ -776,6 +776,9 @@ BABBLE_LANGS = {
     "tagalog": "AI Tagalog - pseudo-Tagalog with its ma-/nag-/pag- prefixes, "
                "-ng endings, syllable reduplication, and the po particle "
                "('Nagkalambo ka ng talumpa, sige po!')",
+    "vietnamese": "AI Vietnamese - pseudo-Vietnamese with short single-syllable "
+                  "words, ng-/nh-/th-/tr- openings and -ng/-nh endings "
+                  "('Nguy tran mão linh, thi bao dong!')",
 }
 
 
@@ -796,6 +799,9 @@ _BABBLE_SYLLABLES = {
                "ver", "stein", "hoff", "brau", "dun", "kel", "wald", "ge", "mor", "gen"],
     "tagalog": ["ma", "na", "ka", "pa", "la", "ta", "ba", "ga", "sa", "lam",
                 "bo", "nag", "tan", "po", "gu", "han", "din", "yan"],
+    "vietnamese": ["nguy", "tran", "linh", "thi", "bao", "dong", "mai", "vao",
+                   "pho", "kim", "lan", "ngoc", "tuan", "minh", "chau", "phong",
+                   "hoa", "vu"],
 }
 
 # Real words that must never survive inside babble dialogue (a leak detector,
@@ -805,15 +811,44 @@ is are was were be been this that these those what who why how when where we the
 them our their he she his her him not no yes never always feel feels felt wrong
 right everything nothing something listen look see hear know think want need must
 can cannot will would stop go come here there now then king queen father mother
-brother sister run hide help me saw said says tell told""".split())
+brother sister run hide help me saw said says tell told with from for but or if so
+because about into over under again more most all any both each few other some such
+only own same than too very just one two three first last next new old good bad big
+small long great little still around behind before after tonight today never ever
+away back down out up off get got make made take took give gave find found leave
+left keep kept let put say ask asked call called turn move play live believe hold
+bring begin seem talk speak stay fall stand lose pay meet set learn watch follow
+open close start show try use work end night day time year home house door window
+water fire light dark eyes hand head heart life death world people man woman child
+name game rules trap escape choice game blood fear scared afraid sorry please wait
+love hate dead alive kill killed real true mister madam sir lady everyone someone
+anyone nobody""".split())
+
+
+def _bend_word(word, lang):
+    """Mangle one leaked real word into pseudo-language while keeping its
+    phonetic shape ('it' -> 'eet', 'up' -> 'oop') - so a single stray English
+    word doesn't cost us the whole AI-written line."""
+    swaps = {"a": "ah", "e": "eh", "i": "ee", "o": "oh", "u": "oo"}
+    bent = "".join(swaps.get(c, c) for c in word.lower())
+    if bent == word.lower() or bent in _BABBLE_LEAKS:
+        syl = _BABBLE_SYLLABLES.get(lang, _BABBLE_SYLLABLES["english"])
+        bent = bent + syl[len(word) % len(syl)]
+    if word.isupper():
+        return bent.upper()
+    return bent.capitalize() if word[:1].isupper() else bent
 
 
 def _fallback_babble(lang, n_words, seed_text):
-    """Deterministic pseudo-language words when the AI pass leaks English."""
+    """Deterministic pseudo-language words when the AI pass leaks English.
+    Distinct syllables per word (no 'nofnof' robot-speak)."""
     rng = __import__("random").Random(hash(seed_text) & 0xFFFF)
     syl = _BABBLE_SYLLABLES.get(lang, _BABBLE_SYLLABLES["english"])
-    return " ".join("".join(rng.choice(syl) for _ in range(rng.randint(1, 3)))
-                    for _ in range(max(3, n_words)))
+    words = []
+    for _ in range(max(3, n_words)):
+        picks = rng.sample(syl, rng.randint(1, min(3, len(syl))))
+        words.append("".join(picks))
+    return " ".join(words)
 
 
 def babblify(lines, lang):
@@ -838,10 +873,12 @@ def babblify(lines, lang):
         raw = _ai_text(
             "Rewrite each numbered line into an INVENTED pseudo-language: "
             + BABBLE_LANGS[lang] + " "
-            "Same emotional shape and similar length, keep the punctuation "
-            "style (!, ?, ..., one CAPS word allowed). ABSOLUTE RULE: no real "
-            "words from English or any actual language - every word is made "
-            "up but pronounceable. "
+            "Same emotional shape and similar length. EXAGGERATE the prosody: "
+            "lean on !, ?!, ... and ONE word in CAPS per line so the voices "
+            "over-act it. ABSOLUTE RULE: every single word must be made up - "
+            "if any word is a real word in English (or the target language), "
+            "the line is WRONG. Bend real words until they break: 'something "
+            "wrong' -> 'sumbrethin vrong'. Made up but pronounceable. "
             'Reply with ONLY minified JSON, exactly: {"lines":['
             + ",".join(['"..."'] * len(flat)) + "]} - same order.\n\n" + numbered,
             max_tokens=120 + 30 * len(flat))
@@ -856,8 +893,18 @@ def babblify(lines, lang):
     for i, (li, ci, cue, orig) in enumerate(flat):
         cand = (out_texts[i] if out_texts else "") or ""
         words = re.findall(r"[a-zA-Z']+", cand.lower())
-        if not words or any(w in _BABBLE_LEAKS for w in words):
+        # Real-English leak check. A few stray function words ('it', 'up')
+        # get bent in place - the AI's phonology is worth keeping. Only a
+        # heavily leaking or empty line falls back to the generator.
+        leaks = sum(1 for w in words if w in _BABBLE_LEAKS)
+        if not words or leaks * 3 > len(words):
             cand = _fallback_babble(lang, len(orig.split()), orig) + "!"
+        elif leaks:
+            cand = re.sub(r"[a-zA-Z']+",
+                          lambda m: (_bend_word(m.group(0), lang)
+                                     if m.group(0).lower() in _BABBLE_LEAKS
+                                     else m.group(0)),
+                          cand)
         flat[i] = (li, ci, cue, cand)
     by_pos = {(li, ci): (cue, txt) for li, ci, cue, txt in flat}
     out = []
