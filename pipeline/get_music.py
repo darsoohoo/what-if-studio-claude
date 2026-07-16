@@ -67,13 +67,25 @@ TRACKS = {
         "Five Armies",
         "Prelude and Action",
         "Volatile Reaction",
+        "Rites",
+        "Killers",
+        "Curse of the Scarab",
         # dark: brooding, thriller tension
         "Stormfront",
         "Achilles",
+        "Controlled Chaos",
+        "Oppressive Gloom",
+        "Dark Walk",
         # tragedy: emotional strings and piano (the Titanic register)
         "Heartbreaking",
         "Sad Trio",
         "Long Note Three",
+        "Agnus Dei X",
+        "Immersed",
+        # wonder: awe, discovery (Frozen Star and Floating Cities live in
+        # music/wonder already)
+        "Ascending the Vale",
+        "Enchanted Valley",
     ],
     # Ironic mode (--ironic-music): sincerely cheerful beds meant to
     # CONTRADICT scary visuals - vintage swing, naive sweetness, elevator

@@ -278,10 +278,14 @@ def pick_file(directory, exts):
 # when it didn't, --score forces one. Track stems are searched across every
 # music/ folder, so genres can borrow from mood folders (wonder does).
 TRAILER_SCORES = {
-    "action":  ["Five Armies", "Prelude and Action", "Volatile Reaction"],
-    "dark":    ["Stormfront", "Achilles", "Lightless Dawn"],
-    "tragedy": ["Heartbreaking", "Sad Trio", "Long Note Three"],
-    "wonder":  ["Frozen Star", "Floating Cities"],
+    "action":  ["Five Armies", "Prelude and Action", "Volatile Reaction",
+                "Rites", "Killers", "Curse of the Scarab"],
+    "dark":    ["Stormfront", "Achilles", "Lightless Dawn",
+                "Controlled Chaos", "Oppressive Gloom", "Dark Walk"],
+    "tragedy": ["Heartbreaking", "Sad Trio", "Long Note Three",
+                "Agnus Dei X", "Immersed"],
+    "wonder":  ["Frozen Star", "Floating Cities",
+                "Ascending the Vale", "Enchanted Valley"],
 }
 
 _SCORE_HINTS = {
@@ -329,9 +333,15 @@ def pick_music(pkg, music_dir, override=None, score=None):
     fallback = {"ironic": "upbeat", "trailer": "tense"}
     if override in fallback:
         if override == "trailer" and score:
+            # Genre pool: the known stems from TRAILER_SCORES anywhere under
+            # music/, plus EVERYTHING the creator dropped into the genre's
+            # own subfolder (music/trailer/tragedy/...) - drop-in tracks
+            # (e.g. from YouTube's Audio Library) are first-class citizens.
             stems = {s.lower() for s in TRAILER_SCORES.get(score, ())}
             pool = [f for f in root.rglob("*")
-                    if f.suffix.lower() in AUDIO_EXTS and f.stem.lower() in stems]
+                    if f.suffix.lower() in AUDIO_EXTS
+                    and (f.stem.lower() in stems
+                         or f.parent.name.lower() == score)]
             if pool:
                 return random.choice(pool)
         return (pick_file(root / override, AUDIO_EXTS)
