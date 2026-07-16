@@ -1843,6 +1843,45 @@ def synth_reveal_sfx(path, riser=3.0, tail=2.2):
         w.writeframes(out.tobytes())
 
 
+def synth_stingers(path, cuts, duration):
+    """Write a mono WAV with a low boom on every scene cut - a 25 ms noise
+    transient into a sub sine whose pitch sags as it decays (~0.9 s), the
+    classic trailer editing hit. Each boom varies slightly in weight and
+    pitch so the pattern never reads as a loop. Synthesized from scratch -
+    no samples, nothing to license. Deterministic."""
+    n = int((duration + 1.0) * SFX_RATE)
+    rng = random.Random(747)
+    buf = array.array("f", bytes(4 * n))
+    boom_len = int(0.9 * SFX_RATE)
+    for c in sorted(cuts):
+        i0 = int(c * SFX_RATE)
+        if i0 >= n:
+            continue
+        gain = rng.uniform(0.78, 1.0)
+        f0 = rng.uniform(46.0, 56.0)
+        knock = rng.uniform(150.0, 195.0)
+        phase = kphase = 0.0
+        for j in range(min(boom_len, n - i0)):
+            d = j / SFX_RATE
+            freq = f0 + 14.0 * math.exp(-6.0 * d)     # pitch sags into the tail
+            phase += 2.0 * math.pi * freq / SFX_RATE
+            kphase += 2.0 * math.pi * knock / SFX_RATE
+            a = 0.52 * gain * math.exp(-3.5 * d) * math.sin(phase)
+            # The mid knock + noise snap are what read as a HIT on phone
+            # speakers - the dread bed already owns the 48-52 Hz basement.
+            a += 0.26 * gain * math.exp(-14.0 * d) * math.sin(kphase)
+            a += 0.14 * gain * math.exp(-70.0 * d) * rng.uniform(-1, 1)
+            buf[i0 + j] += a
+    out = array.array("h", bytes(2 * n))
+    for i in range(n):
+        out[i] = int(32767 * max(-1.0, min(1.0, buf[i])))
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(SFX_RATE)
+        w.writeframes(out.tobytes())
+
+
 DREAD_RATE = 24000   # rumble + metallic highs live well below 12 kHz
 
 
@@ -2228,11 +2267,18 @@ def final_render(ffmpeg, base, pkg, total, has_music, out_path, tmp, clip_audio=
     # Beat-timed sound design (sfx.wav + its start offset, prepared by the
     # render loop when the category asks for it).
     sfx_file = Path(tmp) / "sfx.wav"
-    if sfx_delay_ms is not None and sfx_file.exists():
+    has_sfx = sfx_delay_ms is not None and sfx_file.exists()
+    if has_sfx:
         sfx_idx = 3 if (has_music and music_files) else 2
         inputs += ["-i", "sfx.wav"]
         filters.append(f"[{sfx_idx}:a]adelay={int(sfx_delay_ms)}:all=1[sfx]")
         mix.append("[sfx]")
+    # Cut stingers (trailer renders): booms already placed on their own
+    # timeline by synth_stingers, so they join the mix untouched.
+    if (Path(tmp) / "stingers.wav").exists():
+        st_idx = 2 + (1 if (has_music and music_files) else 0) + (1 if has_sfx else 0)
+        inputs += ["-i", "stingers.wav"]
+        mix.append(f"[{st_idx}:a]")
     if len(mix) > 1:
         filters.append("".join(mix) + f"amix=inputs={len(mix)}:duration=first:normalize=0[a]")
     else:
@@ -2854,6 +2900,17 @@ def main():
                 if duck:
                     print(f"  music: ducking under {len(duck)} spoken passages"
                           " (smooth trailer pumping)")
+                # Cut stingers: a low boom on every scene change so the edit
+                # punches instead of drifting. The reveal keeps its own riser
+                # + impact - cuts within 2 s of it stay clean.
+                if args.trailer and not args.no_sfx:
+                    cuts = [s for s, _ in segment_spans(segments, words, total)[1:]
+                            if 2.0 < s < total - 0.3
+                            and not (reveal_start and abs(s - reveal_start) < 2.0)]
+                    if cuts:
+                        synth_stingers(tmp / "stingers.wav", cuts, total)
+                        print(f"  sfx: {len(cuts)} cut stingers"
+                              " (low boom on each scene change)")
                 # Trailers mix the score at soundtrack level, not bed level -
                 # loud between lines (which also buries any synthetic edge in
                 # the voices), dipping under speech, growing into the reveal.
