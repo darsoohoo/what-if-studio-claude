@@ -499,6 +499,14 @@ def _char_kind(name, look):
     for kind in ("child", "male", "female"):
         if words & _KIND_WORDS[kind]:
             return kind
+    # No stated gender anywhere: fall back on the name's shape. Invented
+    # cast names follow convention (Maya, Lia / Leo, Rico), and a
+    # conventional guess beats dealing voices out blind.
+    first = re.findall(r"[a-z]+", str(name or "").lower())
+    if first and first[0][-1:] == "a":
+        return "female"
+    if first and first[0][-1:] == "o":
+        return "male"
     return None
 
 

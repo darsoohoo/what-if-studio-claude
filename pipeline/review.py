@@ -504,6 +504,8 @@ def ai_draft(title, category, runtime=60, beats=5, idea=None, mood=None):
     if (mood or "").startswith("trailer"):
         draft["score"] = _pick_score(title, draft.get("premise", ""),
                                      draft.get("tags"))
+    if draft.get("cast"):
+        draft["cast"] = _ensure_cast_kinds(draft["cast"])
     return draft
 
 
@@ -1665,6 +1667,38 @@ def finish_trailer_beats(beats, mood):
                                  if re.search(r'["“]\s*\[[A-Za-z]', b)) < 2:
         beats = _inject_emotion_cues(beats)
     return beats
+
+
+def _ensure_cast_kinds(cast):
+    """Cast looks must state a gender/age word - the renderer casts VOICES
+    from the look, and 'athletic build, messy hair' gives it nothing (Leo
+    got a female voice that way). One focused AI pass fills the gap; the
+    name's shape (-a female, else male) is the deterministic fallback."""
+    kindy = set().union(*mv._KIND_WORDS.values())
+    todo = [c for c in (cast or [])
+            if isinstance(c, dict) and c.get("name")
+            and not (set(re.findall(r"[a-z]+",
+                                    f"{c['name']} {c.get('look', '')}".lower())) & kindy)]
+    if not todo:
+        return cast
+    words = {}
+    try:
+        names = ", ".join(c["name"] for c in todo)
+        raw = _ai_text(
+            f"Characters in a movie trailer: {names}. For each, say whether "
+            "the name reads as a man, woman, boy or girl. Reply ONLY minified "
+            'JSON: {"<name>": "man", ...}', max_tokens=20 + 12 * len(todo))
+        start, end = raw.find("{"), raw.rfind("}")
+        got = json.loads(raw[start:end + 1])
+        words = {str(k).lower(): str(v).lower() for k, v in got.items()}
+    except Exception:
+        pass
+    for c in todo:
+        w = words.get(c["name"].lower())
+        if w not in ("man", "woman", "boy", "girl"):
+            w = "woman" if c["name"].lower()[-1:] == "a" else "man"
+        c["look"] = w + ", " + str(c.get("look", "")).lstrip()
+    return cast
 
 
 def _pick_score(title, premise, tags=None):
@@ -2858,7 +2892,7 @@ class Handler(BaseHTTPRequestHandler):
                 # A rewrite that names characters replaces the cast; one that
                 # doesn't keeps whatever the package already knew.
                 if script.get("cast"):
-                    pkg["cast"] = script["cast"]
+                    pkg["cast"] = _ensure_cast_kinds(script["cast"])
                 # Trailer rewrites (re)pick the score genre to fit the story.
                 if mood.startswith("trailer"):
                     pkg["score"] = _pick_score(pkg.get("title", ""),
