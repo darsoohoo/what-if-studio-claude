@@ -157,6 +157,7 @@ button.next-step { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(139,1
           <option value="whatif">💭 Realistic what-if</option>
           <option value="history">📜 True history</option>
           <option value="aimovie">🎬 If a movie was AI-generated</option>
+          <option value="aibabble">🗣️ …in AI language (fake words)</option>
         </select>
         <button type="button" id="ideaSuggestBtn" title="Let the AI invent the idea too — one fresh suggestion for the selected kind lands in the box (a scary premise, a what-if, a documented event, or a movie pick). Edit it, then 💡 Draft it.">✨ Invent one</button>
         <button type="button" id="ideaBtn" class="primary">💡 Draft it</button>
@@ -1494,6 +1495,7 @@ async function morningStatus() {
 /* ---------- 💡 draft from the creator's own idea ---------- */
 const IDEA_PLACEHOLDERS = {
   aimovie: "Movie name — e.g. Saw, The Blair Witch Project, Jaws — optionally add an angle after a dash: \"Saw - the trap is a group chat\"",
+  aibabble: "Movie — language: \"The Lion King - chinese\" (english / chinese / spanish / french / japanese / german; default english). All dialogue becomes invented words that only SOUND like the language.",
   _default: "e.g. A night-shift nurse notices every patient in ward 6 draws the same door — and last night someone drew it open.",
 };
 $id("ideaKind").addEventListener("change", () => {
@@ -1518,7 +1520,7 @@ $id("ideaSuggestBtn").addEventListener("click", async () => {
 $id("ideaBtn").addEventListener("click", async () => {
   const idea = $id("ideaText").value.trim();
   const st = $id("ideaStatus");
-  const minLen = $id("ideaKind").value === "aimovie" ? 2 : 12;
+  const minLen = ["aimovie", "aibabble"].includes($id("ideaKind").value) ? 2 : 12;
   if (idea.length < minLen) {
     st.className = "status bad";
     st.textContent = minLen === 2 ? "Type the movie name."

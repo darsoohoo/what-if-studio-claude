@@ -717,6 +717,12 @@ IDEA_KINDS["aimovie"] = {
     "extra_caption": "Every frame is AI.",
     "fallback_tag": "ai remake",
 }
+# Same format, but the dialogue is an INVENTED pseudo-language ("AI English",
+# "AI Chinese"...) - sounds like the language, means nothing. The most
+# copyright-proof variant: there is no dialogue to compare to anything.
+IDEA_KINDS["aibabble"] = dict(IDEA_KINDS["aimovie"],
+                              label="AI language remakes",
+                              extra_caption="Every frame AND every word is AI.")
 
 # ✨ Invent one: a single fresh idea for the 💡 box, per kind. Fills the
 # textarea only - the user edits, then Drafts; nothing renders by itself.
@@ -743,15 +749,135 @@ IDEA_SUGGEST_PROMPTS = {
         "leaning welcome; avoid Disney-owned properties. Reply the movie "
         'name, optionally followed by " - " and a one-line twist angle. '
         'Reply with ONLY minified JSON, exactly: {"idea":"..."}'),
+    "aibabble": (
+        'Suggest ONE famous movie for an "AI language" trailer riff (all '
+        "dialogue becomes invented words) plus a language whose sound makes "
+        "the gag land - pick from: english, chinese, spanish, french, "
+        'japanese, german. Iconic talky scenes work best; avoid Disney-owned '
+        'properties. Reply exactly as "<Movie> - <language>". '
+        'Reply with ONLY minified JSON, exactly: {"idea":"..."}'),
 }
+
+# "AI language" variant: the movie riff, but ALL dialogue is invented
+# pseudo-language - sounds like the target language, means nothing.
+BABBLE_LANGS = {
+    "english": "AI English - nonsense that has the rhythm, stress and phonology of "
+               "casual American English (Simlish-style: 'Weh nofar tu keeblin, da sarvo!')",
+    "chinese": "AI Chinese - romanized pseudo-Mandarin syllables (zh/x/q/sh + ao/ang/ing/ou, "
+               "1-2 syllable words: 'Zhao ming tselu, wang shi bao!')",
+    "spanish": "AI Spanish - pseudo-Spanish with its vowel endings and rolling rhythm "
+               "('Elavanto no combrienda, la fuero mistrale!')",
+    "french": "AI French - pseudo-French with nasal vowels and liaison flow "
+              "('Le vonteau simarais un plontre, ce nuvale!')",
+    "japanese": "AI Japanese - pseudo-Japanese CV syllables (ka/shi/no/ru/tsu: "
+                "'Kanoshi tarumeki, sondato yuru!')",
+    "german": "AI German - pseudo-German with hard compounds and clusters "
+              "('Der schwanktel vurmacht ein grolzen, nichtbar!')",
+}
+
+
+# Syllable tables for the deterministic fallback generator - meaning-free,
+# phonology-true. Used per line when the AI babble pass leaks real words.
+_BABBLE_SYLLABLES = {
+    "english": ["weh", "nof", "tar", "keeb", "lin", "dro", "sal", "ver", "mo",
+                "stel", "gran", "dee", "har", "bin", "tof", "sur", "ket", "lan"],
+    "chinese": ["zhao", "ming", "tse", "lu", "wang", "shi", "bao", "xin", "qi",
+                "ling", "hao", "mei", "chu", "fan", "gui", "dao", "shen", "kou"],
+    "spanish": ["ela", "van", "to", "bri", "en", "da", "fue", "ro", "mis",
+                "tra", "le", "cor", "ni", "sol", "pa", "dre", "llo", "san"],
+    "french": ["von", "teau", "si", "ma", "rais", "plon", "tre", "nu", "vale",
+               "geur", "loi", "fon", "du", "pré", "mont", "che", "vau", "lié"],
+    "japanese": ["ka", "no", "shi", "ta", "ru", "me", "ki", "son", "da", "to",
+                 "yu", "mi", "ha", "re", "tsu", "ko", "na", "ri"],
+    "german": ["schwan", "ktel", "vur", "macht", "grol", "zen", "nicht", "bar",
+               "ver", "stein", "hoff", "brau", "dun", "kel", "wald", "ge", "mor", "gen"],
+}
+
+# Real words that must never survive inside babble dialogue (a leak detector,
+# not a dictionary - the fallback generator handles chronic leakers).
+_BABBLE_LEAKS = set("""the and you your yours it its is are was were be been this that
+these those what who why how when where we they them our their he she his her him
+not no yes never always feel feels felt wrong right everything nothing something
+listen look see hear know think want need must can cannot will would stop go come
+here there now then king queen father mother brother sister run hide help me""".split())
+
+
+def _fallback_babble(lang, n_words, seed_text):
+    """Deterministic pseudo-language words when the AI pass leaks English."""
+    rng = __import__("random").Random(hash(seed_text) & 0xFFFF)
+    syl = _BABBLE_SYLLABLES.get(lang, _BABBLE_SYLLABLES["english"])
+    return " ".join("".join(rng.choice(syl) for _ in range(rng.randint(1, 3)))
+                    for _ in range(max(3, n_words)))
+
+
+def babblify(lines, lang):
+    """Convert every quoted dialogue line to invented pseudo-`lang`, keeping
+    [Name] tags, leading emotion cues, and punctuation feel. AI writes the
+    babble (it is better at phonology than a syllable table); any line that
+    leaks real English words falls back to the deterministic generator, so
+    this never fails and never ships half-English dialogue."""
+    flat = []   # (line_idx, chunk_idx, cue_prefix, spoken_text)
+    parsed = [mv.split_dialogue(l) for l in lines]
+    for li, chunks in enumerate(parsed):
+        for ci, (sp, txt) in enumerate(chunks):
+            if not sp:
+                continue
+            m = re.match(r"^((?:\[[^\]]+\]\s*)+)?(.*)$", txt.strip())
+            flat.append((li, ci, (m.group(1) or "").strip(), m.group(2).strip()))
+    if not flat:
+        return lines
+    out_texts = None
+    try:
+        numbered = "\n".join(f"{i + 1}. {t}" for i, (_, _, _, t) in enumerate(flat))
+        raw = _ai_text(
+            "Rewrite each numbered line into an INVENTED pseudo-language: "
+            + BABBLE_LANGS[lang] + " "
+            "Same emotional shape and similar length, keep the punctuation "
+            "style (!, ?, ..., one CAPS word allowed). ABSOLUTE RULE: no real "
+            "words from English or any actual language - every word is made "
+            "up but pronounceable. "
+            'Reply with ONLY minified JSON, exactly: {"lines":['
+            + ",".join(['"..."'] * len(flat)) + "]} - same order.\n\n" + numbered,
+            max_tokens=120 + 30 * len(flat))
+        start, end = raw.find("{"), raw.rfind("}")
+        got = [re.sub(r"\s+", " ", str(x)).strip()[:200]
+               for x in (json.loads(raw[start:end + 1]).get("lines") or [])]
+        if len(got) == len(flat):
+            out_texts = got
+    except Exception:
+        pass
+    result = []
+    for i, (li, ci, cue, orig) in enumerate(flat):
+        cand = (out_texts[i] if out_texts else "") or ""
+        words = re.findall(r"[a-zA-Z']+", cand.lower())
+        if not words or any(w in _BABBLE_LEAKS for w in words):
+            cand = _fallback_babble(lang, len(orig.split()), orig) + "!"
+        flat[i] = (li, ci, cue, cand)
+    by_pos = {(li, ci): (cue, txt) for li, ci, cue, txt in flat}
+    out = []
+    for li, chunks in enumerate(parsed):
+        rebuilt = []
+        for ci, (sp, txt) in enumerate(chunks):
+            if sp and (li, ci) in by_pos:
+                cue, babble = by_pos[(li, ci)]
+                body = (cue + " " + babble).strip()
+                rebuilt.append(f'[{sp}] "{body}"')
+            elif re.search(r"[A-Za-z]", txt):
+                rebuilt.append(txt)
+            # narrator fragments with no letters (stray ',"' between quotes)
+            # are draft debris - dropped
+        out.append(" ".join(rebuilt))
+    return out
+
 
 AIMOVIE_IDEA = (
     'This video is "If {movie} was AI-generated" - an ORIGINAL trailer, written '
     "and generated by AI, riffing on that film's iconic premise, mood, and most "
     "recognizable situation. Rules that keep it an original riff: NEVER quote or "
     "closely paraphrase actual lines from the film; write brand-new dialogue "
-    "that captures the vibe. Prefer role names or first names over trademarked "
-    "character names (the detective, the older brother, the puppet). Recreate "
+    "that captures the vibe. NEVER use the film's actual character names - not in "
+    "the [Name] tags, not in the cast, not in the lines: use role names (the "
+    "detective, the cub prince, the uncle) or invent NEW first names. Recreate "
     "the FEELING and the famous setup, not specific protected scenes. Lean "
     "slightly into the uncanny 'an AI dreamed this movie' quality - familiar "
     "but a half-step off. ")
@@ -852,6 +978,7 @@ Produce per-beat references: attach an image and/or your own video to any beat; 
 🧬 Cast memory: new drafts and "Script from prompts" write a cast (name + fixed 6-12 word look) into the package; every visual prompt that mentions a character pins that exact look (polish is instructed, the free path expands the first name mention), so the same person appears across clips - prompt-level consistency, strong resemblance rather than a perfect face lock.
 💡 Draft from your own idea (top of Produce): paste a summary or details, pick scary/what-if/true-history, and Draft it builds the title, script, and shot prompts from YOUR notes (keeps every named fact), honoring Clips and Mood; the package opens ready to render.
 ✨ Invent one (next to Draft it): the AI writes the idea too - one fresh suggestion for the selected kind fills the box; edit, then Draft it.
+🗣️ "...in AI language" (5th kind in the idea box): same movie-riff format but every spoken line is invented pseudo-language - sounds like English/Chinese/Spanish/French/Japanese/German, means nothing ("The Lion King - chinese"). Voices pronounce it, lips sync it, captions become gibberish karaoke. Names/cues/prompts stay English.
 🎬 "If a movie was AI-generated" (4th kind in the idea box): type just a movie name and Draft it writes an ORIGINAL dialogue-only trailer riffing on the film's premise - new lines in its vibe (never actual quotes), role names over trademarked character names, uncanny AI-dreamed-it feel. Own branding: AI Remake category, electric-violet titles, epic trailer bed, reveal sfx, #aitrailer hashtags, "Every frame is AI" caption.
 Optional API keys, one per file in pipeline/: openai_key.txt (better writing), elevenlabs_key.txt (premium voices), tryinfer_key.txt (paid AI video), pexels_key.txt (stock). Free fallbacks exist for everything.
 Everything runs locally; no accounts, no tracking, no auto-posting. Never promise views, virality, or income."""
@@ -2803,7 +2930,7 @@ class Handler(BaseHTTPRequestHandler):
                     raise RuntimeError("unknown kind")
                 # A movie name can be 3 letters (Saw, Jaws); everything else
                 # needs a sentence or two.
-                if len(idea) < (2 if kind == "aimovie" else 12):
+                if len(idea) < (2 if kind in ("aimovie", "aibabble") else 12):
                     raise RuntimeError("give the writer a little more - a sentence or two about the idea")
                 # Same styling as the batch kind, but idea drafts carry their
                 # own scenario prefix so caches/exports are recognizably yours.
@@ -2812,18 +2939,29 @@ class Handler(BaseHTTPRequestHandler):
                 mood = str(data.get("mood") or "")
                 mood = mood if mood in MOODS else None   # Auto = the category's own register
                 title = re.sub(r"\s+", " ", str(data.get("title", ""))).strip()[:120]
-                if kind == "aimovie":
+                if kind in ("aimovie", "aibabble"):
                     # The idea box holds the movie name (plus an optional
-                    # angle after a dash/newline). Always the trailer register
-                    # unless a trailer mood was explicitly picked.
-                    movie = re.split(r"[\n—]| - ", idea, 1)[0].strip(" .!?\"'")[:80]
+                    # angle - or, for the babble kind, the language - after a
+                    # dash/newline). Always the trailer register unless a
+                    # trailer mood was explicitly picked.
+                    parts = re.split(r"[\n—]| - ", idea, 1)
+                    movie = parts[0].strip(" .!?\"'")[:80]
+                    rest = parts[1].strip().lower() if len(parts) > 1 else ""
                     if not movie:
                         raise RuntimeError("give me the movie name")
                     if mood not in ("trailer", "trailer-vo"):
                         mood = "trailer"
-                    title = title or f"If {movie.title()} Was AI-Generated"
-                    idea = AIMOVIE_IDEA.format(movie=movie) + (
-                        f"Creator's angle: {idea}" if idea != movie else "")
+                    if kind == "aibabble":
+                        # Draft the STORY in English first (all the quality
+                        # machinery applies); the babblify pass below converts
+                        # every spoken line to the invented language.
+                        babble_lang = next((l for l in BABBLE_LANGS if l in rest), "english")
+                        title = title or f"If {movie.title()} Was AI-Generated in AI {babble_lang.title()}"
+                        idea = AIMOVIE_IDEA.format(movie=movie)
+                    else:
+                        title = title or f"If {movie.title()} Was AI-Generated"
+                        idea = AIMOVIE_IDEA.format(movie=movie) + (
+                            f"Creator's angle: {idea}" if idea != movie else "")
                 try:
                     clips = max(5, min(20, int(data.get("clips") or 7)))
                 except (TypeError, ValueError):
@@ -2840,6 +2978,11 @@ class Handler(BaseHTTPRequestHandler):
                     pkg["hooks"] = [pkg["beats"][0]]
                     pkg["beats"] = pkg["beats"][1:]
                     pkg["outro"] = ""
+                if kind == "aibabble":
+                    # Convert every spoken line to the invented language;
+                    # names, cues, prompts and (silence) beats stay English.
+                    pkg["hooks"] = babblify(pkg["hooks"], babble_lang)
+                    pkg["beats"] = babblify(pkg["beats"], babble_lang)
                 file = write_package_export(pkg, "idea", title)
                 self.send_json({"ok": True, "file": file, "slot": 1, "title": title})
             except Exception as exc:
