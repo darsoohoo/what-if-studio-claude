@@ -1365,9 +1365,14 @@ $id("renderBtn").addEventListener("click", async () => {
       mood: renderMood(),
     });
     if (r.error) { setRenderStatus(r.error, "bad"); return; }
-    setRenderStatus(`✓ Request staged (${r.rows} clips, ≈${r.estimated_credits} credits). `
-      + `Now tell Claude: “fulfill the OpenArt request” — it generates the clips via MCP, `
-      + `stages them on the beats, and renders.`, "good");
+    setRenderStatus(r.spawned
+      ? `✓ Request staged (${r.rows} clips, ≈${r.estimated_credits} credits) and 🤖 Claude launched `
+        + `in the background — clips are generating and the render follows. Progress: `
+        + `pipeline\\openart-fulfill.log; the finished video lands on the Videos page.`
+      : `✓ Request staged (${r.rows} clips, ≈${r.estimated_credits} credits). `
+        + `Now tell Claude: “fulfill the OpenArt request” — it generates the clips via MCP, `
+        + `stages them on the beats, and renders. (Install + log in the claude CLI to make this automatic.)`,
+      "good");
     return;
   }
   const engine = $id("imgEngine").value;

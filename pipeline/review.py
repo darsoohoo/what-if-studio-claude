@@ -1813,6 +1813,49 @@ def video_models():
                   if m.get("capability") == "image-to-video")
 
 
+def claude_cli():
+    """The installed Claude Code CLI, if any - used to auto-fulfill OpenArt
+    requests headlessly (the MCP OAuth lives with Claude, not the pipeline).
+    PATH may predate the install, so known locations are checked too."""
+    for cand in ("claude", "claude.cmd", "claude.exe"):
+        p = shutil.which(cand)
+        if p:
+            return p
+    for p in (Path.home() / ".local" / "bin" / "claude.exe",
+              Path(os.environ.get("APPDATA", "")) / "npm" / "claude.cmd"):
+        if str(p) and p.is_file():
+            return str(p)
+    return None
+
+
+def spawn_openart_fulfillment(staging_name):
+    """Launch a headless Claude run to fulfill a staged OpenArt request.
+    Returns True when launched; the run itself reports into
+    pipeline/openart-fulfill.log and flips the request's status."""
+    cli = claude_cli()
+    if not cli:
+        return False
+    prompt = (
+        f"Fulfill the OpenArt request in pipeline/produce/{staging_name}/openart-request.json. "
+        "Follow the fulfillment procedure in pipeline/OPENART.md exactly: generate each row's "
+        "clip via the OpenArt MCP tools, download them to that folder's refv-NN.mp4 slots and "
+        "set ref-choice video for every row, log every clip to the spend ledger as it "
+        "completes, set the request's status to 'fulfilled' with the credits spent, then "
+        "render via the CLI with the request's recorded render flags and verify the log. "
+        "The user already approved the credit total in the dashboard, so do not re-ask. "
+        "If the OpenArt MCP tools are unavailable in this session, set the request status to "
+        "'failed: openart mcp unavailable' and stop without generating anything.")
+    log = open(HERE / "openart-fulfill.log", "w", encoding="utf-8")
+    # Scoped permissions, not a blanket bypass: the run can use the OpenArt
+    # MCP, the file tools, and shell commands - anything else it asks for is
+    # denied (and in -p mode, skipped).
+    subprocess.Popen([cli, "-p", prompt,
+                      "--allowedTools", "Bash", "Read", "Write", "Edit",
+                      "Glob", "Grep", "mcp__openart"],
+                     cwd=str(STUDIO), stdout=log, stderr=subprocess.STDOUT)
+    return True
+
+
 def render_running():
     return _render["proc"] is not None and _render["proc"].poll() is None
 
@@ -2719,9 +2762,10 @@ class Handler(BaseHTTPRequestHandler):
                 }
                 (d / "openart-request.json").write_text(json.dumps(req, indent=1),
                                                         encoding="utf-8")
+                spawned = spawn_openart_fulfillment(d.name)
                 self.send_json({"ok": True, "rows": len(req["rows"]),
                                 "estimated_credits": len(req["rows"]) * req["estimated_credits_per_clip"],
-                                "dir": d.name})
+                                "dir": d.name, "spawned": spawned})
             except Exception as exc:
                 self.send_json({"error": str(exc)}, 400)
             return
