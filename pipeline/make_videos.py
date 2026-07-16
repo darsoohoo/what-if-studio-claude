@@ -2162,12 +2162,15 @@ def speech_intervals(words, pad=0.12, gap=0.35):
 
 
 def final_render(ffmpeg, base, pkg, total, has_music, out_path, tmp, clip_audio=0.0,
-                 sfx_delay_ms=None, duck=None):
+                 sfx_delay_ms=None, duck=None, music_vol=None, swell=None):
     """Overlay captions and mix audio onto the base video (or a gradient).
     `clip_audio` > 0 mixes the base video's own sound (e.g. LTX-generated
     ambience) under the voice at that volume. `sfx_delay_ms` places tmp's
     sfx.wav on the timeline (None = no beat SFX). `duck` = speech spans:
-    the music dips to ~a third while anyone talks, swells back between."""
+    the music dips to ~30% while anyone talks (ramped over ~0.35s - real
+    trailer pumping, not steps) and swells back between lines. `music_vol`
+    overrides the branding bed level (trailers mix the score LOUD),
+    `swell` grows the score from ~70% into full by that timestamp."""
     if base is not None:
         video_in = ["-i", base.name]
     else:
@@ -2187,11 +2190,21 @@ def final_render(ffmpeg, base, pkg, total, has_music, out_path, tmp, clip_audio=
     if has_music and music_files:
         inputs += ["-i", music_files[0].name]
         fade_start = max(0.0, total - 1.5)
+        vol = music_vol if music_vol else branding_for(pkg)["music_volume"]
+        swell_f = ""
+        if swell:
+            swell_f = (f"volume='min(1,0.7+0.3*t/{max(swell, 1.0):.2f})'"
+                       ":eval=frame,")
         duck_f = ""
         if duck:
-            expr = "+".join(f"between(t,{s:.2f},{e:.2f})" for s, e in duck[:80])
-            duck_f = f"volume=0.35:enable='{expr}',"
-        filters.append(f"[2:a]volume={branding_for(pkg)['music_volume']},{duck_f}"
+            # Each span contributes a trapezoid (0.35s attack/release);
+            # max() folds them into one smooth gain curve.
+            expr = "0"
+            for s, e in duck[:60]:
+                expr = (f"max({expr},min(1,min((t-{s - 0.35:.2f})/0.35,"
+                        f"({e + 0.35:.2f}-t)/0.35)))")
+            duck_f = f"volume='1-0.7*({expr})':eval=frame,"
+        filters.append(f"[2:a]volume={vol},{swell_f}{duck_f}"
                        f"afade=t=out:st={fade_start:.2f}:d=1.5[m]")
         mix.append("[m]")
     # Beat-timed sound design (sfx.wav + its start offset, prepared by the
@@ -2762,11 +2775,14 @@ def main():
                     music = None if args.trailer_bed == "dread" else \
                         pick_music(pkg, args.music, override="trailer", score=score)
                     if music:
+                        # The strings LEAD, the dread bed supports underneath
+                        # (its own climax still lands - it just doesn't fight
+                        # the melody for the same space).
                         st = "aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo"
                         run([ffmpeg, "-y", "-i", str(music), "-i", str(tmp / "dread.wav"),
                              "-filter_complex",
-                             f"[0:a]atrim=0:{total + 1:.2f},asetpts=PTS-STARTPTS,{st},volume=0.9[m];"
-                             f"[1:a]{st},volume=0.9[d];"
+                             f"[0:a]atrim=0:{total + 1:.2f},asetpts=PTS-STARTPTS,{st},volume=1.0[m];"
+                             f"[1:a]{st},volume=0.6[d];"
                              "[m][d]amix=inputs=2:duration=longest:normalize=0[out]",
                              "-map", "[out]", "-c:a", "pcm_s16le", str(tmp / "music.wav")])
                         premixed = True
@@ -2800,10 +2816,17 @@ def main():
                 mix_gain = (1.0 if clip_voiced else args.clip_audio)
                 duck = speech_intervals(words) if args.trailer and words else None
                 if duck:
-                    print(f"  music: ducking under {len(duck)} spoken passages")
+                    print(f"  music: ducking under {len(duck)} spoken passages"
+                          " (smooth trailer pumping)")
+                # Trailers mix the score at soundtrack level, not bed level -
+                # loud between lines (which also buries any synthetic edge in
+                # the voices), dipping under speech, growing into the reveal.
                 final_render(ffmpeg, base, pkg, total, bool(music) or dread, out_path.resolve(), tmp,
                              clip_audio=mix_gain if base is not None else 0.0,
-                             sfx_delay_ms=sfx_delay_ms, duck=duck)
+                             sfx_delay_ms=sfx_delay_ms, duck=duck,
+                             music_vol=0.45 if args.trailer else None,
+                             swell=((reveal_start or 0.85 * total)
+                                    if args.trailer else None))
 
                 thumb_made = False
                 if font_ff:
