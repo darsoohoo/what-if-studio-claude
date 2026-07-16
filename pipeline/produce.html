@@ -159,6 +159,15 @@ button.next-step { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(139,1
           <option value="aimovie">🎬 If a movie was AI-generated</option>
           <option value="aibabble">🗣️ …in AI language (fake words)</option>
         </select>
+        <select id="ideaLang" style="width:auto" hidden title="The invented language every spoken line becomes — words that SOUND like it but mean nothing.">
+          <option value="english">🇺🇸 AI English</option>
+          <option value="chinese">🇨🇳 AI Chinese</option>
+          <option value="spanish">🇪🇸 AI Spanish</option>
+          <option value="french">🇫🇷 AI French</option>
+          <option value="japanese">🇯🇵 AI Japanese</option>
+          <option value="german">🇩🇪 AI German</option>
+          <option value="tagalog">🇵🇭 AI Tagalog</option>
+        </select>
         <button type="button" id="ideaSuggestBtn" title="Let the AI invent the idea too — one fresh suggestion for the selected kind lands in the box (a scary premise, a what-if, a documented event, or a movie pick). Edit it, then 💡 Draft it.">✨ Invent one</button>
         <button type="button" id="ideaBtn" class="primary">💡 Draft it</button>
       </div>
@@ -1495,11 +1504,12 @@ async function morningStatus() {
 /* ---------- 💡 draft from the creator's own idea ---------- */
 const IDEA_PLACEHOLDERS = {
   aimovie: "Movie name — e.g. Saw, The Blair Witch Project, Jaws — optionally add an angle after a dash: \"Saw - the trap is a group chat\"",
-  aibabble: "Movie — language: \"The Lion King - chinese\" (english / chinese / spanish / french / japanese / german / tagalog; default english). All dialogue becomes invented words that only SOUND like the language.",
+  aibabble: "Movie name — e.g. The Lion King, Titanic, Jaws — then pick the AI language from the dropdown on the right. All dialogue becomes invented words that only SOUND like that language.",
   _default: "e.g. A night-shift nurse notices every patient in ward 6 draws the same door — and last night someone drew it open.",
 };
 $id("ideaKind").addEventListener("change", () => {
   $id("ideaText").placeholder = IDEA_PLACEHOLDERS[$id("ideaKind").value] || IDEA_PLACEHOLDERS._default;
+  $id("ideaLang").hidden = $id("ideaKind").value !== "aibabble";
 });
 $id("ideaSuggestBtn").addEventListener("click", async () => {
   const btn = $id("ideaSuggestBtn"), st = $id("ideaStatus");
@@ -1536,6 +1546,7 @@ $id("ideaBtn").addEventListener("click", async () => {
       idea,
       title: $id("ideaTitle").value.trim(),
       kind: $id("ideaKind").value,
+      lang: $id("ideaLang").value,
       clips: Number($id("clipCount").value) || 7,
       mood: $id("moodSel").value,
     });

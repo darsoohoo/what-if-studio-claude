@@ -2960,8 +2960,13 @@ class Handler(BaseHTTPRequestHandler):
                     if kind == "aibabble":
                         # Draft the STORY in English first (all the quality
                         # machinery applies); the babblify pass below converts
-                        # every spoken line to the invented language.
-                        babble_lang = next((l for l in BABBLE_LANGS if l in rest), "english")
+                        # every spoken line to the invented language. The
+                        # dropdown's lang wins; "- language" in the text still
+                        # works as an override for typists.
+                        lang_param = str(data.get("lang") or "").strip().lower()
+                        babble_lang = (next((l for l in BABBLE_LANGS if l in rest), None)
+                                       or (lang_param if lang_param in BABBLE_LANGS else None)
+                                       or "english")
                         title = title or f"If {movie.title()} Was AI-Generated in AI {babble_lang.title()}"
                         idea = AIMOVIE_IDEA.format(movie=movie)
                     else:
