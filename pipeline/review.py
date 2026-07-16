@@ -999,8 +999,9 @@ AIMOVIE_IDEA = (
     "recognizable situation. Rules that keep it an original riff: NEVER quote or "
     "closely paraphrase actual lines from the film; write brand-new dialogue "
     "that captures the vibe. NEVER use the film's actual character names - not in "
-    "the [Name] tags, not in the cast, not in the lines: use role names (the "
-    "detective, the cub prince, the uncle) or invent NEW first names. Recreate "
+    "the [Name] tags, not in the cast, not in the lines: use role names that fit "
+    "THIS film's world (a heist film might have The Driver; a courtroom drama The "
+    "Juror - pick your own) or invent NEW first names. Recreate "
     "the FEELING and the famous setup, not specific protected scenes. Lean "
     "slightly into the uncanny 'an AI dreamed this movie' quality - familiar "
     "but a half-step off. ")
