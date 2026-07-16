@@ -410,6 +410,46 @@ EDGE_CAST = ["en-US-AriaNeural", "en-US-GuyNeural", "en-GB-SoniaNeural",
 # account's voice list; any other account voices fill in after).
 ELEVEN_CAST_NAMES = ["Rachel", "Josh", "Domi", "Antoni", "Bella", "Charlie"]
 
+# Voices must FIT the character: a Dad with Rachel's voice or a Child with
+# Adam's breaks the scene instantly. Kind is inferred from the character's
+# tag name + cast look; unknown kinds alternate female/male.
+EDGE_CAST_BY_KIND = {
+    "male":   ["en-US-GuyNeural", "en-GB-RyanNeural", "en-US-EricNeural",
+               "en-US-ChristopherNeural"],
+    "female": ["en-US-AriaNeural", "en-US-JennyNeural", "en-GB-SoniaNeural",
+               "en-US-MichelleNeural"],
+    "child":  ["en-US-AnaNeural", "en-GB-MaisieNeural"],
+}
+ELEVEN_CAST_BY_KIND = {
+    "male":   ["Josh", "Antoni", "Charlie", "Adam", "Callum", "Brian", "Daniel",
+               "George", "Eric", "Roger", "Will", "Liam"],
+    "female": ["Rachel", "Bella", "Domi", "Matilda", "Sarah", "Laura", "Alice",
+               "Jessica", "Lily", "Elli"],
+    "child":  ["Gigi", "Lily", "Alice"],   # Gigi is the childlike premade
+}
+
+_KIND_WORDS = {
+    "child": {"child", "kid", "boy", "girl", "son", "daughter", "toddler",
+              "teen", "teenager"},
+    "male": {"man", "male", "dad", "father", "mr", "sir", "he", "his", "guy",
+             "husband", "brother", "uncle", "grandpa", "grandfather",
+             "sheriff", "king", "prince", "gentleman", "priest", "monk"},
+    "female": {"woman", "female", "mom", "mother", "mrs", "ms", "she", "her",
+               "lady", "wife", "sister", "aunt", "grandma", "grandmother",
+               "queen", "princess", "nun", "girl"},
+}
+
+
+def _char_kind(name, look):
+    """'male' / 'female' / 'child' / None from a character's tag + cast look
+    (whole-word matches only - 'she' must never match inside 'the').
+    Child wins over gender: a 'little girl' needs a child voice first."""
+    words = set(re.findall(r"[a-z]+", f"{name} {look}".lower()))
+    for kind in ("child", "male", "female"):
+        if words & _KIND_WORDS[kind]:
+            return kind
+    return None
+
 
 def split_dialogue(text):
     """'... [Mara] "Why?" ...' -> [(None, '...'), ('Mara', 'Why?'), (None, '...')].
@@ -479,7 +519,7 @@ def detect_speech_span(ffmpeg, media, total):
 
 
 def synthesize_cast(segments, vconf, out_mp3, tmp, ffmpeg, ffprobe, eleven=None,
-                    narrator_tempo=1.0, pad=0.15, clip_voiced=None):
+                    narrator_tempo=1.0, pad=0.15, clip_voiced=None, cast_info=None):
     """Multi-voice narration for segments carrying [Name] "line" dialogue.
     Synthesizes each chunk with its voice, gives character lines a subtle
     in-scene treatment (thinner low end + a touch of slap echo), stitches
@@ -494,21 +534,47 @@ def synthesize_cast(segments, vconf, out_mp3, tmp, ffmpeg, ffprobe, eleven=None,
     for sp, _ in chunks:
         if sp and sp not in characters:
             characters.append(sp)
+
+    def look_for(ch):
+        """The cast entry's look for a dialogue tag (partial name matches:
+        the tag 'Sheriff' finds the cast's 'Sheriff Dade')."""
+        chl = ch.lower()
+        for c in cast_info or []:
+            n = str(c.get("name", "")).lower()
+            if n and (n in chl or chl in n):
+                return str(c.get("look", ""))
+        return ""
+
+    # Kind-aware casting: each character draws from the pool matching their
+    # inferred kind (child > male > female); unknowns alternate female/male.
+    kinds = {ch: _char_kind(ch, look_for(ch)) for ch in characters}
+    unknown_flip = ["female", "male"]
     cast = {}   # character -> (display label, voice)
     if eleven:
         byname = {_voice_base(n): (n.split(" - ")[0].strip(), vid)
                   for n, vid in eleven["voices"].items()}
-        pool = [byname[w.lower()] for w in ELEVEN_CAST_NAMES
-                if w.lower() in byname and byname[w.lower()][1] != eleven["narrator_id"]]
-        pool += [v for v in sorted(byname.values())
-                 if v[1] != eleven["narrator_id"] and v not in pool]
+        leftovers = [v for v in sorted(byname.values())
+                     if v[1] != eleven["narrator_id"]]
+        used = set()
         for i, ch in enumerate(characters):
-            cast[ch] = pool[i % len(pool)] if pool else ("narrator", eleven["narrator_id"])
+            kind = kinds[ch] or unknown_flip[i % 2]
+            pool = [byname[w.lower()] for w in ELEVEN_CAST_BY_KIND.get(kind, [])
+                    if w.lower() in byname
+                    and byname[w.lower()][1] != eleven["narrator_id"]
+                    and byname[w.lower()][1] not in used]
+            pool += [v for v in leftovers if v[1] not in used and v not in pool]
+            cast[ch] = pool[0] if pool else ("narrator", eleven["narrator_id"])
+            used.add(cast[ch][1])
     else:
-        pool = [v for v in EDGE_CAST if v != vconf["voice"]]
+        used = set()
         for i, ch in enumerate(characters):
-            v = pool[i % len(pool)]
+            kind = kinds[ch] or unknown_flip[i % 2]
+            pool = [v for v in EDGE_CAST_BY_KIND.get(kind, [])
+                    if v != vconf["voice"] and v not in used]
+            pool += [v for v in EDGE_CAST if v != vconf["voice"] and v not in used]
+            v = pool[0] if pool else EDGE_CAST[i % len(EDGE_CAST)]
             cast[ch] = (v.split("-")[-1].replace("Neural", ""), v)
+            used.add(v)
 
     # Character lines read hotter than narration: lower stability + style
     # exaggeration gives ElevenLabs dialogue real acting instead of an even
@@ -2437,7 +2503,7 @@ def main():
                                     "settings": el_settings},
                             narrator_tempo=TRAILER_TEMPO if args.trailer else 1.0,
                             pad=0.7 if args.trailer else 0.15,
-                            clip_voiced=clip_voiced)
+                            clip_voiced=clip_voiced, cast_info=pkg.get("cast"))
                     else:
                         words = synthesize_elevenlabs(text, el_voice_id, args.el_model,
                                                       tmp / "voice.mp3", el_key,
@@ -2461,7 +2527,7 @@ def main():
                         words, cast = synthesize_cast(
                             raw_segments, vconf, tmp / "voice.mp3", tmp, ffmpeg, ffprobe,
                             pad=0.7 if args.trailer else 0.15,
-                            clip_voiced=clip_voiced)
+                            clip_voiced=clip_voiced, cast_info=pkg.get("cast"))
                     else:
                         words = asyncio.run(synthesize(text, vconf, tmp / "voice.mp3"))
                     total = probe_duration(ffprobe, tmp / "voice.mp3")

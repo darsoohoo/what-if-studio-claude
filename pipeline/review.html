@@ -51,6 +51,8 @@ summary { cursor: pointer; color: var(--text-dim); }
 pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(--border); border-radius: 8px; padding: 10px; max-height: 260px; overflow-y: auto; font-size: 12px; }
 .saved { color: var(--good); font-size: 11.5px; min-height: 14px; }
 .card.uploaded { border-color: var(--good); }
+.card.tucked { opacity: 0.55; border-style: dashed; }
+.hidebtn.on { color: var(--accent-strong); border-color: var(--accent); }
 .upbadge { color: var(--good); font-size: 11px; font-weight: 700; letter-spacing: 0.04em; white-space: nowrap; }
 .upbtn.on { color: var(--good); border-color: var(--good); }
 .empty { color: var(--text-dim); padding: 40px 24px; }
@@ -103,6 +105,10 @@ main.view-list textarea, main.view-list details, main.view-list .saved { display
   <h1>Video Review</h1>
   <span class="sub" id="count"></span>
   <div class="views" role="group" aria-label="View and sort">
+    <select id="filterSel" title="Fresh hides videos you've marked uploaded or hidden; All shows everything (hidden cards dimmed)" aria-label="Filter videos">
+      <option value="fresh">Fresh</option>
+      <option value="all">All videos</option>
+    </select>
     <select id="sortSel" title="Sort videos" aria-label="Sort videos">
       <option value="manual">My order</option>
       <option value="newest">Newest first</option>
@@ -151,6 +157,18 @@ sortSel.value = sortMode;
 sortSel.addEventListener("change", () => {
   sortMode = sortSel.value;
   try { localStorage.setItem("wis.videosSort", sortMode); } catch (e) {}
+  render();
+});
+
+/* ---- filter: Fresh (default) hides uploaded + hidden; All shows everything ---- */
+let filterMode = "fresh";
+try { filterMode = localStorage.getItem("wis.videosFilter") || "fresh"; } catch (e) {}
+if (!["fresh", "all"].includes(filterMode)) filterMode = "fresh";
+const filterSel = document.getElementById("filterSel");
+filterSel.value = filterMode;
+filterSel.addEventListener("change", () => {
+  filterMode = filterSel.value;
+  try { localStorage.setItem("wis.videosFilter", filterMode); } catch (e) {}
   render();
 });
 
@@ -203,14 +221,21 @@ function noteChanged(v, textarea, savedEl) {
 function render() {
   const grid = document.getElementById("grid");
   grid.innerHTML = "";
+  // Fresh view = the working queue: skip what's posted or tucked away.
+  const pool = filterMode === "fresh"
+    ? videos.filter(v => !v.uploaded && !v.hidden)
+    : videos;
   document.getElementById("count").textContent =
-    videos.length + " video" + (videos.length === 1 ? "" : "s") + " in the pipeline";
-  document.getElementById("empty").hidden = videos.length > 0;
+    (filterMode === "fresh" && pool.length !== videos.length)
+      ? `${pool.length} fresh of ${videos.length} video${videos.length === 1 ? "" : "s"}`
+      : pool.length + " video" + (pool.length === 1 ? "" : "s") + " in the pipeline";
+  document.getElementById("empty").hidden = pool.length > 0;
 
   // A sort other than "My order" only changes the DISPLAY - the saved
-  // posting order is untouched, so the reorder arrows hide until you're
-  // back on "My order".
-  const shown = SORTS[sortMode] ? [...videos].sort(SORTS[sortMode]) : videos;
+  // posting order is untouched. Reorder arrows need the FULL list in its
+  // saved order, so they show only on My order + All videos.
+  const canReorder = sortMode === "manual" && filterMode === "all";
+  const shown = SORTS[sortMode] ? [...pool].sort(SORTS[sortMode]) : pool;
   shown.forEach((v, i) => {
     const player = el("video", { controls: "", preload: "none", src: "/files/" + encodeURIComponent(v.name) });
     if (v.thumb) player.poster = "/files/" + encodeURIComponent(v.thumb);
@@ -229,7 +254,17 @@ function render() {
         if (r.ok !== undefined ? r.ok : !r.error) { v.uploaded = r.uploaded || null; render(); }
       },
     });
-    const card = el("div", { class: "card" + (v.uploaded ? " uploaded" : "") }, [
+    const hideBtn = el("button", {
+      class: "hidebtn" + (v.hidden ? " on" : ""),
+      text: v.hidden ? "Show" : "Hide",
+      title: v.hidden ? "Bring this video back into the Fresh view"
+                      : "Tuck this video away — the Fresh view skips it (nothing is deleted)",
+      onclick: async () => {
+        const r = await api("/api/hidden", { name: v.name, hidden: !v.hidden });
+        if (!r.error) { v.hidden = r.hidden; render(); }
+      },
+    });
+    const card = el("div", { class: "card" + (v.uploaded ? " uploaded" : "") + (v.hidden ? " tucked" : "") }, [
       el("div", { class: "row" }, [
         el("span", { class: "pos", text: "#" + (i + 1) }),
         el("span", { class: "title", text: v.title }),
@@ -239,7 +274,7 @@ function render() {
       ]),
       player,
       el("div", { class: "row" }, [
-        ...(sortMode === "manual" ? [
+        ...(canReorder ? [
           el("button", { text: "↑", "aria-label": "Move up", onclick: () => move(i, -1), ...(i === 0 ? { disabled: "" } : {}) }),
           el("button", { text: "↓", "aria-label": "Move down", onclick: () => move(i, 1), ...(i === videos.length - 1 ? { disabled: "" } : {}) }),
         ] : []),
@@ -251,6 +286,7 @@ function render() {
         el("span", { class: "meta", text: v.size_mb + " MB" }),
         el("span", { style: "flex:1" }),
         upBtn,
+        hideBtn,
         el("button", { class: "del", text: "Remove", onclick: () => removeVideo(v) }),
       ]),
       note,

@@ -183,6 +183,8 @@ def list_videos():
             "note": state["notes"].get(f.name, ""),
             # epoch seconds when the user marked it posted, or None
             "uploaded": state.get("uploaded", {}).get(f.name),
+            # tucked away on the Videos page (Fresh view hides it)
+            "hidden": bool(state.get("hidden", {}).get(f.name)),
         }
     ordered = [vids.pop(n) for n in state["order"] if n in vids]
     ordered += sorted(vids.values(), key=lambda v: v["mtime"])   # new files last
@@ -2863,6 +2865,22 @@ class Handler(BaseHTTPRequestHandler):
                     state["notes"][name] = str(data.get("text", ""))[:5000]
                     save_state(state)
                     self.send_json({"ok": True})
+                else:
+                    self.send_json({"error": "bad name"}, 400)
+                return
+
+            if self.path == "/api/hidden":
+                # Tuck a video away without deleting it - the Videos page's
+                # Fresh view skips hidden (and uploaded) cards.
+                name = safe_name(data.get("name", ""))
+                if name:
+                    hid = state.setdefault("hidden", {})
+                    if data.get("hidden"):
+                        hid[name] = True
+                    else:
+                        hid.pop(name, None)
+                    save_state(state)
+                    self.send_json({"ok": True, "hidden": bool(hid.get(name))})
                 else:
                     self.send_json({"error": "bad name"}, 400)
                 return
