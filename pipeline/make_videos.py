@@ -2769,6 +2769,16 @@ def main():
                         score = infer_score(pkg)
                 music = None
                 premixed = False
+
+                def normalize_score(src, dest):
+                    # incompetech tracks span ~20 dB of loudness (epic battle
+                    # vs sparse piano) - normalize every trailer score to the
+                    # same perceived level (EBU R128) so the genre choice
+                    # never decides whether the music is audible.
+                    run([ffmpeg, "-y", "-i", str(src), "-t", f"{total + 1:.2f}",
+                         "-af", "loudnorm=I=-14:TP=-1.5:LRA=11,aresample=44100",
+                         "-c:a", "pcm_s16le", str(dest)])
+
                 if dread:
                     synth_dread_bed(tmp / "dread.wav", total + 1.0, climax=reveal_start)
                     peak_at = reveal_start if reveal_start else 0.85 * (total + 1.0)
@@ -2778,16 +2788,20 @@ def main():
                         # The strings LEAD, the dread bed supports underneath
                         # (its own climax still lands - it just doesn't fight
                         # the melody for the same space).
-                        st = "aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo"
-                        run([ffmpeg, "-y", "-i", str(music), "-i", str(tmp / "dread.wav"),
+                        normalize_score(music, tmp / "score.wav")
+                        st = "aformat=sample_fmts=fltp:channel_layouts=stereo"
+                        run([ffmpeg, "-y", "-i", str(tmp / "score.wav"),
+                             "-i", str(tmp / "dread.wav"),
                              "-filter_complex",
-                             f"[0:a]atrim=0:{total + 1:.2f},asetpts=PTS-STARTPTS,{st},volume=1.0[m];"
-                             f"[1:a]{st},volume=0.6[d];"
-                             "[m][d]amix=inputs=2:duration=longest:normalize=0[out]",
+                             f"[0:a]{st},volume=1.0[m];[1:a]aresample=44100,{st},volume=0.6[d];"
+                             "[m][d]amix=inputs=2:duration=longest:normalize=0,"
+                             "alimiter=limit=0.95[out]",
                              "-map", "[out]", "-c:a", "pcm_s16le", str(tmp / "music.wav")])
+                        (tmp / "score.wav").unlink()
                         premixed = True
                         print(f"  music: {music.parent.name}/{music.name}"
-                              f" [{score} score] + dread bed (climax at {peak_at:.1f}s)")
+                              f" [{score} score, loudness-normalized]"
+                              f" + dread bed (climax at {peak_at:.1f}s)")
                     else:
                         (tmp / "dread.wav").rename(tmp / "music.wav")
                         print(f"  music: synthesized dread bed, building to a climax at {peak_at:.1f}s"
@@ -2797,10 +2811,14 @@ def main():
                                        override=("ironic" if args.ironic_music
                                                  else "trailer" if args.trailer else None),
                                        score=score)
+                if music and not premixed and args.trailer:
+                    normalize_score(music, tmp / "music.wav")
+                    premixed = True
+                    print(f"  music: {music.parent.name}/{music.name}"
+                          f" [{score} score, loudness-normalized]")
                 if music and not premixed:
                     shutil.copy(music, tmp / ("music" + music.suffix))
-                    print(f"  music: {music.parent.name}/{music.name}"
-                          + (f" [{score} score]" if args.trailer else ""))
+                    print(f"  music: {music.parent.name}/{music.name}")
                     if args.ironic_music and reveal_start is not None:
                         ironic_music_treatment(ffmpeg, tmp / ("music" + music.suffix),
                                                tmp / "music-ironic.wav", reveal_start,
@@ -2824,7 +2842,7 @@ def main():
                 final_render(ffmpeg, base, pkg, total, bool(music) or dread, out_path.resolve(), tmp,
                              clip_audio=mix_gain if base is not None else 0.0,
                              sfx_delay_ms=sfx_delay_ms, duck=duck,
-                             music_vol=0.45 if args.trailer else None,
+                             music_vol=0.6 if args.trailer else None,
                              swell=((reveal_start or 0.85 * total)
                                     if args.trailer else None))
 

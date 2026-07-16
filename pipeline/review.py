@@ -770,7 +770,9 @@ IDEA_SUGGEST_PROMPTS = {
 # pseudo-language - sounds like the target language, means nothing.
 BABBLE_LANGS = {
     "english": "AI English - nonsense that has the rhythm, stress and phonology of "
-               "casual American English (Simlish-style: 'Weh nofar tu keeblin, da sarvo!')",
+               "casual AMERICAN English (Simlish-style: 'Wanna nofar tu keeblin, da sarvo!'). "
+               "It must NOT drift German: no doubled 'oo/ah/eh' vowels, no 'weh/deh/zeh', "
+               "keep English word shapes ('nivir', 'tugithir', 'sumbrethin')",
     "chinese": "AI Chinese - romanized pseudo-Mandarin syllables (zh/x/q/sh + ao/ang/ing/ou, "
                "1-2 syllable words: 'Zhao ming tselu, wang shi bao!')",
     "spanish": "AI Spanish - pseudo-Spanish with its vowel endings and rolling rhythm "
@@ -839,9 +841,10 @@ soon later once twice again heart hearts young happy sad cry cried tears""".spli
 
 def _bend_word(word, lang):
     """Mangle one leaked real word into pseudo-language while keeping its
-    phonetic shape ('it' -> 'eet', 'up' -> 'oop') - so a single stray English
-    word doesn't cost us the whole AI-written line."""
-    swaps = {"a": "ah", "e": "eh", "i": "ee", "o": "oh", "u": "oo"}
+    phonetic shape ('never' -> 'nivir', 'together' -> 'tugithir') - so a
+    stray English word doesn't cost us the whole AI-written line. Single
+    vowel ROTATION, not doubling: 'ohoo/ehreh' digraphs read as German."""
+    swaps = {"a": "e", "e": "i", "i": "o", "o": "u", "u": "a"}
     bent = "".join(swaps.get(c, c) for c in word.lower())
     if bent == word.lower() or bent in _BABBLE_LEAKS:
         syl = _BABBLE_SYLLABLES.get(lang, _BABBLE_SYLLABLES["english"])
