@@ -2221,6 +2221,23 @@ def render_thumbnail(ffmpeg, visual, pkg, out_path, tmp, font_ff):
          str(out_path)], cwd=tmp)
 
 
+def render_turn_card(ffmpeg, tmp, word, font_name, fontsize):
+    """Build the turn card as a 1.35s clip that SLAMS: the word starts 45%
+    oversized and punches down to rest in ~4 frames, under a 2-frame white
+    flash - a hit, not an appearance. Written to tmp/turn-card.mp4;
+    final_render overlays it at the turn."""
+    run([ffmpeg, "-y", "-f", "lavfi", "-i", f"color=black:s={WIDTH}x{HEIGHT}",
+         "-vf", f"drawtext=fontfile={font_name}:text='{esc_drawtext(word)}':"
+                f"fontsize={fontsize}:fontcolor=white:x=(w-tw)/2:y=(h-th)/2",
+         "-frames:v", "1", "turn-card.png"], cwd=tmp)
+    run([ffmpeg, "-y", "-loop", "1", "-i", "turn-card.png",
+         "-vf", f"zoompan=z='max(1.0,1.45-0.15*on)':x='(iw-iw/zoom)/2':"
+                f"y='(ih-ih/zoom)/2':d=125:s={WIDTH}x{HEIGHT}:fps={FPS},"
+                "fade=t=in:st=0:d=0.07:color=white",
+         "-t", "1.35", "-r", str(FPS), "-c:v", "libx264", "-preset", "veryfast",
+         "-crf", "20", "-pix_fmt", "yuv420p", "turn-card.mp4"], cwd=tmp)
+
+
 def speech_intervals(words, pad=0.12, gap=0.35):
     """Merged (start, end) spans where someone is speaking - drives the
     music ducking so lines sit clearly on top of the score."""
@@ -2258,9 +2275,17 @@ def final_render(ffmpeg, base, pkg, total, has_music, out_path, tmp, clip_audio=
 
     inputs = [*video_in, "-i", "voice.mp3"]
     vf = "[0:v]ass=subs.ass:fontsdir=."
-    if turn_card:
-        # The turn card: a hard cut to black with ONE huge word, punched in
-        # time with the heavy boom, gone again in ~1.3 s.
+    if turn_card and (Path(tmp) / "turn-card.mp4").exists():
+        # The turn card: a hard cut to black where the word SLAMS in -
+        # oversized, punching down over 4 frames under a white flash, in
+        # time with the heavy boom (the clip comes from render_turn_card).
+        tt = turn_card[0]
+        vf = (vf + "[vbase];"
+              f"movie=turn-card.mp4,setpts=PTS-STARTPTS+{tt:.2f}/TB[tc];"
+              f"[vbase][tc]overlay=eof_action=pass:"
+              f"enable='between(t,{tt:.2f},{tt + 1.35:.2f})'")
+    elif turn_card:
+        # Fallback: static card if the slam clip failed to build.
         tt, word, fname, fs = turn_card
         en = f"enable='between(t,{tt:.2f},{tt + 1.35:.2f})'"
         vf += (f",drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill:{en}"
@@ -3009,6 +3034,10 @@ def main():
                     if card_font:
                         fs = max(58, min(150, int(1500 / max(1, len(turn_word)))))
                         card = (turn_t, turn_word, card_font, fs)
+                        try:
+                            render_turn_card(ffmpeg, tmp, turn_word, card_font, fs)
+                        except Exception as exc:
+                            print(f"  (turn card slam skipped: {exc} - static card instead)")
                 final_render(ffmpeg, base, pkg, total, bool(music) or dread, out_path.resolve(), tmp,
                              clip_audio=mix_gain if base is not None else 0.0,
                              sfx_delay_ms=sfx_delay_ms, duck=duck,
