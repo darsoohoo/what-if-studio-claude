@@ -2649,6 +2649,30 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"ok": True, "imported": [f.name for f in reversed(recent)]})
             return
 
+        if self.path == "/api/produce/turn-word":
+            # Edit the 🎢 turn-card word in place (the chip under the
+            # package dropdown) - no script rewrite needed. Empty = clear;
+            # the render then falls back to its default card.
+            try:
+                qpath = queue_path(str(data.get("queue", "")))
+                if not qpath or not qpath.is_file():
+                    raise RuntimeError("queue file not found")
+                slot = int(data.get("slot") or 0)
+                qdata = json.loads(qpath.read_text(encoding="utf-8"))
+                pkg = next((it["package"] for it in qdata.get("items", [])
+                            if it.get("slot") == slot and it.get("package")), None)
+                if not pkg:
+                    raise RuntimeError(f"slot {slot} not in {qpath.name}")
+                word = re.sub(r"[^A-Za-z' .!?]+", " ",
+                              str(data.get("word", "")))
+                word = " ".join(word.split()[:3])[:24].strip()
+                pkg["turn_word"] = word
+                qpath.write_text(json.dumps(qdata, indent=2), encoding="utf-8")
+                self.send_json({"ok": True, "word": word})
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 400)
+            return
+
         if self.path == "/api/produce/edit":
             # Edit the script inside an archived export - narration, captions,
             # and the render all pick the change up; the scenario id (and with

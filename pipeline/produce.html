@@ -345,6 +345,40 @@ async function loadQueues() {
     }
   }
 }
+/* Package chips: the writer's trailer choices at a glance. The 🎢 card
+   chip is CLICKABLE - edit the turn word in place (saved to the package,
+   no script rewrite; empty = back to the render's default card). */
+const SCORE_CHIP = { action: "⚔️ action", dark: "🌑 dark",
+                     tragedy: "💔 tragedy", wonder: "✨ wonder" };
+function renderPkgChips() {
+  const el = $id("pkgChips");
+  el.textContent = "";
+  const parts = [];
+  if (SCORE_CHIP[S.pkgScore]) parts.push("🎼 " + SCORE_CHIP[S.pkgScore] + " score");
+  el.hidden = !parts.length && !S.pkgScore && !S.turnWord;
+  if (el.hidden) return;
+  el.append(parts.join("  ·  "));
+  if (parts.length) el.append("  ·  ");
+  const chip = document.createElement("span");
+  chip.id = "turnChip";
+  chip.style.cursor = "pointer";
+  chip.style.textDecoration = "underline dotted";
+  chip.title = "Click to edit the word that slams on the 🎢 turn (1-3 words; empty = the render's default card)";
+  chip.textContent = "🎢 card: " + (S.turnWord ? "“" + S.turnWord + "”" : "— (click to set)");
+  chip.addEventListener("click", async () => {
+    const word = prompt("Turn card word (1-3 words - it slams on the boom):", S.turnWord);
+    if (word === null) return;
+    const r = await api("/api/produce/turn-word",
+                        { queue: S.queue, slot: S.slot, word: word.trim() });
+    if (r.error) { setRenderStatus(r.error, "bad"); return; }
+    S.turnWord = r.word || "";
+    renderPkgChips();
+    setRenderStatus(S.turnWord
+      ? `🎢 turn card saved: “${S.turnWord}”` : "🎢 turn card cleared - the render uses its default", "good");
+  });
+  el.appendChild(chip);
+}
+
 /* Selecting a package pre-fills the 💡 idea box from its title, so a
    variant (same movie, another language) is two clicks away. Only values
    the auto-fill itself wrote get overwritten - user typing is never
@@ -399,14 +433,9 @@ $id("pkgSelect").addEventListener("change", async (e) => {
   S.script = info.script;
   S.refs = info.refs || [];
   S.openai = !!info.openai;
-  // Read-only chips: what the writer picked for the trailer treatment.
-  const SCORE_CHIP = { action: "⚔️ action", dark: "🌑 dark",
-                       tragedy: "💔 tragedy", wonder: "✨ wonder" };
-  const chips = [];
-  if (SCORE_CHIP[info.score]) chips.push("🎼 " + SCORE_CHIP[info.score] + " score");
-  if (info.turn_word) chips.push("🎢 card: “" + info.turn_word + "”");
-  $id("pkgChips").textContent = chips.join("  ·  ");
-  $id("pkgChips").hidden = !chips.length;
+  S.turnWord = info.turn_word || "";
+  S.pkgScore = info.score || "";
+  renderPkgChips();
   renderPrompts(info.prompts, false);   // fresh package - nothing carries over
   $id("importStatus").textContent = "";
   $id("importCount").textContent = info.prompts.length;
