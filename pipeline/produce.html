@@ -94,6 +94,8 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
 .apibox { background: rgba(139,123,255,0.08); border: 1px solid var(--accent); border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; }
 .apibox label.opt { color: var(--text); flex-wrap: wrap; }
 .apibox label.opt + label.opt { margin-top: 8px; }
+.stepbadge { display: inline-block; background: var(--accent); color: #fff; border-radius: 50%; width: 20px; height: 20px; line-height: 20px; text-align: center; font-size: 12px; font-weight: 700; margin-right: 5px; }
+button.next-step { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(139,123,255,0.35); }
 .skipped { opacity: 0.4; pointer-events: none; }
 :focus-visible { outline: 3px solid var(--accent-strong); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
@@ -150,11 +152,24 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
       <textarea id="ideaText" rows="3" style="width:100%;font:inherit;font-size:13px;color:var(--text);background:var(--bg-inset);border:1px solid var(--border-strong);border-radius:8px;padding:8px 10px;resize:vertical" placeholder="e.g. A night-shift nurse notices every patient in ward 6 draws the same door — and last night someone drew it open."></textarea>
       <div class="row">
         <input type="text" id="ideaTitle" placeholder="Title (optional — the writer invents one)" style="flex:1;min-width:220px;font:inherit;color:var(--text);background:var(--bg-inset);border:1px solid var(--border-strong);border-radius:8px;padding:8px 10px">
-        <select id="ideaKind" style="width:auto">
+        <select id="ideaKind" style="width:auto" title="😱/💭/📜 draft from your idea text. 🎬 AI movie remake: type just the MOVIE NAME (plus an optional angle after a dash) — the writer builds an original 'If <movie> was AI-generated' trailer: new dialogue in the film's vibe, never actual quotes, role names over trademarked ones.">
           <option value="scary">😱 Scary story</option>
           <option value="whatif">💭 Realistic what-if</option>
           <option value="history">📜 True history</option>
+          <option value="aimovie">🎬 If a movie was AI-generated</option>
+          <option value="aibabble">🗣️ …in AI language (fake words)</option>
         </select>
+        <select id="ideaLang" style="width:auto" hidden title="The invented language every spoken line becomes — words that SOUND like it but mean nothing.">
+          <option value="english">🇺🇸 AI English</option>
+          <option value="chinese">🇨🇳 AI Chinese</option>
+          <option value="spanish">🇪🇸 AI Spanish</option>
+          <option value="french">🇫🇷 AI French</option>
+          <option value="japanese">🇯🇵 AI Japanese</option>
+          <option value="german">🇩🇪 AI German</option>
+          <option value="tagalog">🇵🇭 AI Tagalog</option>
+          <option value="vietnamese">🇻🇳 AI Vietnamese</option>
+        </select>
+        <button type="button" id="ideaSuggestBtn" title="Let the AI invent the idea too — one fresh suggestion for the selected kind lands in the box (a scary premise, a what-if, a documented event, or a movie pick). Edit it, then 💡 Draft it.">✨ Invent one</button>
         <button type="button" id="ideaBtn" class="primary">💡 Draft it</button>
       </div>
       <p class="status" id="ideaStatus" role="status" aria-live="polite" style="margin:4px 0 0"></p>
@@ -183,11 +198,24 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
 
     <section>
       <h2><span class="step">2</span>Get the clips</h2>
+      <div class="row" style="margin:0 0 10px">
+        <label class="opt" title="Pick what you're making and the page sets itself up: the 🎭 mood, the music checkboxes, and a numbered ①②③ trail on the buttons to follow. Free-form leaves everything alone.">🎯 Workflow:
+          <select id="presetSel" style="width:auto">
+            <option value="">Free-form</option>
+            <option value="modern-trailer">🎞️ Modern trailer — characters talk, no narrator</option>
+            <option value="narrated-trailer">🎙 Narrated trailer — classic epic VO</option>
+            <option value="ironic">🎵 Ironic horror — cheerful song, dark story</option>
+            <option value="classic">📖 Classic narrated video</option>
+          </select>
+        </label>
+        <span class="hint" id="presetHint" style="margin:0"></span>
+      </div>
       <div class="apibox" id="visualsBox">
         <label class="opt"><input type="radio" name="visMode" value="manual" checked> 🎬 <strong>My own clips</strong> — tryinfer Studio or drag-drop (steps 2–3 below)</label>
         <label class="opt" id="modeInfer" hidden><input type="radio" name="visMode" value="infer"> ⚡ <strong>AI video (tryinfer API)</strong> Model:
           <select id="vidModel" style="width:auto"></select>
           <span class="hint" id="apiHint" style="margin:0"></span></label>
+        <label class="opt" title="OpenArt's MCP is signed in through Claude, so the render can't call it directly — picking this stages a fulfillment request instead: tell Claude 'fulfill the OpenArt request' and it generates every beat as a Seedance Mini motion clip (cast portraits keep characters consistent), stages them, and renders. ≈80 credits (~$0.28) per clip at 480p — cheaper than seedance-pro via tryinfer."><input type="radio" name="visMode" value="openart"> 🎨 <strong>OpenArt AI video</strong> — via Claude MCP, one motion clip per beat, character-consistent. <span class="hint" style="margin:0;display:inline">≈80 cr/clip</span></label>
         <label class="opt"><input type="radio" name="visMode" value="images"> 🖼️ <strong>AI images</strong> — one styled picture per beat with gentle motion. Engine:
           <select id="imgEngine" style="width:auto">
             <option value="pollinations">Free — Pollinations</option>
@@ -207,8 +235,8 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
         <label class="opt" title="One mood steers everything AI-written here: the two rewrite buttons, every ✨ line rewrite, and (when set to something other than Auto) the look of generated visuals at render time. Auto = each category's own register, visuals unchanged.">🎭 Mood:
           <select id="moodSel" style="width:auto"></select>
         </label>
-        <button type="button" id="scriptFromPromptsBtn" title="AI-write the whole spoken script (hook, beats, outro) FROM the visual prompts below, in the selected mood — every line is fitted to what's on screen. The old script stays in 🕘 History.">📝 Script from prompts</button>
-        <button type="button" id="promptsFromScriptBtn" title="AI-write every visual prompt FROM the spoken script, in the selected mood — one shot per line, mood expressed through the imagery. The old prompts stay in 🕘 History.">🎬 Prompts from script</button>
+        <button type="button" id="scriptFromPromptsBtn" title="AI-write the whole spoken script (hook, beats, outro) FROM the visual prompts below, in the selected mood — every line is fitted to what's on screen. With a 🎭 trailer mood it GROWS the script to the Clips count picked in step 1 (the story is re-told across more scenes; prompts then re-derive from the new beats). The old script stays in 🕘 History."><span class="stepbadge" id="sb1" hidden>1</span>📝 Script from prompts</button>
+        <button type="button" id="promptsFromScriptBtn" title="AI-write every visual prompt FROM the spoken script, in the selected mood — one shot per line, mood expressed through the imagery. The old prompts stay in 🕘 History."><span class="stepbadge" id="sb2" hidden>2</span>🎬 Prompts from script</button>
         <span class="status" id="moodStatus" style="margin:0" role="status" aria-live="polite"></span>
       </div>
       <div id="manualPrompts">
@@ -245,11 +273,26 @@ pre { white-space: pre-wrap; background: var(--bg-inset); border: 1px solid var(
         <label class="opt"><input type="checkbox" id="optClipAudio"> Keep clip sound (LTX)</label>
         <label class="opt" title="The Jordan Peele trick: a sincerely cheerful song (1950s swing, ragtime, elevator muzak) that contradicts the visuals — it plays straight, a notch louder than a normal bed, then tape-stops on the reveal beat's first word and resumes slowed and quiet, like it's playing from another room. Replaces the riser with a single soft impact on the stop. With 🎭 Mood on Auto, generated visuals render 🌤️ Wholesome so the pictures smile as sincerely as the song."><input type="checkbox" id="optIronic"> 🎵 Ironic cheerful music</label>
         <label class="opt" title="Movie-trailer treatment: an epic cinematic bed (percussion hits, swelling strings) with the riser + impact landing on the reveal beat, whatever the category. With 🎭 Mood on Auto, generated visuals render in Trailer mood — anamorphic teal-and-orange, dramatic rim light. For trailer-speak narration, set 🎭 Trailer and hit 📝 Script from prompts."><input type="checkbox" id="optTrailer"> 🎬 Movie-trailer feel</label>
+        <label class="opt" id="scoreWrap" hidden title="Which real score plays under the trailer. Auto: the writer picks the genre to fit the story when it drafts (or the render infers it from the title + premise). Horror packages layer the score with the synthesized dread bed either way, and the music always ducks under character lines.">🎼 Score
+          <select id="scoreSel" style="width:auto">
+            <option value="">Auto (fit the story)</option>
+            <option value="action">⚔️ Action — percussion, battle strings</option>
+            <option value="dark">🌑 Dark — brooding tension</option>
+            <option value="tragedy">💔 Tragedy — emotional strings</option>
+            <option value="wonder">✨ Wonder — awe, discovery</option>
+            <optgroup label="🎵 My tracks" id="myTracksGroup">
+              <option value="custom">🎵 My tracks — surprise me</option>
+            </optgroup>
+          </select>
+          <button type="button" id="scoreAddBtn" title="Add your own tracks to the selected genre (YouTube Audio Library, purchased music, anything you have the rights to). They're saved into pipeline\music\trailer\<genre> and picked like stock tracks — loudness-normalized, so any recording level works. If the license requires attribution you can paste the credit line and every post kit that uses the track will carry it.">⬆ Add tracks</button>
+          <input type="file" id="scoreFiles" accept=".mp3,.m4a,.wav,.ogg,.flac" multiple hidden>
+        </label>
+        <label class="opt" id="turnWrap" hidden title="The modern trailer arc: a cheerful song (one of 🎵 My tracks if selected, else the ironic shelf) opens the video bright, then around the middle it tape-stops on a heavy boom, a HUGE word card punches on screen in sync, and the dark genre score + dread bed take over through the reveal. The word comes from the package (the writer invents one per story - e.g. IT LEARNED); drafts also open their first beats warm so the turn lands."><input type="checkbox" id="optTurn"> 🎢 Happy open → dark turn</label>
       </div>
       <p class="hint" id="ironicHint" hidden>🎵 + 🌤️ The full contradiction: the song stays sincerely cheerful and generated visuals render in <strong>Wholesome</strong> mood (soft warm light, gentle smiles) while the script goes wrong — until the tape-stop on the reveal. Pick an explicit 🎭 mood above to override the visual look; already-cached visuals keep their old look until you delete the scenario's cache entry.</p>
-      <p class="hint" id="trailerHint" hidden>🎬 This checkbox changes the <strong>sound and look</strong>: epic bed, riser + impact on the reveal, slower deeper narrator delivery, Trailer-mood visuals. <strong>It does NOT rewrite your script</strong> — for trailer-speak narration and <strong>talking characters</strong>, first pick <strong>🎞️ Trailer</strong> in the 🎭 Mood dropdown and hit <strong>📝 Script from prompts</strong> (it writes the cut-card lines and the <code>[Name] "line"</code> dialogue that gives each character their own voice), then render. You can also type <code>[Name] "line"</code> into any spoken line yourself.</p>
+      <p class="hint" id="trailerHint" hidden>🎬 This checkbox changes the <strong>sound and look</strong>: a <strong>real score</strong> plays under every trailer — pick the genre with 🎼 or leave it on Auto and the writer/story decides — and it <strong>ducks under character lines</strong> so every word stays clear. Horror layers the score with a <strong>synthesized dread bed</strong> (heartbeat pulse, detuned drone, metallic shrieks — the AHS-intro school) building to a climax on the reveal; plus the riser + impact on the reveal, breathing room between dialogue lines, slower narrator delivery, and Trailer-mood visuals. <strong>It does NOT rewrite your script</strong> — first pick <strong>🎞️ Trailer — dialogue only</strong> (modern: no narrator, just character lines trading against the sound design) or <strong>🎙 Trailer — narrated</strong> (the classic VO) in the 🎭 Mood dropdown and hit <strong>📝 Script from prompts</strong>, then render. You can also type <code>[Name] "line"</code> into any spoken line yourself.</p>
       <div class="row">
-        <button type="button" id="renderBtn" class="primary">🎬 Render video</button>
+        <button type="button" id="renderBtn" class="primary"><span class="stepbadge" id="sb3" hidden>3</span><span id="renderBtnLabel">🎬 Render video</span></button>
         <button type="button" id="openVideosBtn" hidden>See it in Videos →</button>
       </div>
       <p class="status" id="renderStatus" role="status" aria-live="polite"></p>
@@ -508,9 +551,10 @@ function applyVisMode() {
   // boxes stay live, since saved edits feed the AI generation too.
   $id("manualHint").classList.toggle("skipped", auto);
   $id("importRow").classList.toggle("skipped", auto);
-  $id("renderBtn").textContent =
+  $id("renderBtnLabel").textContent =
     visMode() === "infer" ? "⚡ Generate clips + render" :
-    visMode() === "images" ? "🖼️ Generate images + render" : "🎬 Render video";
+    visMode() === "images" ? "🖼️ Generate images + render" :
+    visMode() === "openart" ? "🎨 Stage OpenArt request" : "🎬 Render video";
 }
 document.querySelectorAll('input[name="visMode"]').forEach(r => r.addEventListener("change", applyVisMode));
 ["imgStyle", "imgEngine"].forEach(id => $id(id).addEventListener("change", () => {
@@ -578,7 +622,8 @@ const MOODS = [
   ["sarcastic", "🙄 Sarcastic"],
   ["witty", "🧠 Witty"],
   ["adventurous", "🧗 Adventurous"],
-  ["trailer", "🎞️ Trailer"],
+  ["trailer", "🎞️ Trailer — dialogue only"],
+  ["trailer-vo", "🎙 Trailer — narrated"],
   ["dramatic", "🎬 Dramatic"],
   ["mysterious", "🌫️ Mysterious"],
   ["wholesome", "🌤️ Wholesome"],
@@ -610,7 +655,8 @@ async function moodGenerate(path, busyMsg, doneMsg) {
   btns.forEach(b => { b.disabled = true; });
   st.className = "status"; st.textContent = busyMsg;
   try {
-    const r = await api(path, { queue: S.queue, slot: S.slot, mood: $id("moodSel").value });
+    const r = await api(path, { queue: S.queue, slot: S.slot, mood: $id("moodSel").value,
+                                clips: Number($id("clipCount").value) || 0 });
     if (r.error) throw new Error(r.error);
     await refreshAll(false);   // rows re-render from the fresh script/prompts
     fillScript(S.script);
@@ -1269,7 +1315,84 @@ function updatePairHints() {
   const auto = $id("moodSel").value === "auto";
   $id("ironicHint").hidden = !(auto && $id("optIronic").checked);
   $id("trailerHint").hidden = !(auto && $id("optTrailer").checked);
+  $id("scoreWrap").hidden = !$id("optTrailer").checked;
+  $id("turnWrap").hidden = !$id("optTrailer").checked;
 }
+$id("scoreSel").addEventListener("change", () => {
+  try { localStorage.setItem("wis.score", $id("scoreSel").value); } catch (e) {}
+});
+$id("optTurn").addEventListener("change", () => {
+  try { localStorage.setItem("wis.turn", $id("optTurn").checked ? "1" : ""); } catch (e) {}
+});
+/* 🎵 My tracks: the creator's own songs (music\custom) join the score
+   picker - "custom" = random one, "track:<file>" = that exact song. */
+async function loadMyTracks() {
+  try {
+    const r = await api("/api/music/tracks");
+    const g = $id("myTracksGroup");
+    [...g.querySelectorAll("option")].slice(1).forEach(o => o.remove());
+    for (const t of (r.tracks || [])) {
+      const o = document.createElement("option");
+      o.value = "track:" + t;
+      o.textContent = "🎵 " + t.replace(/\.[^.]+$/, "");
+      g.appendChild(o);
+    }
+    let s = null;
+    try { s = localStorage.getItem("wis.score"); } catch (e) {}
+    if (s && [...$id("scoreSel").options].some(o => o.value === s))
+      $id("scoreSel").value = s;
+  } catch (e) {}
+}
+loadMyTracks();
+/* ⬆ Add your own score tracks: files land in music\trailer\<genre> and the
+   picker treats them like stock. Optional credit line -> credits.json. */
+function uploadGenre() {
+  const v = $id("scoreSel").value;
+  if (!v) return null;                               // Auto: nowhere to file it
+  return (v === "custom" || v.startsWith("track:")) ? "custom" : v;
+}
+$id("scoreAddBtn").addEventListener("click", () => {
+  if (!uploadGenre()) {
+    alert("Pick a genre (or 🎵 My tracks) first so the files land in the right folder.");
+    return;
+  }
+  $id("scoreFiles").click();
+});
+$id("scoreFiles").addEventListener("change", async () => {
+  const files = [...$id("scoreFiles").files];
+  $id("scoreFiles").value = "";
+  if (!files.length) return;
+  const genre = uploadGenre();
+  const credit = prompt(
+    "Attribution line for these tracks (added to every post kit that uses them).\n"
+    + 'Leave empty if the license needs none (e.g. YouTube Audio Library "no attribution required").', "");
+  if (credit === null) return;   // cancelled
+  setRenderStatus(`🎼 Uploading ${files.length} track(s) to ${genre}…`, "");
+  let ok = 0; const fail = [];
+  for (const f of files) {
+    try {
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      let bin = "";
+      for (let i = 0; i < bytes.length; i += 32768)
+        bin += String.fromCharCode(...bytes.subarray(i, i + 32768));
+      const r = await api("/api/music/upload",
+        { genre, name: f.name, credit: credit.trim(), data: btoa(bin) });
+      if (r && r.ok) ok++; else fail.push(`${f.name} (${(r && r.error) || "upload failed"})`);
+    } catch (e) { fail.push(`${f.name} (${e.message})`); }
+  }
+  setRenderStatus(`🎼 ${ok} track(s) added to ${genre === "custom" ? "🎵 My tracks" : genre}`
+    + (credit.trim() ? ", credit line saved" : "")
+    + (fail.length ? `. Failed: ${fail.join(", ")}` : "."), fail.length ? "bad" : "good");
+  if (genre === "custom") loadMyTracks();
+});
+(() => {
+  let s = null, t = null;
+  try { s = localStorage.getItem("wis.score"); t = localStorage.getItem("wis.turn"); } catch (e) {}
+  if (s !== null && [...$id("scoreSel").options].some(o => o.value === s))
+    $id("scoreSel").value = s;
+  if (t) $id("optTurn").checked = true;
+  updatePairHints();
+})();
 /* One musical identity per video: the two treatments exclude each other. */
 $id("optIronic").addEventListener("change", () => {
   if ($id("optIronic").checked) $id("optTrailer").checked = false;
@@ -1281,6 +1404,47 @@ $id("optTrailer").addEventListener("change", () => {
 });
 $id("moodSel").addEventListener("change", updatePairHints);
 
+/* ---------- 🎯 workflow presets: one pick sets the whole page up ----------
+   Cascading on explicit selection only - reloading never stomps settings,
+   it just restores the badges/hint for the remembered preset. */
+const PRESETS = {
+  "modern-trailer": { mood: "trailer", trailer: true, ironic: false, clips: 12,
+    hint: "Follow the numbers: ① grow the script — characters talk, (silence) holds — then ② write the shots, ③ render with the dread bed." },
+  "narrated-trailer": { mood: "trailer-vo", trailer: true, ironic: false, clips: 9,
+    hint: "① write the epic VO script → ② write the shots → ③ render with the orchestral bed." },
+  "ironic": { mood: "auto", trailer: false, ironic: true, clips: 0,
+    hint: "① script in the category's dark register → ② shots render Wholesome → ③ the cheerful song tape-stops on the reveal." },
+  "classic": { mood: "auto", trailer: false, ironic: false, clips: 0,
+    hint: "Everything default — tweak the script or prompts if you like, then render." },
+};
+function applyPreset(id, cascade) {
+  const p = PRESETS[id];
+  const showTrail = !!p && id !== "classic";
+  ["sb1", "sb2", "sb3"].forEach(b => { $id(b).hidden = !showTrail; });
+  $id("presetHint").textContent = p ? p.hint : "";
+  // Animated numbers count nothing in a dialogue-only trailer — dim, don't hide.
+  $id("optCharts").parentElement.style.opacity = id === "modern-trailer" ? 0.45 : "";
+  if (!p || !cascade) return;
+  $id("moodSel").value = p.mood;
+  $id("moodSel").dispatchEvent(new Event("change"));
+  $id("optTrailer").checked = p.trailer;
+  $id("optIronic").checked = p.ironic;
+  if (p.clips && Number($id("clipCount").value) < p.clips) {
+    $id("clipCount").value = String(p.clips);
+    try { localStorage.setItem("wis.clipCount", String(p.clips)); } catch (e) {}
+  }
+  updatePairHints();
+}
+$id("presetSel").addEventListener("change", () => {
+  try { localStorage.setItem("wis.preset", $id("presetSel").value); } catch (e) {}
+  applyPreset($id("presetSel").value, true);
+});
+(() => {
+  let p = null;
+  try { p = localStorage.getItem("wis.preset"); } catch (e) {}
+  if (p && PRESETS[p]) { $id("presetSel").value = p; applyPreset(p, false); }
+})();
+
 /* ---------- step 4: render ---------- */
 let pollTimer = null;
 $id("renderBtn").addEventListener("click", async () => {
@@ -1290,6 +1454,30 @@ $id("renderBtn").addEventListener("click", async () => {
     audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
   } catch (e) {}
   const mode = visMode();
+  if (mode === "openart") {
+    // No render here: stage the fulfillment request for Claude's MCP hands.
+    const rows = S.prompts.length;
+    if (!confirm(`This stages an OpenArt request for ${rows} motion clips `
+        + `(≈${rows * 80} credits at 480p, ~$${(rows * 80 * 0.0035).toFixed(2)}) — nothing is billed until `
+        + `Claude fulfills it. Continue?`)) return;
+    const r = await api("/api/produce/openart-request", {
+      queue: S.queue, slot: S.slot,
+      resolution: "480p",
+      trailer: $id("optTrailer").checked,
+      elevenlabs: $id("optEleven").checked,
+      mood: renderMood(),
+    });
+    if (r.error) { setRenderStatus(r.error, "bad"); return; }
+    setRenderStatus(r.spawned
+      ? `✓ Request staged (${r.rows} clips, ≈${r.estimated_credits} credits) and 🤖 Claude launched `
+        + `in the background — clips are generating and the render follows. Progress: `
+        + `pipeline\\openart-fulfill.log; the finished video lands on the Videos page.`
+      : `✓ Request staged (${r.rows} clips, ≈${r.estimated_credits} credits). `
+        + `Now tell Claude: “fulfill the OpenArt request” — it generates the clips via MCP, `
+        + `stages them on the beats, and renders. (Install + log in the claude CLI to make this automatic.)`,
+      "good");
+    return;
+  }
   const engine = $id("imgEngine").value;
   const vidModel = $id("vidModel").value;
   const paidImages = mode === "images" && engine !== "pollinations";
@@ -1319,6 +1507,12 @@ $id("renderBtn").addEventListener("click", async () => {
     mood: renderMood(),
     ironic_music: $id("optIronic").checked ? "tail" : "",
     trailer: $id("optTrailer").checked,
+    score: $id("optTrailer").checked && !$id("scoreSel").value.startsWith("track:")
+           && $id("scoreSel").value !== "custom" ? $id("scoreSel").value : "",
+    track: !$id("optTrailer").checked ? ""
+           : $id("scoreSel").value.startsWith("track:") ? $id("scoreSel").value.slice(6)
+           : $id("scoreSel").value === "custom" ? "*" : "",
+    turn: $id("optTrailer").checked && $id("optTurn").checked,
   });
   if (r.error) { setRenderStatus(r.error, "bad"); return; }
   $id("renderBtn").disabled = true;
@@ -1407,12 +1601,39 @@ async function morningStatus() {
 }));
 
 /* ---------- 💡 draft from the creator's own idea ---------- */
+const IDEA_PLACEHOLDERS = {
+  aimovie: "Movie name — e.g. Saw, The Blair Witch Project, Jaws — optionally add an angle after a dash: \"Saw - the trap is a group chat\"",
+  aibabble: "Movie name — e.g. The Lion King, Titanic, Jaws — then pick the AI language from the dropdown on the right. All dialogue becomes invented words that only SOUND like that language.",
+  _default: "e.g. A night-shift nurse notices every patient in ward 6 draws the same door — and last night someone drew it open.",
+};
+$id("ideaKind").addEventListener("change", () => {
+  $id("ideaText").placeholder = IDEA_PLACEHOLDERS[$id("ideaKind").value] || IDEA_PLACEHOLDERS._default;
+  $id("ideaLang").hidden = $id("ideaKind").value !== "aibabble";
+});
+$id("ideaSuggestBtn").addEventListener("click", async () => {
+  const btn = $id("ideaSuggestBtn"), st = $id("ideaStatus");
+  btn.disabled = true; btn.textContent = "✨ Inventing…";
+  st.className = "status"; st.textContent = "";
+  try {
+    const r = await api("/api/produce/idea-suggest", { kind: $id("ideaKind").value });
+    if (r.error) throw new Error(r.error);
+    $id("ideaText").value = r.idea;
+    st.className = "status good";
+    st.textContent = "✓ Idea invented — edit it if you like, then 💡 Draft it (or ✨ again for another).";
+  } catch (e) {
+    st.className = "status bad";
+    st.textContent = "Couldn't invent one: " + e.message;
+  }
+  btn.disabled = false; btn.textContent = "✨ Invent one";
+});
 $id("ideaBtn").addEventListener("click", async () => {
   const idea = $id("ideaText").value.trim();
   const st = $id("ideaStatus");
-  if (idea.length < 12) {
+  const minLen = ["aimovie", "aibabble"].includes($id("ideaKind").value) ? 2 : 12;
+  if (idea.length < minLen) {
     st.className = "status bad";
-    st.textContent = "Give the writer a little more — a sentence or two about the idea.";
+    st.textContent = minLen === 2 ? "Type the movie name."
+      : "Give the writer a little more — a sentence or two about the idea.";
     $id("ideaText").focus();
     return;
   }
@@ -1424,6 +1645,7 @@ $id("ideaBtn").addEventListener("click", async () => {
       idea,
       title: $id("ideaTitle").value.trim(),
       kind: $id("ideaKind").value,
+      lang: $id("ideaLang").value,
       clips: Number($id("clipCount").value) || 7,
       mood: $id("moodSel").value,
     });

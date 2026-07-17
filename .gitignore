@@ -31,3 +31,4 @@ pipeline/produce-render.log
 
 # Release build artifacts
 dist/
+pipeline/openart-cast/

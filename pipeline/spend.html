@@ -84,6 +84,7 @@ td.usd, th.usd { text-align: right; white-space: nowrap; color: var(--text); }
     <div class="card"><div class="label">This month</div><div class="value" id="cMonth">$0.00</div></div>
     <div class="card"><div class="label">Today</div><div class="value" id="cToday">$0.00</div></div>
     <div class="card"><div class="label">OpenAI · this month</div><div class="value" id="cOpenAI">…</div><div class="note" id="cOpenAINote"></div></div>
+    <div class="card"><div class="label">OpenArt · this month</div><div class="value" id="cOpenArt">—</div><div class="note" id="cOpenArtNote"></div></div>
   </div>
 
   <section>
@@ -102,7 +103,7 @@ td.usd, th.usd { text-align: right; white-space: nowrap; color: var(--text); }
     <h2>Recent charges</h2>
     <table><thead><tr><th>When</th><th>Service</th><th>What</th><th>Model</th><th>Scenario</th><th class="usd">USD</th></tr></thead><tbody id="entryRows"></tbody></table>
     <p class="empty" id="entryEmpty" hidden>No charges recorded yet.</p>
-    <p class="hint">tryinfer amounts are the provider's exact billed price per job. OpenAI amounts (marked ~) are estimates from token counts at gpt-4o-mini list prices — typically fractions of a cent. Tracking started when this page shipped; earlier spend isn't backfilled.</p>
+    <p class="hint">tryinfer amounts are the provider's exact billed price per job. OpenAI amounts (marked ~) are estimates from token counts at gpt-4o-mini list prices — typically fractions of a cent. OpenArt charges are recorded in <strong>credits</strong> (their native unit — portraits and lip-synced talking clips); the ~USD figure is an estimate at the Essential plan's effective rate (override it with one number in pipeline\openart_rate.txt). Tracking started when this page shipped; earlier spend isn't backfilled.</p>
   </section>
 </main>
 
@@ -147,11 +148,19 @@ async function load() {
     `<tr><td>${esc(r.scenario)}</td><td class="usd">${usd(r.usd)}</td></tr>`).join("");
   $id("scEmpty").hidden = sc.length > 0;
 
+  const oa = s.openart_credits || {};
+  if (oa.total > 0) {
+    $id("cOpenArt").textContent = `${(oa.month || 0).toLocaleString()} cr`;
+    $id("cOpenArtNote").innerHTML = `${(oa.today || 0).toLocaleString()} today · USD figures are plan-rate estimates · `
+      + '<a href="https://openart.ai/pricing" target="_blank" rel="noopener">balance ↗</a>';
+  }
+
   const rows = s.entries || [];
   $id("entryRows").innerHTML = rows.map(e =>
     `<tr><td>${esc(String(e.ts || "").replace("T", " "))}</td><td>${esc(e.service)}</td>` +
     `<td>${esc(e.kind)}</td><td>${esc(e.model || "")}</td><td>${esc(e.scenario || "")}</td>` +
-    `<td class="usd">${e.estimated ? '<span class="est">~</span>' : ""}${usd(e.price_usd)}</td></tr>`).join("");
+    `<td class="usd">${e.credits ? `${e.credits} cr <span class="est">~${usd(e.price_usd)}</span>`
+      : (e.estimated ? '<span class="est">~</span>' : "") + usd(e.price_usd)}</td></tr>`).join("");
   $id("entryEmpty").hidden = rows.length > 0;
 }
 function esc(t) { const d = document.createElement("div"); d.textContent = t == null ? "" : String(t); return d.innerHTML; }

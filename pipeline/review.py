@@ -183,6 +183,8 @@ def list_videos():
             "note": state["notes"].get(f.name, ""),
             # epoch seconds when the user marked it posted, or None
             "uploaded": state.get("uploaded", {}).get(f.name),
+            # tucked away on the Videos page (Fresh view hides it)
+            "hidden": bool(state.get("hidden", {}).get(f.name)),
         }
     ordered = [vids.pop(n) for n in state["order"] if n in vids]
     ordered += sorted(vids.values(), key=lambda v: v["mtime"])   # new files last
@@ -307,7 +309,8 @@ def draft_prompt(title, category, runtime=60, beats=5, idea=None, mood=None):
         + ('Build the whole thing from these details the creator supplied - keep every '
            f'named fact, person, and place: "{idea}" ' if idea else "")
         + (f"Tell it in a {MOODS[mood]} voice. " if mood and mood in MOODS else "")
-        + (TRAILER_DIALOGUE_RULE if mood == "trailer" else "")
+        + (TRAILER_ONLY_RULE if mood == "trailer"
+           else TRAILER_DIALOGUE_RULE if mood == "trailer-vo" else "")
     )
     if category == "Scary Story":
         # Narrative horror in the modern social-thriller register (the
@@ -441,7 +444,7 @@ def ai_draft_openai(title, category, key, runtime=60, beats=5, idea=None, mood=N
                     OPENAI_MODEL, title[:60], estimated=True)
     raw = reply["choices"][0]["message"]["content"]
     draft = parse_draft(raw, "openai", beats)
-    require_trailer_dialogue(draft["beats"], mood)
+    draft["beats"] = finish_trailer_beats(draft["beats"], mood)
     return draft
 
 
@@ -466,7 +469,7 @@ def ai_draft_pollinations(title, category, runtime=60, beats=5, idea=None, mood=
     if raw is None:
         raise RuntimeError("the free writing service is busy - try again in a minute")
     draft = parse_draft(raw, "pollinations", beats)
-    require_trailer_dialogue(draft["beats"], mood)
+    draft["beats"] = finish_trailer_beats(draft["beats"], mood)
     return draft
 
 
@@ -478,12 +481,33 @@ def ai_draft(title, category, runtime=60, beats=5, idea=None, mood=None):
     configured; falls back to the free Pollinations API otherwise (or if
     the OpenAI call fails)."""
     key = openai_key()
+    last = None
+    draft = None
     if key:
+        # Format misses (wrong beat count, cues in the name slot) deserve a
+        # fresh roll on the good engine before falling to the free writer.
+        for attempt in range(3):
+            try:
+                draft = ai_draft_openai(title, category, key, runtime, beats, idea, mood)
+                break
+            except Exception as exc:
+                last = exc
+                print(f"OpenAI draft retry {attempt + 1} ({str(exc)[:100]})")
+    if draft is None:
         try:
-            return ai_draft_openai(title, category, key, runtime, beats, idea, mood)
+            draft = ai_draft_pollinations(title, category, runtime, beats, idea, mood)
         except Exception as exc:
-            print(f"OpenAI draft failed ({exc}); falling back to the free writer")
-    return ai_draft_pollinations(title, category, runtime, beats, idea, mood)
+            raise RuntimeError(
+                "drafting failed - "
+                + (f"OpenAI: {str(last)[:90]}; " if last else "")
+                + f"free writer: {str(exc)[:90]}")
+    if (mood or "").startswith("trailer"):
+        draft["score"] = _pick_score(title, draft.get("premise", ""),
+                                     draft.get("tags"))
+        draft["turn_word"] = _pick_turn_word(title, draft.get("premise", ""))
+    if draft.get("cast"):
+        draft["cast"] = _ensure_cast_kinds(draft["cast"])
+    return draft
 
 
 # ---------------- draft batches ----------------
@@ -656,6 +680,8 @@ def scaffold_batch_package(conf, title, draft, runtime):
         "hooks": [first],
         "beats": draft["beats"],
         "cast": draft.get("cast") or [],
+        "score": draft.get("score") or "",
+        "turn_word": draft.get("turn_word") or "",
         "outro": conf["outro"],
         "captions": [title, conf["extra_caption"]],
         "thumbnails": [" ".join(title.split()[:4]).upper()],
@@ -690,6 +716,297 @@ IDEA_KINDS["history"] = {
     "extra_caption": "The wildest part is documented.",
     "fallback_tag": "true history",
 }
+# "If <movie> was AI-generated": an original AI trailer riffing on a famous
+# film's premise. Naming the film is commentary; the CONTENT must be original
+# (see AIMOVIE_IDEA below - no real quotes, role names over trademarks).
+IDEA_KINDS["aimovie"] = {
+    "label": "AI movie remakes", "runtime": 90,
+    "category": "AI Remake", "prefix": "idea",
+    "colors": {"from": "#0d1022", "to": "#7b2ff7"},
+    "pacing": "Trailer pace: cut-card lines against sound design.",
+    "safety": "Original parody/homage - original dialogue and scenes, no reproduced content.",
+    "outro": "",
+    "extra_caption": "Every frame is AI.",
+    "fallback_tag": "ai remake",
+}
+# Same format, but the dialogue is an INVENTED pseudo-language ("AI English",
+# "AI Chinese"...) - sounds like the language, means nothing. The most
+# copyright-proof variant: there is no dialogue to compare to anything.
+IDEA_KINDS["aibabble"] = dict(IDEA_KINDS["aimovie"],
+                              label="AI language remakes",
+                              extra_caption="Every frame AND every word is AI.")
+
+# ✨ Invent one: a single fresh idea for the 💡 box, per kind. Fills the
+# textarea only - the user edits, then Drafts; nothing renders by itself.
+IDEA_SUGGEST_PROMPTS = {
+    "scary": (
+        "Invent ONE fresh scary-story idea in the social-thriller register: a "
+        "familiar everyday setting hiding one quietly wrong thing. 1-2 "
+        "sentences: the setup plus the detail that is off. No gore, not a "
+        "'what if' question. "
+        'Reply with ONLY minified JSON, exactly: {"idea":"..."}'),
+    "whatif": (
+        "Invent ONE realistic 'What if?' thought experiment grounded in real "
+        "science, economics, psychology, or everyday life - no monsters or "
+        "magic. 1-2 sentences: the question plus why it is fascinating. "
+        'Reply with ONLY minified JSON, exactly: {"idea":"..."}'),
+    "history": (
+        "Suggest ONE real, WELL-DOCUMENTED historical event that sounds "
+        "unbelievable - something verifiable, no legends presented as fact. "
+        "1-2 sentences naming the event, the year, and the wildest true detail. "
+        'Reply with ONLY minified JSON, exactly: {"idea":"..."}'),
+    "aimovie": (
+        'Suggest ONE famous movie ripe for an "If it was AI-generated" '
+        "trailer riff - iconic premise everyone recognizes, horror/thriller "
+        "leaning welcome; avoid Disney-owned properties. Reply the movie "
+        'name, optionally followed by " - " and a one-line twist angle. '
+        'Reply with ONLY minified JSON, exactly: {"idea":"..."}'),
+    "aibabble": (
+        'Suggest ONE famous movie for an "AI language" trailer riff (all '
+        "dialogue becomes invented words) plus a language whose sound makes "
+        "the gag land - pick from: english, chinese, spanish, french, "
+        'japanese, german, tagalog, vietnamese. Iconic talky scenes work best; avoid Disney-owned '
+        'properties. Reply exactly as "<Movie> - <language>". '
+        'Reply with ONLY minified JSON, exactly: {"idea":"..."}'),
+}
+
+# "AI language" variant: the movie riff, but ALL dialogue is invented
+# pseudo-language - sounds like the target language, means nothing.
+BABBLE_LANGS = {
+    "english": "AI English - the fake-English-gibberish genre: it sounds exactly like "
+               "casual AMERICAN English but the content words are invented. THE TRICK: "
+               "keep the small glue words REAL (I, you, the, that, just, gonna, wanna, "
+               "like, what, so, don't) - they carry the American sound - and invent every "
+               "NOUN, VERB and ADJECTIVE with hard English shapes: -er/-ing/-tion/-s "
+               "endings, r-colored vowels, consonant clusters (st-, br-, fl-), flapped t. "
+               "Words NEVER end in open vowels like -i/-o/-u (that reads French/Italian). "
+               "Example: 'I can't burlieve you jurst sorded that, man!'",
+    "chinese": "AI Chinese - romanized pseudo-Mandarin syllables (zh/x/q/sh + ao/ang/ing/ou, "
+               "1-2 syllable words: 'Zhao ming tselu, wang shi bao!')",
+    "spanish": "AI Spanish - pseudo-Spanish with its vowel endings and rolling rhythm "
+               "('Elavanto no combrienda, la fuero mistrale!')",
+    "french": "AI French - pseudo-French with nasal vowels and liaison flow "
+              "('Le vonteau simarais un plontre, ce nuvale!')",
+    "japanese": "AI Japanese - pseudo-Japanese CV syllables (ka/shi/no/ru/tsu: "
+                "'Kanoshi tarumeki, sondato yuru!')",
+    "german": "AI German - pseudo-German with hard compounds and clusters "
+              "('Der schwanktel vurmacht ein grolzen, nichtbar!')",
+    "tagalog": "AI Tagalog - pseudo-Tagalog with its ma-/nag-/pag- prefixes, "
+               "-ng endings, syllable reduplication, and the po particle "
+               "('Nagkalambo ka ng talumpa, sige po!')",
+    "vietnamese": "AI Vietnamese - pseudo-Vietnamese with short single-syllable "
+                  "words, ng-/nh-/th-/tr- openings and -ng/-nh endings "
+                  "('Nguy tran mão linh, thi bao dong!')",
+}
+
+
+# Syllable tables for the deterministic fallback generator - meaning-free,
+# phonology-true. Used per line when the AI babble pass leaks real words.
+_BABBLE_SYLLABLES = {
+    "english": ["weh", "nof", "tar", "keeb", "lin", "dro", "sal", "ver", "mo",
+                "stel", "gran", "dee", "har", "bin", "tof", "sur", "ket", "lan"],
+    "chinese": ["zhao", "ming", "tse", "lu", "wang", "shi", "bao", "xin", "qi",
+                "ling", "hao", "mei", "chu", "fan", "gui", "dao", "shen", "kou"],
+    "spanish": ["ela", "van", "to", "bri", "en", "da", "fue", "ro", "mis",
+                "tra", "le", "cor", "ni", "sol", "pa", "dre", "llo", "san"],
+    "french": ["von", "teau", "si", "ma", "rais", "plon", "tre", "nu", "vale",
+               "geur", "loi", "fon", "du", "pré", "mont", "che", "vau", "lié"],
+    "japanese": ["ka", "no", "shi", "ta", "ru", "me", "ki", "son", "da", "to",
+                 "yu", "mi", "ha", "re", "tsu", "ko", "na", "ri"],
+    "german": ["schwan", "ktel", "vur", "macht", "grol", "zen", "nicht", "bar",
+               "ver", "stein", "hoff", "brau", "dun", "kel", "wald", "ge", "mor", "gen"],
+    "tagalog": ["ma", "na", "ka", "pa", "la", "ta", "ba", "ga", "sa", "lam",
+                "bo", "nag", "tan", "po", "gu", "han", "din", "yan"],
+    "vietnamese": ["nguy", "tran", "linh", "thi", "bao", "dong", "mai", "vao",
+                   "pho", "kim", "lan", "ngoc", "tuan", "minh", "chau", "phong",
+                   "hoa", "vu"],
+}
+
+# Real words that must never survive inside babble dialogue (a leak detector,
+# not a dictionary - the fallback generator handles chronic leakers).
+_BABBLE_LEAKS = set("""i a an of to in on at do did am the and you your yours it its
+is are was were be been this that these those what who why how when where we they
+them our their he she his her him not no yes never always feel feels felt wrong
+right everything nothing something listen look see hear know think want need must
+can cannot will would stop go come here there now then king queen father mother
+brother sister run hide help me saw said says tell told with from for but or if so
+because about into over under again more most all any both each few other some such
+only own same than too very just one two three first last next new old good bad big
+small long great little still around behind before after tonight today never ever
+away back down out up off get got make made take took give gave find found leave
+left keep kept let put say ask asked call called turn move play live believe hold
+bring begin seem talk speak stay fall stand lose pay meet set learn watch follow
+open close start show try use work end night day time year home house door window
+water fire light dark eyes hand head heart life death world people man woman child
+name game rules trap escape choice game blood fear scared afraid sorry please wait
+love hate dead alive kill killed real true mister madam sir lady everyone someone
+anyone nobody like us mess even together maybe parents family would could should
+mine yours ours theirs him herself himself myself yourself thing things way ways
+place places word words face wake wakes woke sleep story stories done doing gone
+going came come better worse best worst enough much many miss missed lost forever
+soon later once twice again heart hearts young happy sad cry cried tears""".split())
+
+
+# Fake-English glue: the real function/filler words that CARRY the American
+# sound (the genre trick: real glue + invented content words). These stay
+# untouched in AI-English lines; everything else real gets bent.
+_BABBLE_GLUE = set("""a an the i you he she it we they me him them my your his
+her its our their this that these those and but or so if just gonna wanna
+gotta kinda like really literally totally okay ok yeah no not man dude bro
+what who why how when where huh right well oh hey come on don't can't won't
+didn't ain't wasn't isn't it's i'm you're that's what's is are was were be
+been am do did does have has had will would could should of to at for with
+from about get got go one all some any more so much very too still even
+i'll you'll we're they're let's""".split())
+
+
+def _bend_word(word, lang):
+    """Mangle one real word into pseudo-language while keeping its phonetic
+    shape, so a stray English word doesn't cost us the whole AI-written line.
+    English gets the AMERICAN treatment - swap the first vowel and wedge an
+    r after it, keep the word's English ending ('believe' -> 'burlieve',
+    'something' -> 'sarmething') - never open -i/-o/-u endings (that reads
+    French). Other languages rotate vowels."""
+    w = word.lower()
+    if lang == "english":
+        m = re.search(r"[aeiou]", w)
+        if not m:
+            bent = w + "er"
+        else:
+            swap = {"a": "o", "e": "u", "i": "e", "o": "a", "u": "i"}
+            bent = w[:m.start()] + swap[w[m.start()]] + w[m.end():]
+            if w[m.end():m.end() + 1] not in ("r", ""):
+                bent = bent[:m.end()] + "r" + bent[m.end():]
+        if bent == w or bent in _BABBLE_LEAKS:
+            bent += "er" if not bent.endswith("er") else "s"
+    else:
+        swaps = {"a": "e", "e": "i", "i": "o", "o": "u", "u": "a"}
+        bent = "".join(swaps.get(c, c) for c in w)
+        if bent == w or bent in _BABBLE_LEAKS:
+            syl = _BABBLE_SYLLABLES.get(lang, _BABBLE_SYLLABLES["english"])
+            bent = bent + syl[len(word) % len(syl)]
+    if word.isupper():
+        return bent.upper()
+    return bent.capitalize() if word[:1].isupper() else bent
+
+
+def _fallback_babble(lang, n_words, seed_text):
+    """Deterministic pseudo-language words when the AI pass leaks English.
+    Distinct syllables per word (no 'nofnof' robot-speak)."""
+    rng = __import__("random").Random(hash(seed_text) & 0xFFFF)
+    syl = _BABBLE_SYLLABLES.get(lang, _BABBLE_SYLLABLES["english"])
+    words = []
+    for _ in range(max(3, n_words)):
+        picks = rng.sample(syl, rng.randint(1, min(3, len(syl))))
+        words.append("".join(picks))
+    return " ".join(words)
+
+
+def babblify(lines, lang):
+    """Convert every quoted dialogue line to invented pseudo-`lang`, keeping
+    [Name] tags, leading emotion cues, and punctuation feel. AI writes the
+    babble (it is better at phonology than a syllable table); any line that
+    leaks real English words falls back to the deterministic generator, so
+    this never fails and never ships half-English dialogue."""
+    flat = []   # (line_idx, chunk_idx, cue_prefix, spoken_text)
+    parsed = [mv.split_dialogue(l) for l in lines]
+    for li, chunks in enumerate(parsed):
+        for ci, (sp, txt) in enumerate(chunks):
+            if not sp:
+                continue
+            m = re.match(r"^((?:\[[^\]]+\]\s*)+)?(.*)$", txt.strip())
+            flat.append((li, ci, (m.group(1) or "").strip(), m.group(2).strip()))
+    if not flat:
+        return lines
+    out_texts = None
+    try:
+        numbered = "\n".join(f"{i + 1}. {t}" for i, (_, _, _, t) in enumerate(flat))
+        raw = _ai_text(
+            "Rewrite each numbered line into an INVENTED pseudo-language: "
+            + BABBLE_LANGS[lang] + " "
+            "Same emotional shape and similar length. EXAGGERATE the prosody: "
+            "lean on !, ?!, ... and ONE word in CAPS per line so the voices "
+            "over-act it. ABSOLUTE RULE: every single word must be made up - "
+            "if any word is a real word in English (or the target language), "
+            "the line is WRONG. Bend real words until they break: 'something "
+            "wrong' -> 'sumbrethin vrong'. Made up but pronounceable. "
+            'Reply with ONLY minified JSON, exactly: {"lines":['
+            + ",".join(['"..."'] * len(flat)) + "]} - same order.\n\n" + numbered,
+            max_tokens=120 + 30 * len(flat))
+        start, end = raw.find("{"), raw.rfind("}")
+        got = [re.sub(r"\s+", " ", str(x)).strip()[:200]
+               for x in (json.loads(raw[start:end + 1]).get("lines") or [])]
+        if len(got) == len(flat):
+            out_texts = got
+    except Exception:
+        pass
+    result = []
+    for i, (li, ci, cue, orig) in enumerate(flat):
+        cand = (out_texts[i] if out_texts else "") or ""
+        # Babble is plain ASCII: smart punctuation straightened, anything
+        # else non-ASCII dropped (the invented words never need it).
+        cand = (cand.replace("’", "'").replace("‘", "'")
+                .replace("“", '"').replace("”", '"'))
+        cand = cand.encode("ascii", "ignore").decode("ascii")
+        words = re.findall(r"[a-zA-Z']+", cand.lower())
+        if lang == "english":
+            # The fake-English-gibberish genre: real GLUE words stay (they
+            # carry the American sound), real CONTENT words get bent into
+            # American-shaped nonsense. Applied to the AI's line when it
+            # wrote one, else to the original script line - either way the
+            # result reads as English gone wrong, never French.
+            src = cand if words else (orig.replace("’", "'").replace("‘", "'")
+                                      .encode("ascii", "ignore").decode("ascii"))
+            cand = re.sub(r"[a-zA-Z']+",
+                          lambda m: (m.group(0)
+                                     if m.group(0).lower() in _BABBLE_GLUE
+                                     else _bend_word(m.group(0), lang)
+                                     if m.group(0).lower() in _BABBLE_LEAKS
+                                     else m.group(0)),
+                          src)
+        else:
+            # Other languages: a few stray English words get bent in place;
+            # a heavily leaking or empty line falls back to the language's
+            # phonology-true syllable table.
+            leaks = sum(1 for w in words if w in _BABBLE_LEAKS)
+            if not words or leaks * 3 > len(words):
+                cand = _fallback_babble(lang, len(orig.split()), orig) + "!"
+            elif leaks:
+                cand = re.sub(r"[a-zA-Z']+",
+                              lambda m: (_bend_word(m.group(0), lang)
+                                         if m.group(0).lower() in _BABBLE_LEAKS
+                                         else m.group(0)),
+                              cand)
+        flat[i] = (li, ci, cue, cand)
+    by_pos = {(li, ci): (cue, txt) for li, ci, cue, txt in flat}
+    out = []
+    for li, chunks in enumerate(parsed):
+        rebuilt = []
+        for ci, (sp, txt) in enumerate(chunks):
+            if sp and (li, ci) in by_pos:
+                cue, babble = by_pos[(li, ci)]
+                body = (cue + " " + babble).strip()
+                rebuilt.append(f'[{sp}] "{body}"')
+            elif re.search(r"[A-Za-z]", txt):
+                rebuilt.append(txt)
+            # narrator fragments with no letters (stray ',"' between quotes)
+            # are draft debris - dropped
+        out.append(" ".join(rebuilt))
+    return out
+
+
+AIMOVIE_IDEA = (
+    'This video is "If {movie} was AI-generated" - an ORIGINAL trailer, written '
+    "and generated by AI, riffing on that film's iconic premise, mood, and most "
+    "recognizable situation. Rules that keep it an original riff: NEVER quote or "
+    "closely paraphrase actual lines from the film; write brand-new dialogue "
+    "that captures the vibe. NEVER use the film's actual character names - not in "
+    "the [Name] tags, not in the cast, not in the lines: use role names that fit "
+    "THIS film's world (a heist film might have The Driver; a courtroom drama The "
+    "Juror - pick your own) or invent NEW first names. Recreate "
+    "the FEELING and the famous setup, not specific protected scenes. Lean "
+    "slightly into the uncanny 'an AI dreamed this movie' quality - familiar "
+    "but a half-step off. ")
 
 
 def title_from_idea(idea, category):
@@ -779,12 +1096,16 @@ The app is a local static page: scenario library (10 categories - 8 "what if" on
 Custom scenarios: the builder ("+ Create your own scenario") with an AI "Write it for me" draft, all editable, saved in the browser's local storage.
 Draft batches: while the dashboard runs, it drafts 3 fresh 90s Scary Story packages daily after 6:00, and Produce has two on-demand buttons - 🌅 for 3 more scary scenarios, 💭 for 3 realistic what-ifs (grounded thought experiments from real facts, no monsters or magic); the Clips dropdown next to them picks 7 (default), 9, 12, or 15 clips per video (hook + beats + outro - more clips = faster cuts at the same length, reveal still on the second-to-last beat); everything lands in the Produce package dropdown with per-beat prompts ready to copy into tryinfer Studio. Drafting only - nothing renders or posts by itself.
 Dashboard pages (this server, 127.0.0.1:8765): Videos (review renders), Produce (per-beat visuals, voices, re-render), Results (log posted videos' views/likes by hand; rollups by category AND by render format - Classic vs Ironic cheerful vs Movie trailer, with mood/visuals badges - show what's winning), Spend (API costs), Help.
+Produce 🎯 Workflow picker (top of step 2): presets - Modern trailer / Narrated trailer / Ironic horror / Classic - set the mood, music checkboxes, and suggested clip count in one pick, and show a numbered 1-2-3 trail on the buttons to follow (script -> prompts -> render). Free-form = no guidance.
 Produce per-beat references: attach an image and/or your own video to any beat; the radio picks which one the beat uses and it ALWAYS lands in the final video - image = the picture is that beat's visual with gentle motion (in AI-video mode it's animated as the clip's first frame instead), video = the clip plays as-is (never billed). A 🎭 Mood dropdown (Auto = category default, or Eerie, Funny, Sarcastic, Witty, Adventurous, Dramatic, Mysterious, Wholesome, Inspiring, Deadpan) steers two rewrite buttons: "Script from prompts" writes the whole spoken script fitted to the visual prompts, "Prompts from script" re-imagines every visual prompt from the spoken lines; both save with the old version kept in History. The same mood flavors every ✨ line rewrite, and an explicit (non-Auto) mood also restyles generated visuals at render time.
 🎵 Ironic cheerful music (Render checkbox, or --ironic-music): a sincerely happy bed (music/ironic - 1950s swing, ragtime, elevator muzak; python get_music.py fetches them) that contradicts scary visuals, plays straight until the reveal beat, then tape-stops on its first word with a soft impact and resumes slowed + quiet. Any category, any visuals mode. With Mood on Auto it also renders generated visuals in Wholesome mood - smiling pictures, cheerful song, dark script - the full Jordan Peele contradiction in one click (an explicit mood overrides the look).
-🎬 Movie-trailer feel (Render checkbox, or --trailer; excludes the ironic checkbox): epic cinematic bed from music/trailer + the riser and impact on the reveal for any category; with Mood on Auto, generated visuals render in Trailer mood (anamorphic teal-and-orange). Pick the Trailer mood + "Script from prompts" for trailer-speak narration WITH character dialogue.
+🎬 Movie-trailer feel (Render checkbox, or --trailer; excludes the ironic checkbox): for horror categories the soundtrack is a synthesized AHS-style dread bed (heartbeat pulse, detuned drone, metallic shrieks - nothing to license), other categories get an epic bed from music/trailer (--trailer-bed overrides); plus riser + impact on the reveal, extra breathing room between dialogue lines, slower narrator delivery, and Trailer-mood visuals when Mood is Auto. Two trailer moods write the script: "Trailer - dialogue only" (DEFAULT, modern: no narrator, every beat is 1-2 character lines OR exactly (silence) for a held wordless shot, character-line cold open, silent outro under the follow card) and "Trailer - narrated" (classic VO fragments with 2-3 dialogue lines). Pick one + "Script from prompts", then render. Users can type (silence) into any spoken line to hold a shot. For a real story arc use 12-15 clips: with a trailer mood selected, "Script from prompts" GROWS the script to the Clips count from step 1 (re-tells the story across more scenes; prompts re-derive from the new beats). With ElevenLabs on, character lines render on ElevenLabs v3 (the expressive acting model) and can open with an emotion cue inside the quotes - [Mara] "[whispers] It knows my name." - performed by the voice, never spoken or captioned ([whispers], [terrified], [angry], [sighs], [shouting]...). The trailer writers add cues themselves; users can type them into any line. Non-v3 paths strip cues safely.
 🎙 Character dialogue: any spoken line can embed [Name] "the line" (the Trailer script writer adds 2-3 itself; users can type them into any beat). Each named character gets their own TTS voice automatically (edge-tts cast, or the ElevenLabs account's voices), with a light in-scene room tone; the narrator keeps the chosen voice, captions stay word-synced, the render log prints the cast. Dialogue captions are speaker-aware: italic + a per-character tint with a small "- NAME" flash when a character starts speaking. No lip-sync - trailer-style cuts carry it.
 🧬 Cast memory: new drafts and "Script from prompts" write a cast (name + fixed 6-12 word look) into the package; every visual prompt that mentions a character pins that exact look (polish is instructed, the free path expands the first name mention), so the same person appears across clips - prompt-level consistency, strong resemblance rather than a perfect face lock.
 💡 Draft from your own idea (top of Produce): paste a summary or details, pick scary/what-if/true-history, and Draft it builds the title, script, and shot prompts from YOUR notes (keeps every named fact), honoring Clips and Mood; the package opens ready to render.
+✨ Invent one (next to Draft it): the AI writes the idea too - one fresh suggestion for the selected kind fills the box; edit, then Draft it.
+🗣️ "...in AI language" (5th kind in the idea box): same movie-riff format but every spoken line is invented pseudo-language - sounds like English/Chinese/Spanish/French/Japanese/German, means nothing ("The Lion King - chinese"). Voices pronounce it, lips sync it, captions become gibberish karaoke. Names/cues/prompts stay English.
+🎬 "If a movie was AI-generated" (4th kind in the idea box): type just a movie name and Draft it writes an ORIGINAL dialogue-only trailer riffing on the film's premise - new lines in its vibe (never actual quotes), role names over trademarked character names, uncanny AI-dreamed-it feel. Own branding: AI Remake category, electric-violet titles, epic trailer bed, reveal sfx, #aitrailer hashtags, "Every frame is AI" caption.
 Optional API keys, one per file in pipeline/: openai_key.txt (better writing), elevenlabs_key.txt (premium voices), tryinfer_key.txt (paid AI video), pexels_key.txt (stock). Free fallbacks exist for everything.
 Everything runs locally; no accounts, no tracking, no auto-posting. Never promise views, virality, or income."""
 
@@ -1316,12 +1637,16 @@ MOODS = {
     "wholesome": "wholesome - warm, kind, quietly uplifting",
     "inspiring": "inspiring - hopeful, motivating, big-picture wonder",
     "deadpan": "deadpan - flat matter-of-fact delivery that lets the absurdity speak",
-    "trailer": "movie-trailer VOICEOVER - each beat is a CHAIN of short punchy fragments "
-               "(2-8 words each) separated by dramatic pauses written as ' - ' or '...', "
-               "stacked until the beat reaches its FULL word count (fragments are short, "
-               "beats are not - never hand back a 4-word beat), the 'In a world' cadence "
-               "without the cliche, epic escalating stakes, built to a final line that "
-               "hits like a title card",
+    "trailer": "modern movie-trailer - NO narrator at all: nothing but short in-scene "
+               "character lines trading against silence, each one raising the dread "
+               "another notch, the way current horror trailers cut dialogue snippets "
+               "against sound design",
+    "trailer-vo": "classic movie-trailer VOICEOVER - each beat is a CHAIN of short "
+                  "punchy fragments (2-8 words each) separated by dramatic pauses "
+                  "written as ' - ' or '...', stacked until the beat reaches its FULL "
+                  "word count (fragments are short, beats are not - never hand back a "
+                  "4-word beat), the 'In a world' cadence without the cliche, epic "
+                  "escalating stakes, built to a final line that hits like a title card",
 }
 
 # Trailer scripts trade the narrator against in-scene character lines - the
@@ -1334,18 +1659,162 @@ TRAILER_DIALOGUE_RULE = (
     'But someone always does. '
     'The square-bracket name tag is REQUIRED and is not a stage direction - the '
     'renderer reads it to give each character their own real voice, then each '
-    'named character speaks aloud in the video. Use the SAME names as the cast '
+    'named character speaks aloud in the video. A line may open with one emotion '
+    'cue in brackets INSIDE the quotes ([whispers], [terrified], [angry]) - the '
+    'voice performs it. Use the SAME names as the cast '
     'list so their look and voice stay tied. Keep the narrator carrying the '
     'story; never open a beat with dialogue. ')
+
+# Dialogue-ONLY trailers (the modern school - the default 🎞️ Trailer mood):
+# every spoken word belongs to a character; the "narrator" is the sound design.
+TRAILER_ONLY_RULE = (
+    "This is a MODERN DIALOGUE-ONLY TRAILER - there is NO narrator anywhere. "
+    "Each beat is either 1-2 in-scene character lines in exactly this "
+    'format: [Name] "the line" (5-15 words each, NOTHING outside the '
+    "bracketed lines), or exactly the single word (silence) - a held wordless "
+    "shot where only the sound design plays. Use 1-2 (silence) beats as "
+    "breathing room at tension points - after a hard line, or right before "
+    "the reveal. "
+    "The square-bracket tag is REQUIRED and is not a stage direction - the "
+    "renderer gives each named character their own real voice. The OUTER "
+    "bracket before each quote is ALWAYS the character's NAME, never an "
+    "emotion - emotions go INSIDE the quotes. "
+    "WRITE SPEECH, NOT PROSE - people under stress do not talk in clean "
+    "sentences: use false starts (I- I hear it), stutters, trail-offs "
+    "(don't...), repeated words (no. No no no.), and AT MOST one word in "
+    "CAPS per line for the word they lose control on. "
+    "Lines MAY open with emotion cues in square brackets INSIDE the quotes "
+    "([whispers], [terrified], [angry], [gasps], [shaky breath]) - the "
+    "voices perform them, and any that are missing get added in a later "
+    "pass, so never sacrifice the NAME format for them. "
+    'Example of a correct beat: [Mara] "[whispers] It\'s... no. No no no. '
+    'It\'s coming from MY garage." '
+    "Use 2-3 recurring characters with the SAME names as the cast list, "
+    "tell an ACTUAL STORY across the beats - setup, escalation, reveal - "
+    "purely through what the characters say to each other. "
+    "ARC: open HAPPY - the first 3-4 beats are bright, warm, playful (life "
+    "in this world is good, the characters laugh, tease, marvel) - then the "
+    "story TURNS around the middle and dread takes over; from the turn on "
+    "the lines tighten and darken. The contrast IS the trailer. ")
 
 _DLG_MARK_RE = re.compile(r'\[[A-Za-z][A-Za-z0-9 .\'-]{0,24}\]\s*["“]')
 
 
+def _narrator_words(text):
+    """Words in a line spoken by the narrator (outside [Name] "..." chunks)."""
+    return sum(len(t.split()) for sp, t in mv.split_dialogue(text) if sp is None)
+
+
+def finish_trailer_beats(beats, mood):
+    """Validate trailer structure (raises -> reroll/fallback) and inject the
+    emotion cues when the writer skipped them - a missing cue is fixable in
+    one focused pass and never a reason to throw a good script away."""
+    require_trailer_dialogue(beats, mood)
+    if mood == "trailer" and sum(1 for b in beats
+                                 if re.search(r'["“]\s*\[[A-Za-z]', b)) < 2:
+        beats = _inject_emotion_cues(beats)
+    return beats
+
+
+def _ensure_cast_kinds(cast):
+    """Cast looks must state a gender/age word - the renderer casts VOICES
+    from the look, and 'athletic build, messy hair' gives it nothing (Leo
+    got a female voice that way). One focused AI pass fills the gap; the
+    name's shape (-a female, else male) is the deterministic fallback."""
+    kindy = set().union(*mv._KIND_WORDS.values())
+    todo = [c for c in (cast or [])
+            if isinstance(c, dict) and c.get("name")
+            and not (set(re.findall(r"[a-z]+",
+                                    f"{c['name']} {c.get('look', '')}".lower())) & kindy)]
+    if not todo:
+        return cast
+    words = {}
+    try:
+        names = ", ".join(c["name"] for c in todo)
+        raw = _ai_text(
+            f"Characters in a movie trailer: {names}. For each, say whether "
+            "the name reads as a man, woman, boy or girl. Reply ONLY minified "
+            'JSON: {"<name>": "man", ...}', max_tokens=20 + 12 * len(todo))
+        start, end = raw.find("{"), raw.rfind("}")
+        got = json.loads(raw[start:end + 1])
+        words = {str(k).lower(): str(v).lower() for k, v in got.items()}
+    except Exception:
+        pass
+    for c in todo:
+        w = words.get(c["name"].lower())
+        if w not in ("man", "woman", "boy", "girl"):
+            w = "woman" if c["name"].lower()[-1:] == "a" else "man"
+        c["look"] = w + ", " + str(c.get("look", "")).lstrip()
+    return cast
+
+
+def _pick_turn_word(title, premise):
+    """The word card that punches on the happy->dark turn boom - 1-3 words,
+    ALL CAPS, specific to the story ('IT LEARNED', 'THEN IT WOKE'). One
+    focused AI pass; a genre-safe fallback. Never raises."""
+    try:
+        raw = _ai_text(
+            "A movie trailer opens happy, then SNAPS dark on a boom with one "
+            "huge word card. Write that card for this story: " + title + ". "
+            + (premise or "")[:300] + " Reply with ONLY the card text - "
+            "1 to 3 words, no quotes, no punctuation except an ellipsis.",
+            max_tokens=12)
+        word = re.sub(r"[^A-Za-z' .]+", " ", raw).strip()
+        word = " ".join(word.split()[:3]).upper()
+        if 2 <= len(word) <= 24:
+            return word
+    except Exception:
+        pass
+    return "SOMETHING'S WRONG"
+
+
+def _pick_score(title, premise, tags=None):
+    """One focused AI pass picks the trailer score genre (action / dark /
+    tragedy / wonder) for the story; keyword inference (mv.infer_score) is
+    the deterministic fallback. Never raises."""
+    try:
+        raw = _ai_text(
+            "A movie trailer needs its score. Genres: action (percussion, "
+            "battle strings), dark (brooding horror tension), tragedy "
+            "(emotional strings - the Titanic register), wonder (awe, "
+            "discovery, fantasy). Story: " + title + ". "
+            + (premise or "")[:300] + " Reply with exactly ONE word: "
+            "action, dark, tragedy or wonder.", max_tokens=8)
+        got = next((w for w in re.findall(r"[a-z]+", raw.lower())
+                    if w in mv.TRAILER_SCORES), None)
+        if got:
+            return got
+    except Exception:
+        pass
+    return mv.infer_score({"title": title, "premise": premise or "",
+                           "tags": list(tags or [])})
+
+
 def require_trailer_dialogue(beats, mood):
-    """Trailer scripts without character lines defeat the point - reject so
-    the retry (or the engine fallback) rolls again."""
-    if mood == "trailer" and sum(1 for b in beats if _DLG_MARK_RE.search(b)) < 2:
-        raise RuntimeError('the writer left out the [Name] "line" character dialogue - try again')
+    """Trailer scripts that ignore the dialogue contract defeat the point -
+    reject so the retry (or the engine fallback) rolls again."""
+    if mood == "trailer-vo":
+        if sum(1 for b in beats if _DLG_MARK_RE.search(b)) < 2:
+            raise RuntimeError('the writer left out the [Name] "line" character dialogue - try again')
+    elif mood == "trailer":
+        if any(not (_DLG_MARK_RE.search(b) or mv.SILENCE_RE.match(b)) for b in beats):
+            raise RuntimeError('every beat needs a [Name] "line" character line or (silence) - try again')
+        if sum(1 for b in beats if _DLG_MARK_RE.search(b)) < 2:
+            raise RuntimeError("a dialogue-only trailer needs at least 2 spoken beats - try again")
+        # The OUTER tag must be a character name - writers sometimes put the
+        # emotion cue there ([nervous] "line"), which would cast a voice per
+        # emotion instead of per character.
+        bad = {"gasps", "shaky breath", "swallows hard", "silence", "pause",
+               "laughs", "whispering", "shouts", "screams"} | set(CUE_WORDS)
+        for b in beats:
+            for sp, _ in mv.split_dialogue(b):
+                if sp and sp.strip().lower() in bad:
+                    raise RuntimeError(f'"[{sp}]" is an emotion cue where a character NAME '
+                                       "belongs - names outside the quotes, cues inside - try again")
+        # Up to 2 stray words tolerated (a dangling "Later -"); a narrated
+        # sentence is not. Silence beats are exempt (the marker is the beat).
+        if any(_narrator_words(b) > 2 for b in beats if not mv.SILENCE_RE.match(b)):
+            raise RuntimeError("the writer added narrator text to a dialogue-only trailer - try again")
 
 
 def resolve_mood(mood, pkg):
@@ -1371,44 +1840,123 @@ def _retry_generate(attempt, tries=3):
     raise last
 
 
-def script_from_prompts(pkg, mood):
+CUE_WORDS = ["whispers", "terrified", "angry", "sighs", "shouting",
+             "nervous", "crying", "coldly"]
+
+
+def _inject_emotion_cues(lines):
+    """Add a performance cue to every dialogue line - [Mara] "[whispers] ...".
+    The model only PICKS the emotion word per line; the brackets are spliced
+    in by code, so the format can't come back wrong. If the picker call
+    fails, a tone-appropriate rotation fills in - this never raises."""
+    flat = []   # (line_idx, chunk_idx, speaker, text) for uncued dialogue
+    parsed = [mv.split_dialogue(l) for l in lines]
+    for li, chunks in enumerate(parsed):
+        for ci, (sp, txt) in enumerate(chunks):
+            if sp and not txt.strip().startswith("["):
+                flat.append((li, ci, sp, txt))
+    if not flat:
+        return lines
+    cues = None
+    try:
+        numbered = "\n".join(f'{i + 1}. [{sp}] "{txt}"'
+                             for i, (_, _, sp, txt) in enumerate(flat))
+        raw = _ai_text(
+            "For each numbered horror-trailer line, pick ONE word for how the "
+            "actor should deliver it, from exactly this list: "
+            + ", ".join(CUE_WORDS) + ". "
+            'Reply with ONLY minified JSON, exactly: {"cues":["...", ...]} - '
+            f"exactly {len(flat)} entries, same order.\n\n" + numbered,
+            max_tokens=100 + 12 * len(flat))
+        start, end = raw.find("{"), raw.rfind("}")
+        got = [str(c).strip().lower() for c in
+               (json.loads(raw[start:end + 1]).get("cues") or [])]
+        if len(got) == len(flat):
+            cues = [c if c in CUE_WORDS else "nervous" for c in got]
+    except Exception:
+        pass
+    if cues is None:   # heuristic fallback: punctuation-guided rotation
+        cues = []
+        for _, _, _, txt in flat:
+            cues.append("shouting" if txt.rstrip('"”').endswith("!")
+                        else "whispers" if txt.rstrip('"”').endswith("...")
+                        else "nervous" if txt.rstrip('"”').endswith("?")
+                        else CUE_WORDS[len(cues) % len(CUE_WORDS)])
+    cue_at = {(li, ci): cues[i] for i, (li, ci, _, _) in enumerate(flat)}
+    out = []
+    for li, chunks in enumerate(parsed):
+        rebuilt = []
+        for ci, (sp, txt) in enumerate(chunks):
+            if sp:
+                body = f"[{cue_at[(li, ci)]}] {txt}" if (li, ci) in cue_at else txt
+                rebuilt.append(f'[{sp}] "{body}"')
+            else:
+                rebuilt.append(txt)
+        out.append(" ".join(rebuilt))
+    return out
+
+
+def script_from_prompts(pkg, mood, target_rows=0):
     """Write a whole spoken script (hook, beats, outro) FROM the current
     visual prompts, in the chosen mood - the narration is fitted to what is
-    already on screen, so shots and words agree by construction."""
+    already on screen, so shots and words agree by construction.
+    `target_rows` (trailer moods only) re-tells the story across that many
+    scenes instead of keeping the current count - more clips = a real arc."""
     prompts = beat_prompts(pkg)
     n = len(prompts)
     if n < 3:
         raise RuntimeError("this package has no prompts to write from")
+    grow = bool(target_rows) and target_rows != n and mood in ("trailer", "trailer-vo")
+    # Dialogue-only trailers have no spoken outro row: rows = hook + beats.
+    n_beats = ((target_rows - 1 if mood == "trailer" else target_rows - 2)
+               if grow else n - 2)
     voice = MOODS.get(mood, MOODS["eerie"])
-    words, _ = beat_word_budget(int(pkg.get("runtime") or 60), n - 2)
+    words, _ = beat_word_budget(int(pkg.get("runtime") or 60), n_beats)
     numbered = "\n".join(f"{i + 1}. {p}" for i, p in enumerate(prompts))
     prompt = (
         "You write narration scripts for short-form vertical videos (TikTok style). "
-        f'Video title: "{pkg.get("title", "")}". Below are its {n} visual shots in '
-        "order: shot 1 plays under the opening hook, the last shot under the outro, "
-        "and each shot in between under one story beat. Write the spoken narration "
-        "so every line fits what is ON SCREEN while it is spoken (weave the visual "
-        "in naturally - never just describe the picture), and the whole thing flows "
+        f'Video title: "{pkg.get("title", "")}". '
+        + (f"Below are the {n} shots of the CURRENT storyboard - use them as story "
+           "context only: you are RE-TELLING this story with a fuller arc (setup, "
+           "escalation, reveal), inventing extra scenes. The hook is its own scene "
+           f"and does NOT count as a beat: the beats array holds exactly {n_beats} "
+           "entries, no more. "
+           if grow else
+           f"Below are its {n} visual shots in "
+           "order: shot 1 plays under the opening hook, the last shot under the outro, "
+           "and each shot in between under one story beat. Write the spoken narration "
+           "so every line fits what is ON SCREEN while it is spoken (weave the visual "
+           "in naturally - never just describe the picture), ")
+        + "and the whole thing flows "
         f"as ONE story told in a {voice} voice. "
         'Reply with ONLY minified JSON, no markdown fences, exactly: '
-        '{"hook":"...","beats":[' + ",".join(['"..."'] * (n - 2)) + '],"outro":"...",'
+        '{"hook":"...","beats":[' + ",".join(['"..."'] * n_beats) + '],"outro":"...",'
         '"cast":[{"name":"...","look":"..."}]} '
-        "hook = one gripping opening line. "
-        + (f"beats = exactly {n - 2} spoken lines, {words} words each. "
-           if mood != "trailer" else
-           f"beats = exactly {n - 2} spoken lines. This is a TRAILER: build each "
+        + ("hook = one gripping opening line. "
+           f"beats = exactly {n_beats} spoken lines, {words} words each. "
+           "outro = a short payoff line plus a one-sentence follow call-to-action. "
+           if mood not in ("trailer", "trailer-vo") else
+           # Classic narrated trailer: fragments stacked to the full budget.
+           "hook = one gripping opening line. "
+           f"beats = exactly {n_beats} spoken lines. This is a TRAILER: build each "
            f"beat as a chain of 3-5 short fragments separated by ' - ' or '...', "
            f"and every beat must still total {words} words - COUNT them, never "
-           "stop after one fragment. ")
-        + "outro = a short payoff line plus a one-sentence "
-        "follow call-to-action. cast = any recurring characters you named (0-3): "
+           "stop after one fragment. "
+           "outro = a short payoff line plus a one-sentence follow call-to-action. "
+           if mood == "trailer-vo" else
+           # Modern dialogue-only trailer: characters carry everything.
+           'hook = the cold open - also a character line in [Name] "line" format. '
+           f"beats = exactly {n_beats} beats. "
+           'outro = "" (an empty string - nobody speaks over the closing card). ')
+        + "cast = any recurring characters you named (0-3): "
         "first name + look, a 6-12 word visual description that stays identical "
         "on screen; empty list if none. No hashtags, no emoji, no stage directions. "
-        + (TRAILER_DIALOGUE_RULE if mood == "trailer" else "")
+        + (TRAILER_ONLY_RULE if mood == "trailer"
+           else TRAILER_DIALOGUE_RULE if mood == "trailer-vo" else "")
         + "\n\nSHOTS:\n" + numbered
     )
     def attempt():
-        raw = _ai_text(prompt, max_tokens=450 + 90 * (n - 2))
+        raw = _ai_text(prompt, max_tokens=450 + 90 * n_beats)
         start, end = raw.find("{"), raw.rfind("}")
         if start < 0 or end <= start:
             raise RuntimeError("no JSON in AI response")
@@ -1416,21 +1964,39 @@ def script_from_prompts(pkg, mood):
         clean = lambda v, cap: re.sub(r"\s+", " ", str(v)).strip()[:cap]
         beats = [clean(b, 900) for b in (data.get("beats") or []) if clean(b, 900)]
         hook, outro = clean(data.get("hook", ""), 600), clean(data.get("outro", ""), 600)
-        if not hook or not outro or len(beats) != n - 2:
-            raise RuntimeError(f"the writer returned {len(beats)} beats for {n - 2} shots - try again")
-        # The video is exactly as long as the narration - a rewrite that
-        # undershoots the word budget silently shrinks the whole video
-        # (trailer fragments are the classic offender).
-        lo = int(words.split("-")[0])
-        got = sum(len(b.split()) for b in beats)
-        if got < 0.6 * lo * (n - 2):
-            raise RuntimeError(f"the writer came back too short ({got} words for a "
-                               f"~{lo * (n - 2)}-word script) - try again")
+        if n_beats < len(beats) <= n_beats + 2:
+            # Writers love counting the hook as a beat: salvage a near-miss
+            # by trimming mid-story excess, keeping the setup AND the climax.
+            beats = beats[:n_beats - 1] + beats[-1:]
+        if not hook or (not outro and mood != "trailer") or len(beats) != n_beats:
+            raise RuntimeError(f"the writer returned {len(beats)} beats, wanted {n_beats} - try again")
+        if mood == "trailer":
+            # Dialogue-only: sparse is correct (lines trade against sound
+            # design), but the hook must be a character line too and no
+            # narrator text may sneak in anywhere.
+            if not _DLG_MARK_RE.search(hook) or _narrator_words(hook) > 4:
+                raise RuntimeError('the cold-open hook must be a [Name] "line" character line - try again')
+            outro = ""   # nobody speaks over the closing card
+            # Cue-less scripts read flat: run the focused cue pass rather
+            # than rerolling a structurally good script. Same scope as the
+            # validator below (beats only), so they can never disagree.
+            if sum(1 for b in beats if re.search(r'["“]\s*\[[A-Za-z]', b)) < 2:
+                cued = _inject_emotion_cues([hook] + beats)
+                hook, beats = cued[0], cued[1:]
+        else:
+            # The video is exactly as long as the narration - a rewrite that
+            # undershoots the word budget silently shrinks the whole video
+            # (trailer-vo fragments are the classic offender).
+            lo = int(words.split("-")[0])
+            got = sum(len(b.split()) for b in beats)
+            if got < 0.6 * lo * n_beats:
+                raise RuntimeError(f"the writer came back too short ({got} words for a "
+                                   f"~{lo * n_beats}-word script) - try again")
         require_trailer_dialogue(beats, mood)
         return {"hook": hook, "beats": beats, "outro": outro,
                 "cast": parse_cast(data.get("cast"))}
-    # Trailer asks for more (fragments + budget + dialogue) - allow more rolls.
-    return _retry_generate(attempt, tries=5 if mood == "trailer" else 3)
+    # Trailers ask for more (format + dialogue rules) - allow more rolls.
+    return _retry_generate(attempt, tries=5 if mood in ("trailer", "trailer-vo") else 3)
 
 
 def prompts_from_script(pkg, mood):
@@ -1459,6 +2025,8 @@ def prompts_from_script(pkg, mood):
         "those are appended separately. "
         f"EVERY line gets a shot - all {n} of them, including the last one "
         "(the outro/call-to-action plays over a closing shot, not a blank). "
+        "A line that is exactly (silence) is a held wordless shot - describe "
+        "an unsettling static frame that fits the story, nothing moving. "
         'Reply with ONLY minified JSON, no markdown fences, exactly: '
         '{"prompts":[' + ",".join(['"..."'] * n) + ']} - '
         f"exactly {n} prompts, one per line, same order.\n\n"
@@ -1490,6 +2058,7 @@ def spend_summary():
     today = time.strftime("%Y-%m-%d")
     month = time.strftime("%Y-%m")
     total = today_sum = month_sum = est_sum = 0.0
+    cr_total = cr_month = cr_today = 0
     by_service, by_scenario = {}, {}
     for e in entries:
         p = float(e.get("price_usd") or 0)
@@ -1501,6 +2070,13 @@ def spend_summary():
             month_sum += p
         if e.get("estimated"):
             est_sum += p
+        cr = int(e.get("credits") or 0)
+        if cr:
+            cr_total += cr
+            if ts.startswith(month):
+                cr_month += cr
+            if ts.startswith(today):
+                cr_today += cr
         svc = e.get("service", "?")
         by_service[svc] = by_service.get(svc, 0.0) + p
         sc = e.get("scenario") or "(none)"
@@ -1511,6 +2087,7 @@ def spend_summary():
         "today": round(today_sum, 4),
         "month": round(month_sum, 4),
         "estimated_portion": round(est_sum, 4),
+        "openart_credits": {"total": cr_total, "month": cr_month, "today": cr_today},
         "by_service": {k: round(v, 4) for k, v in sorted(by_service.items(), key=lambda kv: -kv[1])},
         "by_scenario": [{"scenario": k, "usd": round(v, 4)} for k, v in top_scenarios],
         "entries": list(reversed(entries[-80:])),
@@ -1569,6 +2146,49 @@ def video_models():
                   if m.get("capability") == "image-to-video")
 
 
+def claude_cli():
+    """The installed Claude Code CLI, if any - used to auto-fulfill OpenArt
+    requests headlessly (the MCP OAuth lives with Claude, not the pipeline).
+    PATH may predate the install, so known locations are checked too."""
+    for cand in ("claude", "claude.cmd", "claude.exe"):
+        p = shutil.which(cand)
+        if p:
+            return p
+    for p in (Path.home() / ".local" / "bin" / "claude.exe",
+              Path(os.environ.get("APPDATA", "")) / "npm" / "claude.cmd"):
+        if str(p) and p.is_file():
+            return str(p)
+    return None
+
+
+def spawn_openart_fulfillment(staging_name):
+    """Launch a headless Claude run to fulfill a staged OpenArt request.
+    Returns True when launched; the run itself reports into
+    pipeline/openart-fulfill.log and flips the request's status."""
+    cli = claude_cli()
+    if not cli:
+        return False
+    prompt = (
+        f"Fulfill the OpenArt request in pipeline/produce/{staging_name}/openart-request.json. "
+        "Follow the fulfillment procedure in pipeline/OPENART.md exactly: generate each row's "
+        "clip via the OpenArt MCP tools, download them to that folder's refv-NN.mp4 slots and "
+        "set ref-choice video for every row, log every clip to the spend ledger as it "
+        "completes, set the request's status to 'fulfilled' with the credits spent, then "
+        "render via the CLI with the request's recorded render flags and verify the log. "
+        "The user already approved the credit total in the dashboard, so do not re-ask. "
+        "If the OpenArt MCP tools are unavailable in this session, set the request status to "
+        "'failed: openart mcp unavailable' and stop without generating anything.")
+    log = open(HERE / "openart-fulfill.log", "w", encoding="utf-8")
+    # Scoped permissions, not a blanket bypass: the run can use the OpenArt
+    # MCP, the file tools, and shell commands - anything else it asks for is
+    # denied (and in -p mode, skipped).
+    subprocess.Popen([cli, "-p", prompt,
+                      "--allowedTools", "Bash", "Read", "Write", "Edit",
+                      "Glob", "Grep", "mcp__openart"],
+                     cwd=str(STUDIO), stdout=log, stderr=subprocess.STDOUT)
+    return True
+
+
 def render_running():
     return _render["proc"] is not None and _render["proc"].poll() is None
 
@@ -1607,6 +2227,14 @@ def start_render(queue_file, slot, staging, opts):
         cmd += ["--ironic-music", ironic]
     if opts.get("trailer"):
         cmd.append("--trailer")
+        score = str(opts.get("score") or "").strip()
+        if score in mv.TRAILER_SCORES:
+            cmd += ["--score", score]
+        track = str(opts.get("track") or "").strip()
+        if track == "*" or re.fullmatch(r"[A-Za-z0-9 ._'()-]{1,120}", track):
+            cmd += ["--track", track]
+        if opts.get("turn"):
+            cmd.append("--turn")
     if opts.get("elevenlabs"):
         cmd.append("--elevenlabs")
     if opts.get("charts"):
@@ -1771,6 +2399,15 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == "/api/videos":
             self.send_json(list_videos())
+            return
+        if self.path == "/api/music/tracks":
+            # The creator's own song library (music/custom) for the Produce
+            # page's 🎵 My tracks picker.
+            folder = HERE / "music" / "custom"
+            tracks = (sorted(f.name for f in folder.iterdir()
+                             if f.suffix.lower() in mv.AUDIO_EXTS)
+                      if folder.is_dir() else [])
+            self.send_json({"tracks": tracks})
             return
         if self.path == "/api/produce/queues":
             self.send_json(list_queues())
@@ -2321,18 +2958,35 @@ class Handler(BaseHTTPRequestHandler):
                 if not pkg:
                     raise RuntimeError(f"slot {slot} not in {qpath.name}")
                 mood = resolve_mood(str(data.get("mood") or ""), pkg)
+                # Trailer moods can GROW the script to the Clips count - the
+                # story is re-told across more scenes for a fuller arc.
+                try:
+                    clips = max(0, min(20, int(data.get("clips") or 0)))
+                except (TypeError, ValueError):
+                    clips = 0
                 old_script = script_snapshot(pkg)
                 prompts = beat_prompts(pkg)
-                script = script_from_prompts(pkg, mood)
+                script = script_from_prompts(pkg, mood, target_rows=clips)
                 hooks = list(pkg.get("hooks") or [""])
                 hooks[0] = script["hook"]
                 pkg["hooks"], pkg["beats"], pkg["outro"] = hooks, script["beats"], script["outro"]
                 # A rewrite that names characters replaces the cast; one that
                 # doesn't keeps whatever the package already knew.
                 if script.get("cast"):
-                    pkg["cast"] = script["cast"]
+                    pkg["cast"] = _ensure_cast_kinds(script["cast"])
+                # Trailer rewrites (re)pick the score genre + turn card.
+                if mood.startswith("trailer"):
+                    pkg["score"] = _pick_score(pkg.get("title", ""),
+                                               pkg.get("premise", ""),
+                                               pkg.get("tags"))
+                    pkg["turn_word"] = _pick_turn_word(pkg.get("title", ""),
+                                                       pkg.get("premise", ""))
                 qpath.write_text(json.dumps(qdata, indent=2), encoding="utf-8")
-                save_prompts(pkg, prompts)   # keep the prompts the script was built from
+                # Same row count: the prompts the script was fitted to survive.
+                # A grown script has NEW scenes - prompts re-derive from the
+                # beats instead (edit them or hit 🎬 Prompts from script after).
+                if len(mv.narration_segments(pkg, 0)) == len(prompts):
+                    save_prompts(pkg, prompts)
                 try:
                     d = produce_dir(staging_key(queue, slot, pkg))
                     record_history(d, "script", script_snapshot(pkg), baseline=old_script,
@@ -2432,6 +3086,102 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": str(exc)}, 500)
             return
 
+        if self.path == "/api/produce/openart-request":
+            # 🎨 OpenArt visuals mode: the pipeline can't call OpenArt's MCP
+            # itself (OAuth lives with Claude), so this stages a fulfillment
+            # request in the package's staging dir - Claude reads it,
+            # generates the clips via MCP (cast portraits as identity
+            # elements), drops them into the refv slots, and renders.
+            try:
+                queue = str(data.get("queue", ""))
+                slot = int(data.get("slot") or 0)
+                pkg = load_package(queue, slot)
+                d = produce_dir(staging_key(queue, slot, pkg))
+                segs = mv.narration_segments(pkg, 0)
+                req = {
+                    "created": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    "queue": queue, "slot": slot,
+                    "scenarioId": pkg.get("scenarioId", ""),
+                    "title": pkg.get("title", ""),
+                    "category": pkg.get("category", ""),
+                    "cast": pkg.get("cast") or [],
+                    "model": "byte-plus-seedance-2-mini",
+                    "resolution": str(data.get("resolution") or "480p"),
+                    "estimated_credits_per_clip": 80 if str(data.get("resolution") or "480p") == "480p" else 160,
+                    "rows": [{"row": i + 1,
+                              "spoken": mv.strip_dialogue_markup(s),
+                              "prompt": p}
+                             for i, (s, p) in enumerate(zip(segs, beat_prompts(pkg)))],
+                    "render": {"trailer": bool(data.get("trailer")),
+                               "elevenlabs": bool(data.get("elevenlabs")),
+                               "mood": str(data.get("mood") or "")},
+                    "status": "requested",
+                }
+                (d / "openart-request.json").write_text(json.dumps(req, indent=1),
+                                                        encoding="utf-8")
+                spawned = spawn_openart_fulfillment(d.name)
+                self.send_json({"ok": True, "rows": len(req["rows"]),
+                                "estimated_credits": len(req["rows"]) * req["estimated_credits_per_clip"],
+                                "dir": d.name, "spawned": spawned})
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 400)
+            return
+
+        if self.path == "/api/produce/idea-suggest":
+            # ✨ Invent one: fill the idea box with a fresh AI-invented idea
+            # for the selected kind. One tiny completion; drafting stays a
+            # separate, deliberate click.
+            try:
+                kind = str(data.get("kind") or "scary")
+                prompt = IDEA_SUGGEST_PROMPTS.get(kind)
+                if not prompt:
+                    raise RuntimeError("unknown kind")
+                raw = _ai_text(prompt + f" seed:{int(time.time()) % 9973}")
+                start, end = raw.find("{"), raw.rfind("}")
+                idea = re.sub(r"\s+", " ", str(json.loads(raw[start:end + 1]).get("idea", ""))).strip()[:400]
+                if len(idea) < 3:
+                    raise RuntimeError("the writer came back empty - try again")
+                self.send_json({"ok": True, "idea": idea})
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 502)
+            return
+
+        if self.path == "/api/music/upload":
+            # 🎼 drop-in scores from the Produce page: save an audio file
+            # into its trailer genre folder and (optionally) its credit
+            # line into credits.json so the post kit carries it. Local
+            # dashboard only - the file never leaves this machine.
+            try:
+                genre = str(data.get("genre") or "").strip().lower()
+                if genre not in mv.TRAILER_SCORES and genre != "custom":
+                    raise RuntimeError("unknown genre")
+                name = Path(str(data.get("name") or "")).name
+                name = re.sub(r"[^A-Za-z0-9 ._'()-]", "-", name).strip(" .")
+                if Path(name).suffix.lower() not in {".mp3", ".m4a", ".wav",
+                                                     ".ogg", ".flac"}:
+                    raise RuntimeError("audio files only (.mp3 .m4a .wav .ogg .flac)")
+                raw = base64.b64decode(str(data.get("data") or ""))
+                if len(raw) < 10_000:
+                    raise RuntimeError("that file looks empty/truncated")
+                if len(raw) > 80_000_000:
+                    raise RuntimeError("file too large (80 MB max)")
+                dest = (HERE / "music" / "custom" if genre == "custom"
+                        else HERE / "music" / "trailer" / genre)
+                dest.mkdir(parents=True, exist_ok=True)
+                (dest / name).write_bytes(raw)
+                credit = re.sub(r"\s+", " ", str(data.get("credit") or "")).strip()[:300]
+                if credit:
+                    cpath = HERE / "music" / "credits.json"
+                    credits = (json.loads(cpath.read_text(encoding="utf-8"))
+                               if cpath.is_file() else {})
+                    credits[name] = credit
+                    cpath.write_text(json.dumps(credits, indent=2), encoding="utf-8")
+                self.send_json({"ok": True, "file": f"music/trailer/{genre}/{name}",
+                                "credited": bool(credit)})
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 400)
+            return
+
         if self.path == "/api/produce/draft-idea":
             # 💡 Draft ONE package from the creator's own summary/details:
             # title (invented unless supplied), script, and prompts, honoring
@@ -2439,26 +3189,69 @@ class Handler(BaseHTTPRequestHandler):
             # take a while.
             try:
                 idea = re.sub(r"\s+", " ", str(data.get("idea", ""))).strip()[:1500]
-                if len(idea) < 12:
-                    raise RuntimeError("give the writer a little more - a sentence or two about the idea")
                 kind = str(data.get("kind") or "scary")
                 if kind not in IDEA_KINDS:
                     raise RuntimeError("unknown kind")
+                # A movie name can be 3 letters (Saw, Jaws); everything else
+                # needs a sentence or two.
+                if len(idea) < (2 if kind in ("aimovie", "aibabble") else 12):
+                    raise RuntimeError("give the writer a little more - a sentence or two about the idea")
                 # Same styling as the batch kind, but idea drafts carry their
                 # own scenario prefix so caches/exports are recognizably yours.
                 conf = dict(IDEA_KINDS[kind])
                 conf["prefix"] = "idea"
-                try:
-                    beats = max(3, min(18, int(data.get("clips") or 7) - 2))
-                except (TypeError, ValueError):
-                    beats = 5
                 mood = str(data.get("mood") or "")
                 mood = mood if mood in MOODS else None   # Auto = the category's own register
-                title = re.sub(r"\s+", " ", str(data.get("title", ""))).strip()[:120] \
-                    or title_from_idea(idea, conf["category"])
+                title = re.sub(r"\s+", " ", str(data.get("title", ""))).strip()[:120]
+                if kind in ("aimovie", "aibabble"):
+                    # The idea box holds the movie name (plus an optional
+                    # angle - or, for the babble kind, the language - after a
+                    # dash/newline). Always the trailer register unless a
+                    # trailer mood was explicitly picked.
+                    parts = re.split(r"[\n—]| - ", idea, 1)
+                    movie = parts[0].strip(" .!?\"'")[:80]
+                    rest = parts[1].strip().lower() if len(parts) > 1 else ""
+                    if not movie:
+                        raise RuntimeError("give me the movie name")
+                    if mood not in ("trailer", "trailer-vo"):
+                        mood = "trailer"
+                    if kind == "aibabble":
+                        # Draft the STORY in English first (all the quality
+                        # machinery applies); the babblify pass below converts
+                        # every spoken line to the invented language. The
+                        # dropdown's lang wins; "- language" in the text still
+                        # works as an override for typists.
+                        lang_param = str(data.get("lang") or "").strip().lower()
+                        babble_lang = (next((l for l in BABBLE_LANGS if l in rest), None)
+                                       or (lang_param if lang_param in BABBLE_LANGS else None)
+                                       or "english")
+                        title = title or f"If {movie.title()} Was AI-Generated in AI {babble_lang.title()}"
+                        idea = AIMOVIE_IDEA.format(movie=movie)
+                    else:
+                        title = title or f"If {movie.title()} Was AI-Generated"
+                        idea = AIMOVIE_IDEA.format(movie=movie) + (
+                            f"Creator's angle: {idea}" if idea != movie else "")
+                try:
+                    clips = max(5, min(20, int(data.get("clips") or 7)))
+                except (TypeError, ValueError):
+                    clips = 7
+                # Dialogue-only trailers have no spoken outro and their hook
+                # is the first character line - ask for `clips` beats and
+                # redistribute; everything else is hook + beats + outro.
+                beats = clips if mood == "trailer" else max(3, min(18, clips - 2))
+                title = title or title_from_idea(idea, conf["category"])
                 draft = ai_draft(title, conf["category"], conf["runtime"], beats,
                                  idea=idea, mood=mood)
                 pkg = scaffold_batch_package(conf, title, draft, conf["runtime"])
+                if mood == "trailer":
+                    pkg["hooks"] = [pkg["beats"][0]]
+                    pkg["beats"] = pkg["beats"][1:]
+                    pkg["outro"] = ""
+                if kind == "aibabble":
+                    # Convert every spoken line to the invented language;
+                    # names, cues, prompts and (silence) beats stay English.
+                    pkg["hooks"] = babblify(pkg["hooks"], babble_lang)
+                    pkg["beats"] = babblify(pkg["beats"], babble_lang)
                 file = write_package_export(pkg, "idea", title)
                 self.send_json({"ok": True, "file": file, "slot": 1, "title": title})
             except Exception as exc:
@@ -2484,6 +3277,22 @@ class Handler(BaseHTTPRequestHandler):
                     state["notes"][name] = str(data.get("text", ""))[:5000]
                     save_state(state)
                     self.send_json({"ok": True})
+                else:
+                    self.send_json({"error": "bad name"}, 400)
+                return
+
+            if self.path == "/api/hidden":
+                # Tuck a video away without deleting it - the Videos page's
+                # Fresh view skips hidden (and uploaded) cards.
+                name = safe_name(data.get("name", ""))
+                if name:
+                    hid = state.setdefault("hidden", {})
+                    if data.get("hidden"):
+                        hid[name] = True
+                    else:
+                        hid.pop(name, None)
+                    save_state(state)
+                    self.send_json({"ok": True, "hidden": bool(hid.get(name))})
                 else:
                     self.send_json({"error": "bad name"}, 400)
                 return

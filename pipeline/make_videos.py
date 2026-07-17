@@ -81,6 +81,7 @@ MOOD_BY_CATEGORY = {
     "Pop Culture": "upbeat",
     "Scary Story": "eerie",
     "True History": "period",
+    "AI Remake": "trailer",
 }
 MUSIC_VOLUME = 0.12
 
@@ -113,6 +114,7 @@ MOOD_LOOKS = {
     "inspiring": "sunrise glow, hopeful upward framing, expansive sky",
     "deadpan": "flat symmetrical composition, even lighting, expressionless subjects held perfectly still",
     "trailer": "epic movie-trailer frame, anamorphic cinematic look, teal and orange grade, dramatic rim light, atmospheric haze, larger-than-life scale",
+    "trailer-vo": "epic movie-trailer frame, anamorphic cinematic look, teal and orange grade, dramatic rim light, atmospheric haze, larger-than-life scale",
 }
 
 
@@ -157,6 +159,15 @@ CATEGORY_BRANDING = {
         "cta": "FOLLOW FOR MORE TRUE HISTORY", "anchor": "#history", "style": "archival",
         "font": "IMFellEnglishSC-Regular.ttf", "font_name": "IM FELL English SC",
         "title_color": r"&H007AC9E8&", "thumb_color": "0xE8C97A",   # parchment gold
+    },
+    # "If <movie> was AI-generated": trailer-first format - epic bed by
+    # default (MOOD_BY_CATEGORY sends it to music/trailer), electric violet
+    # title, reveal sound design like the story categories.
+    "AI Remake": {
+        "cta": "FOLLOW FOR MORE AI REMAKES", "anchor": "#aitrailer", "style": "cinematic",
+        "title_color": r"&H00F72F7B&", "thumb_color": "0xB05CFF",   # electric violet
+        "music_volume": 0.16,
+        "sfx": "reveal",
     },
 }
 
@@ -262,16 +273,92 @@ def pick_file(directory, exts):
     return random.choice(files) if files else None
 
 
-def pick_music(pkg, music_dir, override=None):
+# Score genres for --trailer: which tracks fit which kind of story. The
+# writer picks the genre (pkg["score"]), infer_score guesses from the story
+# when it didn't, --score forces one. Track stems are searched across every
+# music/ folder, so genres can borrow from mood folders (wonder does).
+TRAILER_SCORES = {
+    "action":  ["Five Armies", "Prelude and Action", "Volatile Reaction",
+                "Rites", "Killers", "Curse of the Scarab"],
+    "dark":    ["Stormfront", "Achilles", "Lightless Dawn",
+                "Controlled Chaos", "Oppressive Gloom", "Dark Walk"],
+    "tragedy": ["Heartbreaking", "Sad Trio", "Long Note Three",
+                "Agnus Dei X", "Immersed"],
+    "wonder":  ["Frozen Star", "Floating Cities",
+                "Ascending the Vale", "Enchanted Valley"],
+}
+
+_SCORE_HINTS = {
+    "tragedy": "love loss lost goodbye sink sinking sank drown drowning ocean liner "
+               "dies died death dying farewell heart tears widow funeral doomed "
+               "tragedy grief mourning titanic",
+    "action":  "war battle chase heist fight fighting soldier gun race escape "
+               "explosion mission agent revenge army invasion uprising rebellion "
+               "warrior sword arena",
+    "wonder":  "space stars galaxy magic wonder discover discovery dream fantasy "
+               "kingdom dinosaur miracle wish evolve evolved future civilization "
+               "planet universe",
+    "dark":    "haunted ghost demon monster curse cursed whisper shadow vanish "
+               "vanished missing basement ritual possessed evil scream horror "
+               "nightmare stalks lurks",
+}
+
+
+def infer_score(pkg):
+    """Guess the trailer score genre from the story when the writer didn't
+    set one - keyword hits on title + premise + tags, horror bias last."""
+    text = " ".join([pkg.get("title", ""), pkg.get("premise", ""),
+                     " ".join(pkg.get("tags") or [])]).lower()
+    words = set(re.findall(r"[a-z']+", text))
+    best, hits = None, 0
+    for genre, hint in _SCORE_HINTS.items():
+        n = len(words & set(hint.split()))
+        if n > hits:
+            best, hits = genre, n
+    if best:
+        return best
+    return "dark" if branding_for(pkg).get("sfx") == "reveal" else "action"
+
+
+def find_track(music_dir, name):
+    """A specific track by filename from anywhere under music/ - the
+    creator's own songs live in music/custom ('*' = a random one of them)."""
+    root = Path(music_dir) if music_dir else None
+    if not root or not root.is_dir() or not name:
+        return None
+    if name == "*":
+        return pick_file(root / "custom", AUDIO_EXTS)
+    want = Path(name).name.lower()
+    for f in root.rglob("*"):
+        if f.suffix.lower() in AUDIO_EXTS and f.name.lower() == want:
+            return f
+    return None
+
+
+def pick_music(pkg, music_dir, override=None, score=None):
     """Pick a track matching the scenario's mood; fall back to loose files.
     `override` replaces the category mood: "ironic" = a sincerely cheerful
     bed (upbeat fills in if the folder is empty), "trailer" = an epic
-    cinematic bed (tense fills in). Both folders come from get_music.py."""
+    cinematic bed (tense fills in). Both folders come from get_music.py.
+    `score` (trailer only) narrows to that genre's tracks from
+    TRAILER_SCORES wherever they live under music/."""
     root = Path(music_dir) if music_dir else None
     if not root or not root.is_dir():
         return None
     fallback = {"ironic": "upbeat", "trailer": "tense"}
     if override in fallback:
+        if override == "trailer" and score:
+            # Genre pool: the known stems from TRAILER_SCORES anywhere under
+            # music/, plus EVERYTHING the creator dropped into the genre's
+            # own subfolder (music/trailer/tragedy/...) - drop-in tracks
+            # (e.g. from YouTube's Audio Library) are first-class citizens.
+            stems = {s.lower() for s in TRAILER_SCORES.get(score, ())}
+            pool = [f for f in root.rglob("*")
+                    if f.suffix.lower() in AUDIO_EXTS
+                    and (f.stem.lower() in stems
+                         or f.parent.name.lower() == score)]
+            if pool:
+                return random.choice(pool)
         return (pick_file(root / override, AUDIO_EXTS)
                 or pick_file(root / fallback[override], AUDIO_EXTS)
                 or pick_file(root, AUDIO_EXTS))
@@ -371,6 +458,21 @@ async def synthesize(text, vconf, mp3_path):
 
 _DLG_RE = re.compile(r'\[([A-Za-z][A-Za-z0-9 .\'-]{0,24})\]\s*("([^"]*)"|“([^”]*)”|([^\[]+))')
 
+# A beat that is ONLY this marker is a held wordless shot: nothing is spoken,
+# captions clear, and the sound design carries it (~2.4s + the trailer gap).
+SILENCE_RE = re.compile(r"^\s*[(\[]\s*(?:silence|quiet|hold|pause)\s*[)\]]\s*$", re.I)
+SILENCE_SECONDS = 2.4
+
+# Emotion cues INSIDE a dialogue line - [Mara] "[whispers] It knows my name."
+# ElevenLabs v3 performs them natively; every other voice path strips them
+# (they are direction, not words), and they never reach the captions.
+_EMO_TAG_RE = re.compile(r"\[[A-Za-z][A-Za-z ']{1,24}\]\s*")
+ELEVEN_DIALOGUE_MODEL = "eleven_v3"
+
+
+def _strip_emotion_tags(text):
+    return _EMO_TAG_RE.sub("", text).strip()
+
 # Trailer VO tempo for voices that have no rate knob (ElevenLabs): atempo
 # keeps the pitch, word timings are rescaled to match. Edge voices use their
 # native rate parameter instead (-15% in trailer mode).
@@ -383,6 +485,54 @@ EDGE_CAST = ["en-US-AriaNeural", "en-US-GuyNeural", "en-GB-SoniaNeural",
 # Preferred ElevenLabs premade voices for the cast (matched against the
 # account's voice list; any other account voices fill in after).
 ELEVEN_CAST_NAMES = ["Rachel", "Josh", "Domi", "Antoni", "Bella", "Charlie"]
+
+# Voices must FIT the character: a Dad with Rachel's voice or a Child with
+# Adam's breaks the scene instantly. Kind is inferred from the character's
+# tag name + cast look; unknown kinds alternate female/male.
+EDGE_CAST_BY_KIND = {
+    "male":   ["en-US-GuyNeural", "en-GB-RyanNeural", "en-US-EricNeural",
+               "en-US-ChristopherNeural"],
+    "female": ["en-US-AriaNeural", "en-US-JennyNeural", "en-GB-SoniaNeural",
+               "en-US-MichelleNeural"],
+    "child":  ["en-US-AnaNeural", "en-GB-MaisieNeural"],
+}
+ELEVEN_CAST_BY_KIND = {
+    "male":   ["Josh", "Antoni", "Charlie", "Adam", "Callum", "Brian", "Daniel",
+               "George", "Eric", "Roger", "Will", "Liam"],
+    "female": ["Rachel", "Bella", "Domi", "Matilda", "Sarah", "Laura", "Alice",
+               "Jessica", "Lily", "Elli"],
+    "child":  ["Gigi", "Lily", "Alice"],   # Gigi is the childlike premade
+}
+
+_KIND_WORDS = {
+    "child": {"child", "kid", "boy", "girl", "son", "daughter", "toddler",
+              "teen", "teenager"},
+    "male": {"man", "male", "dad", "father", "mr", "sir", "he", "his", "guy",
+             "husband", "brother", "uncle", "grandpa", "grandfather",
+             "sheriff", "king", "prince", "gentleman", "priest", "monk"},
+    "female": {"woman", "female", "mom", "mother", "mrs", "ms", "she", "her",
+               "lady", "wife", "sister", "aunt", "grandma", "grandmother",
+               "queen", "princess", "nun", "girl"},
+}
+
+
+def _char_kind(name, look):
+    """'male' / 'female' / 'child' / None from a character's tag + cast look
+    (whole-word matches only - 'she' must never match inside 'the').
+    Child wins over gender: a 'little girl' needs a child voice first."""
+    words = set(re.findall(r"[a-z]+", f"{name} {look}".lower()))
+    for kind in ("child", "male", "female"):
+        if words & _KIND_WORDS[kind]:
+            return kind
+    # No stated gender anywhere: fall back on the name's shape. Invented
+    # cast names follow convention (Maya, Lia / Leo, Rico), and a
+    # conventional guess beats dealing voices out blind.
+    first = re.findall(r"[a-z]+", str(name or "").lower())
+    if first and first[0][-1:] == "a":
+        return "female"
+    if first and first[0][-1:] == "o":
+        return "male"
+    return None
 
 
 def split_dialogue(text):
@@ -404,12 +554,56 @@ def split_dialogue(text):
 
 
 def strip_dialogue_markup(text):
-    """The spoken form of a line: [Name] tags gone, the quoted words kept."""
-    return " ".join(t for _, t in split_dialogue(text))
+    """The spoken form of a line: [Name] tags gone, emotion cues gone, the
+    quoted words kept - what captions and beat spans line up with."""
+    return " ".join((_strip_emotion_tags(t) if sp else t)
+                    for sp, t in split_dialogue(text)).strip()
+
+
+def lipsync_map(ref_dir):
+    """{1-based beat index: True} from lipsync.json in the staging dir: beats
+    whose staged video's OWN audio is the spoken line (OpenArt talking
+    clips). The voice track goes silent there, the clip audio plays instead,
+    and captions are estimated across the clip's speech."""
+    if not ref_dir:
+        return {}
+    try:
+        data = json.loads((Path(ref_dir) / "lipsync.json").read_text(encoding="utf-8"))
+        return {int(k): True for k, v in data.items() if v}
+    except Exception:
+        return {}
+
+
+def detect_speech_span(ffmpeg, media, total):
+    """(start, end) of the speech region in a clip via silencedetect, for
+    caption timing on clip-voiced beats. Falls back to a centered window."""
+    try:
+        out = run([ffmpeg, "-i", str(Path(media).resolve()),
+                   "-af", "silencedetect=noise=-32dB:d=0.2", "-f", "null", "-"])
+        log = (out.stderr or "") + (out.stdout or "")
+        sil = []
+        for m in re.finditer(r"silence_start: ([\d.]+)", log):
+            sil.append([float(m.group(1)), total])
+        for i, m in enumerate(re.finditer(r"silence_end: ([\d.]+)", log)):
+            if i < len(sil):
+                sil[i][1] = float(m.group(1))
+        # speech regions = complement of the silences
+        speech, t = [], 0.0
+        for s0, s1 in sil:
+            if s0 - t > 0.15:
+                speech.append((t, s0))
+            t = max(t, s1)
+        if total - t > 0.15:
+            speech.append((t, total))
+        if speech:
+            return speech[0][0], speech[-1][1]
+    except Exception:
+        pass
+    return 0.15 * total, 0.9 * total
 
 
 def synthesize_cast(segments, vconf, out_mp3, tmp, ffmpeg, ffprobe, eleven=None,
-                    narrator_tempo=1.0):
+                    narrator_tempo=1.0, pad=0.15, clip_voiced=None, cast_info=None):
     """Multi-voice narration for segments carrying [Name] "line" dialogue.
     Synthesizes each chunk with its voice, gives character lines a subtle
     in-scene treatment (thinner low end + a touch of slap echo), stitches
@@ -417,45 +611,149 @@ def synthesize_cast(segments, vconf, out_mp3, tmp, ffmpeg, ffprobe, eleven=None,
     (start, end, word) on the stitched track, same shape as synthesize().
     `eleven` = {key, model, narrator_id, voices} switches the whole cast to
     ElevenLabs; None uses free edge-tts throughout."""
-    chunks = []
-    for seg in segments:
-        chunks.extend(split_dialogue(seg))
+    clip_voiced = clip_voiced or {}
+    seg_chunks = [split_dialogue(seg) for seg in segments]
+    chunks = [c for sc in seg_chunks for c in sc]
     characters = []
     for sp, _ in chunks:
         if sp and sp not in characters:
             characters.append(sp)
+
+    def look_for(ch):
+        """The cast entry's look for a dialogue tag (partial name matches:
+        the tag 'Sheriff' finds the cast's 'Sheriff Dade')."""
+        chl = ch.lower()
+        for c in cast_info or []:
+            n = str(c.get("name", "")).lower()
+            if n and (n in chl or chl in n):
+                return str(c.get("look", ""))
+        return ""
+
+    # Kind-aware casting: each character draws from the pool matching their
+    # inferred kind (child > male > female); unknowns alternate female/male.
+    kinds = {ch: _char_kind(ch, look_for(ch)) for ch in characters}
+    unknown_flip = ["female", "male"]
     cast = {}   # character -> (display label, voice)
     if eleven:
         byname = {_voice_base(n): (n.split(" - ")[0].strip(), vid)
                   for n, vid in eleven["voices"].items()}
-        pool = [byname[w.lower()] for w in ELEVEN_CAST_NAMES
-                if w.lower() in byname and byname[w.lower()][1] != eleven["narrator_id"]]
-        pool += [v for v in sorted(byname.values())
-                 if v[1] != eleven["narrator_id"] and v not in pool]
+        leftovers = [v for v in sorted(byname.values())
+                     if v[1] != eleven["narrator_id"]]
+        used = set()
         for i, ch in enumerate(characters):
-            cast[ch] = pool[i % len(pool)] if pool else ("narrator", eleven["narrator_id"])
+            kind = kinds[ch] or unknown_flip[i % 2]
+            pool = [byname[w.lower()] for w in ELEVEN_CAST_BY_KIND.get(kind, [])
+                    if w.lower() in byname
+                    and byname[w.lower()][1] != eleven["narrator_id"]
+                    and byname[w.lower()][1] not in used]
+            pool += [v for v in leftovers if v[1] not in used and v not in pool]
+            cast[ch] = pool[0] if pool else ("narrator", eleven["narrator_id"])
+            used.add(cast[ch][1])
     else:
-        pool = [v for v in EDGE_CAST if v != vconf["voice"]]
+        used = set()
         for i, ch in enumerate(characters):
-            v = pool[i % len(pool)]
+            kind = kinds[ch] or unknown_flip[i % 2]
+            pool = [v for v in EDGE_CAST_BY_KIND.get(kind, [])
+                    if v != vconf["voice"] and v not in used]
+            pool += [v for v in EDGE_CAST if v != vconf["voice"] and v not in used]
+            v = pool[0] if pool else EDGE_CAST[i % len(EDGE_CAST)]
             cast[ch] = (v.split("-")[-1].replace("Neural", ""), v)
+            used.add(v)
 
+    # Character lines read hotter than narration: lower stability + style
+    # exaggeration gives ElevenLabs dialogue real acting instead of an even
+    # narrator read.
+    dlg_settings = {"stability": 0.3, "similarity_boost": 0.75,
+                    "style": 0.45, "use_speaker_boost": True}
     words, parts, offset = [], [], 0.0
-    for idx, (speaker, chunk_text) in enumerate(chunks):
+    flat = []   # (chunk, or a clip-voiced segment marker) in timeline order
+    for si, sc in enumerate(seg_chunks):
+        if si in clip_voiced:
+            flat.append(("__clip__", si))
+        else:
+            flat.extend(sc)
+    for idx, (speaker, chunk_text) in enumerate(flat):
         part = tmp / f"vc-{idx:02d}.mp3"
+        if speaker == "__clip__":
+            # Clip-voiced beat: the staged talking clip IS the spoken line.
+            # The voice track holds silence for exactly the clip's length;
+            # captions estimate word timings across the clip's speech region,
+            # keeping the speaker tag for tint + the — NAME flash.
+            si = chunk_text
+            vid_path = clip_voiced[si]
+            dur = probe_duration(ffprobe, vid_path)
+            s0, s1 = detect_speech_span(ffmpeg, vid_path, dur)
+            toks = []
+            for sp, txt in seg_chunks[si]:
+                spoken = _strip_emotion_tags(txt) if sp else txt
+                if SILENCE_RE.match(spoken):
+                    continue
+                toks.extend((wd, sp) for wd in spoken.split())
+            span = max(0.5, s1 - s0)
+            weight = sum(len(wd) + 1 for wd, _ in toks) or 1
+            t = s0
+            first = len(words)
+            for wd, sp in toks:
+                w_d = span * (len(wd) + 1) / weight
+                words.append((offset + t, offset + min(t + w_d, s1), wd, sp))
+                t += w_d
+            if len(words) > first:
+                # Anchor the beat span at the CLIP's start, not the speech
+                # start - the visual must play from frame 0 or lips shift.
+                s, e, wd, sp = words[first]
+                words[first] = (offset + 0.02, e, wd, sp)
+            wav = tmp / f"vc-{idx:02d}.wav"
+            run([ffmpeg, "-y", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono",
+                 "-t", f"{max(0.5, dur):.3f}", "-c:a", "pcm_s16le", str(wav)])
+            parts.append(wav)
+            offset += probe_duration(ffprobe, wav)
+            continue
+        if speaker is None and SILENCE_RE.match(chunk_text):
+            # A held wordless shot: pure silence, one invisible word so the
+            # beat keeps its time span (and clears the captions while it holds).
+            wav = tmp / f"vc-{idx:02d}.wav"
+            run([ffmpeg, "-y", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono",
+                 "-t", str(SILENCE_SECONDS + pad), "-c:a", "pcm_s16le", str(wav)])
+            words.append((offset + 0.02, offset + SILENCE_SECONDS, "", None))
+            parts.append(wav)
+            offset += probe_duration(ffprobe, wav)
+            continue
         if eleven:
             vid = eleven["narrator_id"] if speaker is None else cast[speaker][1]
-            w = synthesize_elevenlabs(chunk_text, vid, eleven["model"], part, eleven["key"],
-                                      settings=eleven.get("settings"))
+            if speaker is None:
+                w = synthesize_elevenlabs(chunk_text, vid, eleven["model"], part,
+                                          eleven["key"], settings=eleven.get("settings"))
+            else:
+                # Dialogue ACTS on the expressive model (v3 performs the
+                # [whispers]/[terrified] cues in the line) in Creative mode -
+                # stability 0.0 is v3's emotional register; the default reads
+                # like an audiobook. If the account can't use v3, fall back
+                # to the narration model with hot settings, cues stripped.
+                try:
+                    w = synthesize_elevenlabs(chunk_text, vid,
+                                              eleven.get("dlg_model") or ELEVEN_DIALOGUE_MODEL,
+                                              part, eleven["key"],
+                                              settings={"stability": 0.0})
+                except Exception as exc:
+                    print(f"    dialogue model fell back to {eleven['model']} ({str(exc)[:80]})")
+                    w = synthesize_elevenlabs(_strip_emotion_tags(chunk_text), vid,
+                                              eleven["model"], part, eleven["key"],
+                                              settings=dlg_settings)
         elif speaker is None:
             w = asyncio.run(synthesize(chunk_text, vconf, part))
         else:
-            w = asyncio.run(synthesize(chunk_text, {"voice": cast[speaker][1],
-                                                    "rate": "+0%", "pitch": "+0Hz"}, part))
+            w = asyncio.run(synthesize(_strip_emotion_tags(chunk_text),
+                                       {"voice": cast[speaker][1],
+                                        "rate": "+0%", "pitch": "+0Hz"}, part))
+        # Emotion cues are direction, not words: if the alignment carried the
+        # bracket tokens (whole or split, e.g. "[nervous" + "laugh]"), keep
+        # them out of the captions and the beat spans.
+        w = [x for x in w
+             if not (str(x[2]).startswith("[") or str(x[2]).endswith("]"))]
         # Normalize every chunk to one wav format so the concat is seamless;
         # dialogue gets the in-scene tone; a short pad keeps a beat of air
         # between speakers (word timings are unaffected - it's trailing).
-        filt = "aresample=44100,aformat=sample_fmts=s16:channel_layouts=mono,apad=pad_dur=0.15"
+        filt = f"aresample=44100,aformat=sample_fmts=s16:channel_layouts=mono,apad=pad_dur={pad}"
         if speaker is not None:
             filt = "highpass=f=140,aecho=0.8:0.55:14|29:0.18|0.09," + filt
         elif narrator_tempo != 1.0:
@@ -759,6 +1057,10 @@ def _raw_shot_text(pkg, seg_index, seg_count):
     else:
         beats = pkg.get("beats") or []
         src = beats[seg_index - 1] if 1 <= seg_index <= len(beats) else shots[pick]
+    if SILENCE_RE.match(str(src)):
+        # A silent hold still needs a picture: a wordless static frame of
+        # the story's world (writers usually replace this with a real shot).
+        src = f"{shots[pick]}, a held static frame, nothing moves, unsettling stillness"
     src = re.sub(r"^[A-Za-z /-]{2,20}:", "", src)                      # "Hook:" style prefixes
     src = re.sub(r"\[[A-Za-z][A-Za-z0-9 .'-]{0,24}\]", "", src)        # [Name] dialogue tags
     src = re.sub(r"[\"“”‘’']", "", src)
@@ -1168,10 +1470,26 @@ def _find_video_url(obj):
 SPEND_LEDGER = Path(__file__).resolve().parent / "spend-ledger.json"
 
 
-def record_spend(service, kind, price_usd, model="", scenario="", estimated=False):
-    """Append one paid event to the ledger. Never raises - a bookkeeping
-    failure must not break a render."""
+def openart_usd_per_credit():
+    """USD per OpenArt credit, for spend ESTIMATES only. Defaults to the
+    Essential plan's effective rate (~$14 / 4000 credits); put one number in
+    pipeline/openart_rate.txt to override."""
     try:
+        return float((Path(__file__).resolve().parent / "openart_rate.txt")
+                     .read_text(encoding="utf-8").strip())
+    except Exception:
+        return 14.0 / 4000.0
+
+
+def record_spend(service, kind, price_usd, model="", scenario="", estimated=False,
+                 credits=None):
+    """Append one paid event to the ledger. Never raises - a bookkeeping
+    failure must not break a render. `credits` records an OpenArt charge in
+    its native unit; the USD figure is then estimated at the plan rate."""
+    try:
+        if price_usd is None and credits is not None:
+            price_usd = float(credits) * openart_usd_per_credit()
+            estimated = True
         if price_usd is None:
             return
         entries = []
@@ -1181,12 +1499,15 @@ def record_spend(service, kind, price_usd, model="", scenario="", estimated=Fals
                 entries = []
         except Exception:
             pass
-        entries.append({
+        entry = {
             "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "service": service, "kind": kind, "model": model,
             "scenario": scenario, "price_usd": round(float(price_usd), 6),
             "estimated": bool(estimated),
-        })
+        }
+        if credits is not None:
+            entry["credits"] = int(round(float(credits)))
+        entries.append(entry)
         SPEND_LEDGER.write_text(json.dumps(entries, indent=1), encoding="utf-8")
     except Exception:
         pass
@@ -1537,6 +1858,122 @@ def synth_reveal_sfx(path, riser=3.0, tail=2.2):
         w.writeframes(out.tobytes())
 
 
+def synth_stingers(path, cuts, duration, big=None):
+    """Write a mono WAV with a low boom on every scene cut - a 25 ms noise
+    transient into a sub sine whose pitch sags as it decays (~0.9 s), the
+    classic trailer editing hit. Each boom varies slightly in weight and
+    pitch so the pattern never reads as a loop. `big` marks ONE cut (the
+    happy->dark turn) that lands much heavier and rings longer - the word
+    card punches on it. Synthesized from scratch - nothing to license."""
+    n = int((duration + 1.0) * SFX_RATE)
+    rng = random.Random(747)
+    buf = array.array("f", bytes(4 * n))
+    times = sorted(set(list(cuts) + ([big] if big is not None else [])))
+    for c in times:
+        i0 = int(c * SFX_RATE)
+        if i0 >= n:
+            continue
+        heavy = big is not None and abs(c - big) < 0.05
+        boom_len = int((1.5 if heavy else 0.9) * SFX_RATE)
+        gain = rng.uniform(0.78, 1.0) * (1.7 if heavy else 1.0)
+        f0 = rng.uniform(46.0, 56.0)
+        knock = rng.uniform(150.0, 195.0)
+        phase = kphase = 0.0
+        for j in range(min(boom_len, n - i0)):
+            d = j / SFX_RATE
+            freq = f0 + 14.0 * math.exp(-6.0 * d)     # pitch sags into the tail
+            phase += 2.0 * math.pi * freq / SFX_RATE
+            kphase += 2.0 * math.pi * knock / SFX_RATE
+            a = 0.52 * gain * math.exp(-3.5 * d) * math.sin(phase)
+            # The mid knock + noise snap are what read as a HIT on phone
+            # speakers - the dread bed already owns the 48-52 Hz basement.
+            a += 0.26 * gain * math.exp(-14.0 * d) * math.sin(kphase)
+            a += 0.14 * gain * math.exp(-70.0 * d) * rng.uniform(-1, 1)
+            buf[i0 + j] += a
+    out = array.array("h", bytes(2 * n))
+    for i in range(n):
+        out[i] = int(32767 * max(-1.0, min(1.0, buf[i])))
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(SFX_RATE)
+        w.writeframes(out.tobytes())
+
+
+DREAD_RATE = 24000   # rumble + metallic highs live well below 12 kHz
+
+
+def synth_dread_bed(path, duration, seed=911, climax=None):
+    """Write a mono WAV bed of unsettling sound design in the American Horror
+    Story / Whisper Man trailer school: the SAME few motifs cycling - a
+    detuned sub drone, a double heartbeat, breath-like noise swells, sparse
+    metallic shrieks - but everything ESCALATES toward `climax` (default 85%
+    in; callers pass the reveal time): the heartbeat accelerates, the drone
+    beats faster and swells, the shrieks come closer together and hotter,
+    and the whole master rises. Synthesized from scratch - no samples,
+    nothing to license. Deterministic per seed."""
+    climax = min(duration, climax or 0.85 * duration)
+    n = int(duration * DREAD_RATE)
+    rng = random.Random(seed)
+    two_pi = 2.0 * math.pi
+
+    def esc(t):   # escalation 0..1, eased so the build back-loads
+        return min(1.0, max(0.0, t / climax)) ** 1.4
+
+    buf = array.array("f", bytes(4 * n))
+    # Base layer per-sample: drone (detune widens + swells) and breaths.
+    ph1 = ph2 = 0.0
+    lp = 0.0
+    for i in range(n):
+        t = i / DREAD_RATE
+        e = esc(t)
+        ph1 += two_pi * 48.0 / DREAD_RATE
+        ph2 += two_pi * (48.7 + 0.9 * e) / DREAD_RATE
+        a = (0.16 * (1.0 + 0.8 * e) * (math.sin(ph1) + math.sin(ph2))
+             * (0.65 + 0.35 * math.sin(two_pi * t / 13.0)))
+        lp += 0.03 * (rng.uniform(-1, 1) - lp)
+        a += lp * (1.5 + 1.2 * e) * max(0.0, math.sin(two_pi * t / 7.0 - 1.2)) ** 3
+        buf[i] = a
+    # Heartbeat: an accelerating clock (1.6 s apart -> ~1.05 s at the climax),
+    # each beat a double thump that also hits harder as it builds.
+    hb_len = int(0.2 * DREAD_RATE)
+    t = 0.4
+    while t < duration:
+        e = esc(t)
+        for off in (0.0, 0.24 - 0.06 * e):
+            i0 = int((t + off) * DREAD_RATE)
+            for j in range(min(hb_len, n - i0)):
+                d = j / DREAD_RATE
+                buf[i0 + j] += (0.34 + 0.22 * e) * math.exp(-d * 26.0) * math.sin(two_pi * 52.0 * d)
+        t += 1.6 - 0.55 * e
+    # Metallic shrieks: sparse early, closing in and heating up near the climax.
+    sh_len = int(2.4 * DREAD_RATE)
+    t = 3.0
+    while t < duration - 1.5:
+        e = esc(t)
+        gain = (0.14 + 0.14 * e) * rng.uniform(0.8, 1.1)
+        base = rng.choice((1490.0, 1730.0, 2090.0))
+        i0 = int(t * DREAD_RATE)
+        for j in range(min(sh_len, n - i0)):
+            d = j / DREAD_RATE
+            env = min(1.0, d / 0.3) * math.exp(-d * 1.7) * gain
+            buf[i0 + j] += env * (math.sin(two_pi * base * d)
+                                  + 0.7 * math.sin(two_pi * base * 1.38 * d)
+                                  + 0.5 * math.sin(two_pi * base * 1.83 * d))
+        t += max(1.6, rng.uniform(6.5, 10.0) - e * rng.uniform(3.5, 5.5))
+    # Master: the whole bed rises into the climax. Hotter than a typical
+    # music bed - this IS the soundtrack.
+    out = array.array("h", bytes(2 * n))
+    for i in range(n):
+        g = 1.15 * (0.78 + 0.5 * esc(i / DREAD_RATE))
+        out[i] = int(32767 * max(-1.0, min(1.0, buf[i] * g)))
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(DREAD_RATE)
+        w.writeframes(out.tobytes())
+
+
 def segment_spans(segments, words, total):
     """Map each spoken segment to a (start, end) time span using word counts."""
     counts = [max(1, len(clean_for_tts(s).split())) for s in segments]
@@ -1662,13 +2099,18 @@ def render_segment_clip(ffmpeg, visual, duration, out_path, index=0, chart=None,
     run(cmd, cwd=cwd)
 
 
-def build_clip_base(ffmpeg, visuals, spans, tmp, charts=None, font_ff=None, keep_audio=False, ffprobe=None):
+def build_clip_base(ffmpeg, visuals, spans, tmp, charts=None, font_ff=None, keep_audio=False, ffprobe=None,
+                    audio_gains=None):
     """One clip per beat with alternating motion, joined by crossfades.
     Segments before the last are rendered XFADE_DUR longer so the fades
     consume the extra tail and the visual timeline stays in sync with audio.
     `charts` (aligned to spans) overlays an animated number on chart beats.
     With `keep_audio`, each segment's sound is trimmed to its exact span and
-    hard-concatenated, so the ambience track stays aligned with the voice."""
+    hard-concatenated, so the ambience track stays aligned with the voice.
+    `audio_gains` (aligned to spans) sets a per-beat volume - clip-voiced
+    beats play their own audio at 1.0 while the rest follow --clip-audio."""
+    if audio_gains is not None:
+        keep_audio = any(g > 0 for g in audio_gains)
     durs = [round(max(0.4, end - start), 2) for start, end in spans]
     seg_files = []
     for i, dur in enumerate(durs):
@@ -1698,7 +2140,8 @@ def build_clip_base(ffmpeg, visuals, spans, tmp, charts=None, font_ff=None, keep
     codecs = []
     if keep_audio:
         for i, d in enumerate(durs):
-            chain.append(f"[{i}:a]atrim=0:{d},asetpts=PTS-STARTPTS[a{i}]")
+            g = (audio_gains[i] if audio_gains is not None and i < len(audio_gains) else 1.0)
+            chain.append(f"[{i}:a]atrim=0:{d},asetpts=PTS-STARTPTS,volume={g:.2f}[a{i}]")
         chain.append("".join(f"[a{i}]" for i in range(len(durs))) + f"concat=n={len(durs)}:v=0:a=1[aout]")
         maps += ["-map", "[aout]"]
         codecs = ["-c:a", "aac", "-b:a", "160k"]
@@ -1736,8 +2179,21 @@ def render_thumbnail(ffmpeg, visual, pkg, out_path, tmp, font_ff):
     if brand_path:
         font_ff = brand_path.name
     thumb_color = branding_for(pkg)["thumb_color"]
-    lines = wrap_title((pkg.get("thumbnails") or [pkg.get("title", "")])[0])
-    fontsize = 128 if len(lines) == 1 else 106
+    # The cover carries the FULL title: scrollers should know what the video
+    # is without reading the platform caption.
+    text = sanitize_card_text(pkg.get("title", "") or (pkg.get("thumbnails") or [""])[0])
+    words = text.split()
+    lines, cur = [], ""
+    for w in words:
+        if cur and len(cur) + 1 + len(w) > 18:
+            lines.append(cur)
+            cur = w
+        else:
+            cur = (cur + " " + w).strip()
+    if cur:
+        lines.append(cur)
+    lines = lines[:5]
+    fontsize = {1: 128, 2: 106, 3: 88, 4: 74}.get(len(lines), 64)
     line_h = fontsize + 22
 
     if visual and visual.suffix.lower() in (IMAGE_EXTS | VIDEO_EXTS):
@@ -1765,12 +2221,49 @@ def render_thumbnail(ffmpeg, visual, pkg, out_path, tmp, font_ff):
          str(out_path)], cwd=tmp)
 
 
+def render_turn_card(ffmpeg, tmp, word, font_name, fontsize):
+    """Build the turn card as a 1.35s clip that SLAMS: the word starts 45%
+    oversized and punches down to rest in ~4 frames, under a 2-frame white
+    flash - a hit, not an appearance. Written to tmp/turn-card.mp4;
+    final_render overlays it at the turn."""
+    run([ffmpeg, "-y", "-f", "lavfi", "-i", f"color=black:s={WIDTH}x{HEIGHT}",
+         "-vf", f"drawtext=fontfile={font_name}:text='{esc_drawtext(word)}':"
+                f"fontsize={fontsize}:fontcolor=white:x=(w-tw)/2:y=(h-th)/2",
+         "-frames:v", "1", "turn-card.png"], cwd=tmp)
+    run([ffmpeg, "-y", "-loop", "1", "-i", "turn-card.png",
+         "-vf", f"zoompan=z='max(1.0,1.45-0.15*on)':x='(iw-iw/zoom)/2':"
+                f"y='(ih-ih/zoom)/2':d=125:s={WIDTH}x{HEIGHT}:fps={FPS},"
+                "fade=t=in:st=0:d=0.07:color=white",
+         "-t", "1.35", "-r", str(FPS), "-c:v", "libx264", "-preset", "veryfast",
+         "-crf", "20", "-pix_fmt", "yuv420p", "turn-card.mp4"], cwd=tmp)
+
+
+def speech_intervals(words, pad=0.12, gap=0.35):
+    """Merged (start, end) spans where someone is speaking - drives the
+    music ducking so lines sit clearly on top of the score."""
+    spans = []
+    for w in words:
+        if not str(w[2]).strip():
+            continue   # silence placeholders aren't speech
+        s, e = max(0.0, w[0] - pad), w[1] + pad
+        if spans and s - spans[-1][1] <= gap:
+            spans[-1][1] = max(spans[-1][1], e)
+        else:
+            spans.append([s, e])
+    return spans
+
+
 def final_render(ffmpeg, base, pkg, total, has_music, out_path, tmp, clip_audio=0.0,
-                 sfx_delay_ms=None):
+                 sfx_delay_ms=None, duck=None, music_vol=None, swell=None,
+                 turn_card=None):
     """Overlay captions and mix audio onto the base video (or a gradient).
     `clip_audio` > 0 mixes the base video's own sound (e.g. LTX-generated
     ambience) under the voice at that volume. `sfx_delay_ms` places tmp's
-    sfx.wav on the timeline (None = no beat SFX)."""
+    sfx.wav on the timeline (None = no beat SFX). `duck` = speech spans:
+    the music dips to ~30% while anyone talks (ramped over ~0.35s - real
+    trailer pumping, not steps) and swells back between lines. `music_vol`
+    overrides the branding bed level (trailers mix the score LOUD),
+    `swell` grows the score from ~70% into full by that timestamp."""
     if base is not None:
         video_in = ["-i", base.name]
     else:
@@ -1781,7 +2274,24 @@ def final_render(ffmpeg, base, pkg, total, has_music, out_path, tmp, clip_audio=
                     f"gradients=s={WIDTH}x{HEIGHT}:c0={c0}:c1={c1}:speed=0.012:rate={FPS}"]
 
     inputs = [*video_in, "-i", "voice.mp3"]
-    filters = ["[0:v]ass=subs.ass:fontsdir=.[v]", "[1:a]apad[va]"]
+    vf = "[0:v]ass=subs.ass:fontsdir=."
+    if turn_card and (Path(tmp) / "turn-card.mp4").exists():
+        # The turn card: a hard cut to black where the word SLAMS in -
+        # oversized, punching down over 4 frames under a white flash, in
+        # time with the heavy boom (the clip comes from render_turn_card).
+        tt = turn_card[0]
+        vf = (vf + "[vbase];"
+              f"movie=turn-card.mp4,setpts=PTS-STARTPTS+{tt:.2f}/TB[tc];"
+              f"[vbase][tc]overlay=eof_action=pass:"
+              f"enable='between(t,{tt:.2f},{tt + 1.35:.2f})'")
+    elif turn_card:
+        # Fallback: static card if the slam clip failed to build.
+        tt, word, fname, fs = turn_card
+        en = f"enable='between(t,{tt:.2f},{tt + 1.35:.2f})'"
+        vf += (f",drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill:{en}"
+               f",drawtext=fontfile={fname}:text='{esc_drawtext(word)}':fontsize={fs}:"
+               f"fontcolor=white:x=(w-tw)/2:y=(h-th)/2:{en}")
+    filters = [vf + "[v]", "[1:a]apad[va]"]
     mix = ["[va]"]
     if clip_audio > 0 and base is not None:
         filters.append(f"[0:a]volume={clip_audio}[ca]")
@@ -1790,17 +2300,38 @@ def final_render(ffmpeg, base, pkg, total, has_music, out_path, tmp, clip_audio=
     if has_music and music_files:
         inputs += ["-i", music_files[0].name]
         fade_start = max(0.0, total - 1.5)
-        filters.append(f"[2:a]volume={branding_for(pkg)['music_volume']},"
+        vol = music_vol if music_vol else branding_for(pkg)["music_volume"]
+        swell_f = ""
+        if swell:
+            swell_f = (f"volume='min(1,0.7+0.3*t/{max(swell, 1.0):.2f})'"
+                       ":eval=frame,")
+        duck_f = ""
+        if duck:
+            # Each span contributes a trapezoid (0.35s attack/release);
+            # max() folds them into one smooth gain curve.
+            expr = "0"
+            for s, e in duck[:60]:
+                expr = (f"max({expr},min(1,min((t-{s - 0.35:.2f})/0.35,"
+                        f"({e + 0.35:.2f}-t)/0.35)))")
+            duck_f = f"volume='1-0.7*({expr})':eval=frame,"
+        filters.append(f"[2:a]volume={vol},{swell_f}{duck_f}"
                        f"afade=t=out:st={fade_start:.2f}:d=1.5[m]")
         mix.append("[m]")
     # Beat-timed sound design (sfx.wav + its start offset, prepared by the
     # render loop when the category asks for it).
     sfx_file = Path(tmp) / "sfx.wav"
-    if sfx_delay_ms is not None and sfx_file.exists():
+    has_sfx = sfx_delay_ms is not None and sfx_file.exists()
+    if has_sfx:
         sfx_idx = 3 if (has_music and music_files) else 2
         inputs += ["-i", "sfx.wav"]
         filters.append(f"[{sfx_idx}:a]adelay={int(sfx_delay_ms)}:all=1[sfx]")
         mix.append("[sfx]")
+    # Cut stingers (trailer renders): booms already placed on their own
+    # timeline by synth_stingers, so they join the mix untouched.
+    if (Path(tmp) / "stingers.wav").exists():
+        st_idx = 2 + (1 if (has_music and music_files) else 0) + (1 if has_sfx else 0)
+        inputs += ["-i", "stingers.wav"]
+        mix.append(f"[{st_idx}:a]")
     if len(mix) > 1:
         filters.append("".join(mix) + f"amix=inputs={len(mix)}:duration=first:normalize=0[a]")
     else:
@@ -1835,6 +2366,7 @@ CATEGORY_HASHTAGS = {
     "Alternate Reality":   ["#alternatehistory", "#multiverse"],
     "Unsettling Everyday": ["#creepy", "#unsettling", "#liminal"],
     "Scary/Weird":         ["#creepy", "#scary", "#creepytok"],
+    "AI Remake":           ["#ai", "#aitrailer", "#aivideo", "#aimovie"],
     "Scary Story":         ["#horrortok", "#creepypasta", "#scary"],
     "True History":        ["#historytok", "#historyfacts", "#truestory"],
 }
@@ -1950,6 +2482,26 @@ def main():
                              "(python get_music.py fetches the tracks) and the riser + impact on "
                              "the reveal beat for EVERY category. Pair with --mood trailer for "
                              "trailer-look visuals and trailer-speak rewrites on the Produce page.")
+    parser.add_argument("--track", default=None,
+                        help="Play THIS song (a filename from anywhere under music/ - your "
+                             "own uploads live in music/custom; '*' = a random custom track). "
+                             "With --turn it is the happy opening song; otherwise it replaces "
+                             "the genre score. Loudness-normalized like every trailer track.")
+    parser.add_argument("--turn", nargs="?", const="auto", default=None,
+                        help="Happy open -> dark turn (trailer only): a cheerful song (your "
+                             "--track, else music/ironic) plays bright until ~40%% in, "
+                             "tape-stops on a heavy boom while a huge word card punches on "
+                             "screen, then the genre score + dread bed take over. Optional "
+                             "value = the card's word(s); default: the package's turn_word.")
+    parser.add_argument("--score", choices=sorted(TRAILER_SCORES), default=None,
+                        help="Force the trailer score genre. Default: the package's "
+                             "'score' field (the writer sets it), else inferred from "
+                             "the story (title + premise + tags).")
+    parser.add_argument("--trailer-bed", choices=["auto", "dread", "epic"], default="auto",
+                        help="Soundtrack for --trailer: 'dread' = ONLY the synthesized AHS-style "
+                             "unsettling bed, 'epic' = ONLY an orchestral track from music/trailer. "
+                             "'auto' (default) layers score + dread bed for horror categories, "
+                             "score alone otherwise. Music always ducks under character lines.")
     parser.add_argument("--ironic-music", nargs="?", const="tail", choices=["tail", "stop"],
                         default=None,
                         help="Sincerely cheerful music that contradicts the visuals and tape-stops "
@@ -2134,7 +2686,21 @@ def main():
         # word timings, spans, captions, charts, and prompts all line up with.
         raw_segments = narration_segments(pkg, hook_index)
         segments = [strip_dialogue_markup(s) for s in raw_segments]
-        has_dialogue = any(sp for s in raw_segments for sp, _ in split_dialogue(s))
+        # Clip-voiced beats (lipsync.json): the staged talking clip carries
+        # the spoken line - the voice track holds silence there instead.
+        clip_voiced = {}
+        for idx1 in lipsync_map(args.backgrounds):
+            si = idx1 - 1
+            if (0 <= si < len(segments)
+                    and _ref_choice(args.backgrounds, idx1) == "video"):
+                v = _ref_video(args.backgrounds, idx1)
+                if v:
+                    clip_voiced[si] = v
+        # Cast synthesis handles character voices, (silence) holds, and
+        # clip-voiced beats - the plain path would read markers aloud.
+        has_dialogue = (any(sp for s in raw_segments for sp, _ in split_dialogue(s))
+                        or any(SILENCE_RE.match(s) for s in raw_segments)
+                        or bool(clip_voiced))
         text = " ".join(segments)
         if not text:
             print("  SKIP: package has no narration text\n")
@@ -2165,7 +2731,9 @@ def main():
                                     "narrator_id": el_voice_id,
                                     "voices": elevenlabs_voices(el_key),
                                     "settings": el_settings},
-                            narrator_tempo=TRAILER_TEMPO if args.trailer else 1.0)
+                            narrator_tempo=TRAILER_TEMPO if args.trailer else 1.0,
+                            pad=0.7 if args.trailer else 0.15,
+                            clip_voiced=clip_voiced, cast_info=pkg.get("cast"))
                     else:
                         words = synthesize_elevenlabs(text, el_voice_id, args.el_model,
                                                       tmp / "voice.mp3", el_key,
@@ -2187,7 +2755,9 @@ def main():
                 else:
                     if has_dialogue:
                         words, cast = synthesize_cast(
-                            raw_segments, vconf, tmp / "voice.mp3", tmp, ffmpeg, ffprobe)
+                            raw_segments, vconf, tmp / "voice.mp3", tmp, ffmpeg, ffprobe,
+                            pad=0.7 if args.trailer else 0.15,
+                            clip_voiced=clip_voiced, cast_info=pkg.get("cast"))
                     else:
                         words = asyncio.run(synthesize(text, vconf, tmp / "voice.mp3"))
                     total = probe_duration(ffprobe, tmp / "voice.mp3")
@@ -2286,14 +2856,23 @@ def main():
                 # colon breaks the ffmpeg filtergraph parser.
                 font_ff = CAPTION_FONT_FILE.name if CAPTION_FONT_FILE.exists() else None
 
-                keep_audio = args.clip_audio > 0
+                # Per-beat audio: clip-voiced beats play their own sound (the
+                # character speaking) at full volume; everything else follows
+                # --clip-audio (0 = muted, the default).
+                keep_audio = args.clip_audio > 0 or bool(clip_voiced)
+                gains = None
+                if clip_voiced:
+                    gains = [1.0 if i in clip_voiced else args.clip_audio
+                             for i in range(len(segments))]
+                    print(f"  lipsync: {len(clip_voiced)} beat(s) speak from their clip")
                 base = None
                 if len(item_visuals) > 1:
                     spans = segment_spans(segments, words, total)
                     base = build_clip_base(ffmpeg, item_visuals, spans, tmp, charts=charts, font_ff=font_ff,
-                                           keep_audio=keep_audio, ffprobe=ffprobe)
+                                           keep_audio=keep_audio, ffprobe=ffprobe,
+                                           audio_gains=gains)
                     print(f"  visuals: {len(spans)} beat clips from {len(item_visuals)} source file(s)"
-                          + (f" (clip audio at {args.clip_audio})" if keep_audio else ""))
+                          + (f" (clip audio at {args.clip_audio})" if args.clip_audio > 0 else ""))
                 elif len(item_visuals) == 1:
                     seg = tmp / "base.mp4"
                     render_segment_clip(ffmpeg, item_visuals[0], total + 0.4, seg,
@@ -2303,12 +2882,117 @@ def main():
                 else:
                     print("  visuals: generated gradient")
 
-                music = pick_music(pkg, args.music,
-                                   override=("ironic" if args.ironic_music
-                                             else "trailer" if args.trailer else None))
-                if music:
+                # Trailer soundtrack: a REAL score always (music/trailer -
+                # orchestral by default, genre folders welcome); horror ALSO
+                # layers the synthesized dread bed under it, still climaxing
+                # on the reveal. --trailer-bed dread = bed only, epic = score
+                # only.
+                dread = args.trailer and args.trailer_bed != "epic" and (
+                    args.trailer_bed == "dread"
+                    or branding_for(pkg).get("sfx") == "reveal")
+                score = None
+                if args.trailer:
+                    score = args.score or pkg.get("score") or infer_score(pkg)
+                    if score not in TRAILER_SCORES:
+                        score = infer_score(pkg)
+
+                # The turn (--turn): the moment the happy open snaps dark -
+                # the beat cut closest to ~42% in, kept clear of the reveal.
+                # The dark score/bed start THERE, so the dread climax still
+                # lands on the reveal.
+                turn_t = turn_word = None
+                if args.trailer and args.turn:
+                    t_cands = [s for s, _ in segment_spans(segments, words, total)[1:]
+                               if 6.0 <= s <= (reveal_start or total) - 6.0]
+                    if t_cands:
+                        turn_t = min(t_cands, key=lambda s: abs(s - 0.42 * total))
+                        turn_word = ((args.turn if args.turn != "auto" else "")
+                                     or pkg.get("turn_word")
+                                     or "SOMETHING'S WRONG").upper()
+                dark_off = (turn_t + 0.7) if turn_t is not None else 0.0
+                dark_len = total + 1.0 - dark_off
+
+                music = None
+                premixed = False
+                own = find_track(args.music, args.track) if args.track else None
+                if args.track and not own:
+                    print(f"  (--track {args.track}: not found under music/ - "
+                          "falling back to the genre score)")
+
+                def normalize_score(src, dest, length=None):
+                    # incompetech tracks span ~20 dB of loudness (epic battle
+                    # vs sparse piano) - normalize every trailer score to the
+                    # same perceived level (EBU R128) so the genre choice
+                    # never decides whether the music is audible.
+                    run([ffmpeg, "-y", "-i", str(src), "-t", f"{length or dark_len:.2f}",
+                         "-af", "loudnorm=I=-14:TP=-1.5:LRA=11,aresample=44100",
+                         "-c:a", "pcm_s16le", str(dest)])
+
+                if dread:
+                    synth_dread_bed(tmp / "dread.wav", dark_len,
+                                    climax=(reveal_start - dark_off) if reveal_start else None)
+                    peak_at = reveal_start if reveal_start else 0.85 * (total + 1.0)
+                    music = None if args.trailer_bed == "dread" else \
+                        ((own if turn_t is None else None)
+                         or pick_music(pkg, args.music, override="trailer", score=score))
+                    if music:
+                        # The strings LEAD, the dread bed supports underneath
+                        # (its own climax still lands - it just doesn't fight
+                        # the melody for the same space).
+                        normalize_score(music, tmp / "score.wav")
+                        st = "aformat=sample_fmts=fltp:channel_layouts=stereo"
+                        run([ffmpeg, "-y", "-i", str(tmp / "score.wav"),
+                             "-i", str(tmp / "dread.wav"),
+                             "-filter_complex",
+                             f"[0:a]{st},volume=1.0[m];[1:a]aresample=44100,{st},volume=0.6[d];"
+                             "[m][d]amix=inputs=2:duration=longest:normalize=0,"
+                             "alimiter=limit=0.95[out]",
+                             "-map", "[out]", "-c:a", "pcm_s16le", str(tmp / "music.wav")])
+                        (tmp / "score.wav").unlink()
+                        premixed = True
+                        print(f"  music: {music.parent.name}/{music.name}"
+                              f" [{score} score, loudness-normalized]"
+                              f" + dread bed (climax at {peak_at:.1f}s)")
+                    else:
+                        (tmp / "dread.wav").rename(tmp / "music.wav")
+                        print(f"  music: synthesized dread bed, building to a climax at {peak_at:.1f}s"
+                              " (heartbeat pulse, detuned drone, metallic shrieks)")
+                else:
+                    music = ((own if args.trailer and turn_t is None else None)
+                             or pick_music(pkg, args.music,
+                                           override=("ironic" if args.ironic_music
+                                                     else "trailer" if args.trailer else None),
+                                           score=score))
+                if music and not premixed and args.trailer:
+                    normalize_score(music, tmp / "music.wav")
+                    premixed = True
+                    print(f"  music: {music.parent.name}/{music.name}"
+                          f" [{score} score, loudness-normalized]")
+                if music and not premixed:
                     shutil.copy(music, tmp / ("music" + music.suffix))
                     print(f"  music: {music.parent.name}/{music.name}")
+
+                # Assemble the turn: happy song straight until turn_t, a
+                # tape-stop into 0.7 s of dead air (the card + boom own it),
+                # then the dark track already built above enters on delay.
+                if turn_t is not None and (tmp / "music.wav").exists():
+                    happy = own or pick_music(pkg, args.music, override="ironic")
+                    if happy:
+                        normalize_score(happy, tmp / "happy.wav", length=turn_t + 3.0)
+                        ironic_music_treatment(ffmpeg, tmp / "happy.wav",
+                                               tmp / "happy-stop.wav", turn_t, "stop")
+                        run([ffmpeg, "-y", "-i", str(tmp / "happy-stop.wav"),
+                             "-i", str(tmp / "music.wav"), "-filter_complex",
+                             f"[1:a]adelay={int(dark_off * 1000)}:all=1[d];"
+                             "[0:a][d]amix=inputs=2:duration=longest:normalize=0[out]",
+                             "-map", "[out]", "-c:a", "pcm_s16le",
+                             str(tmp / "music-turn.wav")])
+                        (tmp / "music-turn.wav").replace(tmp / "music.wav")
+                        print(f"  turn: happy open ({happy.parent.name}/{happy.name})"
+                              f" tape-stops at {turn_t:.1f}s -> \"{turn_word}\" card"
+                              " + boom, dark score takes over")
+                    else:
+                        turn_t = turn_word = None   # no happy track - no turn
                     if args.ironic_music and reveal_start is not None:
                         ironic_music_treatment(ffmpeg, tmp / ("music" + music.suffix),
                                                tmp / "music-ironic.wav", reveal_start,
@@ -2319,9 +3003,48 @@ def main():
                               f" then tape-stop"
                               + (" + warped tail" if args.ironic_music == "tail" else " to silence"))
 
-                final_render(ffmpeg, base, pkg, total, bool(music), out_path.resolve(), tmp,
-                             clip_audio=args.clip_audio if base is not None else 0.0,
-                             sfx_delay_ms=sfx_delay_ms)
+                # Clip-voiced gains are baked per beat in the base track, so
+                # the final mix takes it at unity instead of --clip-audio.
+                mix_gain = (1.0 if clip_voiced else args.clip_audio)
+                duck = speech_intervals(words) if args.trailer and words else None
+                if duck:
+                    print(f"  music: ducking under {len(duck)} spoken passages"
+                          " (smooth trailer pumping)")
+                # Cut stingers: a low boom on every scene change so the edit
+                # punches instead of drifting. The reveal keeps its own riser
+                # + impact - cuts within 2 s of it stay clean.
+                if args.trailer and not args.no_sfx:
+                    cuts = [s for s, _ in segment_spans(segments, words, total)[1:]
+                            if 2.0 < s < total - 0.3
+                            and not (reveal_start and abs(s - reveal_start) < 2.0)
+                            and not (turn_t is not None and abs(s - turn_t) < 0.3)]
+                    if cuts or turn_t is not None:
+                        synth_stingers(tmp / "stingers.wav", cuts, total, big=turn_t)
+                        print(f"  sfx: {len(cuts)} cut stingers"
+                              " (low boom on each scene change)"
+                              + (" + the heavy turn boom" if turn_t is not None else ""))
+                # Trailers mix the score at soundtrack level, not bed level -
+                # loud between lines (which also buries any synthetic edge in
+                # the voices), dipping under speech, growing into the reveal.
+                card = None
+                if turn_t is not None and turn_word:
+                    card_font = (brand_font_path.name if brand_font_path
+                                 else CAPTION_FONT_FILE.name
+                                 if CAPTION_FONT_FILE.exists() else None)
+                    if card_font:
+                        fs = max(58, min(150, int(1500 / max(1, len(turn_word)))))
+                        card = (turn_t, turn_word, card_font, fs)
+                        try:
+                            render_turn_card(ffmpeg, tmp, turn_word, card_font, fs)
+                        except Exception as exc:
+                            print(f"  (turn card slam skipped: {exc} - static card instead)")
+                final_render(ffmpeg, base, pkg, total, bool(music) or dread, out_path.resolve(), tmp,
+                             clip_audio=mix_gain if base is not None else 0.0,
+                             sfx_delay_ms=sfx_delay_ms, duck=duck,
+                             music_vol=0.6 if args.trailer else None,
+                             swell=((reveal_start or 0.85 * total)
+                                    if args.trailer else None),
+                             turn_card=card)
 
                 thumb_made = False
                 if font_ff:
@@ -2346,6 +3069,7 @@ def main():
                 "format": ("trailer" if args.trailer
                            else "ironic" if args.ironic_music else "classic"),
                 "mood": args.mood or "",
+                "score": score if args.trailer else "",
                 "visuals": ("ai-video" if args.infer
                             else "paid-images" if args.infer_images
                             else "stock" if args.stock
