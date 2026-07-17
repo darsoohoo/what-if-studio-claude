@@ -320,6 +320,21 @@ def infer_score(pkg):
     return "dark" if branding_for(pkg).get("sfx") == "reveal" else "action"
 
 
+def find_track(music_dir, name):
+    """A specific track by filename from anywhere under music/ - the
+    creator's own songs live in music/custom ('*' = a random one of them)."""
+    root = Path(music_dir) if music_dir else None
+    if not root or not root.is_dir() or not name:
+        return None
+    if name == "*":
+        return pick_file(root / "custom", AUDIO_EXTS)
+    want = Path(name).name.lower()
+    for f in root.rglob("*"):
+        if f.suffix.lower() in AUDIO_EXTS and f.name.lower() == want:
+            return f
+    return None
+
+
 def pick_music(pkg, music_dir, override=None, score=None):
     """Pick a track matching the scenario's mood; fall back to loose files.
     `override` replaces the category mood: "ironic" = a sincerely cheerful
@@ -1843,21 +1858,24 @@ def synth_reveal_sfx(path, riser=3.0, tail=2.2):
         w.writeframes(out.tobytes())
 
 
-def synth_stingers(path, cuts, duration):
+def synth_stingers(path, cuts, duration, big=None):
     """Write a mono WAV with a low boom on every scene cut - a 25 ms noise
     transient into a sub sine whose pitch sags as it decays (~0.9 s), the
     classic trailer editing hit. Each boom varies slightly in weight and
-    pitch so the pattern never reads as a loop. Synthesized from scratch -
-    no samples, nothing to license. Deterministic."""
+    pitch so the pattern never reads as a loop. `big` marks ONE cut (the
+    happy->dark turn) that lands much heavier and rings longer - the word
+    card punches on it. Synthesized from scratch - nothing to license."""
     n = int((duration + 1.0) * SFX_RATE)
     rng = random.Random(747)
     buf = array.array("f", bytes(4 * n))
-    boom_len = int(0.9 * SFX_RATE)
-    for c in sorted(cuts):
+    times = sorted(set(list(cuts) + ([big] if big is not None else [])))
+    for c in times:
         i0 = int(c * SFX_RATE)
         if i0 >= n:
             continue
-        gain = rng.uniform(0.78, 1.0)
+        heavy = big is not None and abs(c - big) < 0.05
+        boom_len = int((1.5 if heavy else 0.9) * SFX_RATE)
+        gain = rng.uniform(0.78, 1.0) * (1.7 if heavy else 1.0)
         f0 = rng.uniform(46.0, 56.0)
         knock = rng.uniform(150.0, 195.0)
         phase = kphase = 0.0
@@ -2219,7 +2237,8 @@ def speech_intervals(words, pad=0.12, gap=0.35):
 
 
 def final_render(ffmpeg, base, pkg, total, has_music, out_path, tmp, clip_audio=0.0,
-                 sfx_delay_ms=None, duck=None, music_vol=None, swell=None):
+                 sfx_delay_ms=None, duck=None, music_vol=None, swell=None,
+                 turn_card=None):
     """Overlay captions and mix audio onto the base video (or a gradient).
     `clip_audio` > 0 mixes the base video's own sound (e.g. LTX-generated
     ambience) under the voice at that volume. `sfx_delay_ms` places tmp's
@@ -2238,7 +2257,16 @@ def final_render(ffmpeg, base, pkg, total, has_music, out_path, tmp, clip_audio=
                     f"gradients=s={WIDTH}x{HEIGHT}:c0={c0}:c1={c1}:speed=0.012:rate={FPS}"]
 
     inputs = [*video_in, "-i", "voice.mp3"]
-    filters = ["[0:v]ass=subs.ass:fontsdir=.[v]", "[1:a]apad[va]"]
+    vf = "[0:v]ass=subs.ass:fontsdir=."
+    if turn_card:
+        # The turn card: a hard cut to black with ONE huge word, punched in
+        # time with the heavy boom, gone again in ~1.3 s.
+        tt, word, fname, fs = turn_card
+        en = f"enable='between(t,{tt:.2f},{tt + 1.35:.2f})'"
+        vf += (f",drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill:{en}"
+               f",drawtext=fontfile={fname}:text='{esc_drawtext(word)}':fontsize={fs}:"
+               f"fontcolor=white:x=(w-tw)/2:y=(h-th)/2:{en}")
+    filters = [vf + "[v]", "[1:a]apad[va]"]
     mix = ["[va]"]
     if clip_audio > 0 and base is not None:
         filters.append(f"[0:a]volume={clip_audio}[ca]")
@@ -2429,6 +2457,17 @@ def main():
                              "(python get_music.py fetches the tracks) and the riser + impact on "
                              "the reveal beat for EVERY category. Pair with --mood trailer for "
                              "trailer-look visuals and trailer-speak rewrites on the Produce page.")
+    parser.add_argument("--track", default=None,
+                        help="Play THIS song (a filename from anywhere under music/ - your "
+                             "own uploads live in music/custom; '*' = a random custom track). "
+                             "With --turn it is the happy opening song; otherwise it replaces "
+                             "the genre score. Loudness-normalized like every trailer track.")
+    parser.add_argument("--turn", nargs="?", const="auto", default=None,
+                        help="Happy open -> dark turn (trailer only): a cheerful song (your "
+                             "--track, else music/ironic) plays bright until ~40%% in, "
+                             "tape-stops on a heavy boom while a huge word card punches on "
+                             "screen, then the genre score + dread bed take over. Optional "
+                             "value = the card's word(s); default: the package's turn_word.")
     parser.add_argument("--score", choices=sorted(TRAILER_SCORES), default=None,
                         help="Force the trailer score genre. Default: the package's "
                              "'score' field (the writer sets it), else inferred from "
@@ -2831,23 +2870,46 @@ def main():
                     score = args.score or pkg.get("score") or infer_score(pkg)
                     if score not in TRAILER_SCORES:
                         score = infer_score(pkg)
+
+                # The turn (--turn): the moment the happy open snaps dark -
+                # the beat cut closest to ~42% in, kept clear of the reveal.
+                # The dark score/bed start THERE, so the dread climax still
+                # lands on the reveal.
+                turn_t = turn_word = None
+                if args.trailer and args.turn:
+                    t_cands = [s for s, _ in segment_spans(segments, words, total)[1:]
+                               if 6.0 <= s <= (reveal_start or total) - 6.0]
+                    if t_cands:
+                        turn_t = min(t_cands, key=lambda s: abs(s - 0.42 * total))
+                        turn_word = ((args.turn if args.turn != "auto" else "")
+                                     or pkg.get("turn_word")
+                                     or "SOMETHING'S WRONG").upper()
+                dark_off = (turn_t + 0.7) if turn_t is not None else 0.0
+                dark_len = total + 1.0 - dark_off
+
                 music = None
                 premixed = False
+                own = find_track(args.music, args.track) if args.track else None
+                if args.track and not own:
+                    print(f"  (--track {args.track}: not found under music/ - "
+                          "falling back to the genre score)")
 
-                def normalize_score(src, dest):
+                def normalize_score(src, dest, length=None):
                     # incompetech tracks span ~20 dB of loudness (epic battle
                     # vs sparse piano) - normalize every trailer score to the
                     # same perceived level (EBU R128) so the genre choice
                     # never decides whether the music is audible.
-                    run([ffmpeg, "-y", "-i", str(src), "-t", f"{total + 1:.2f}",
+                    run([ffmpeg, "-y", "-i", str(src), "-t", f"{length or dark_len:.2f}",
                          "-af", "loudnorm=I=-14:TP=-1.5:LRA=11,aresample=44100",
                          "-c:a", "pcm_s16le", str(dest)])
 
                 if dread:
-                    synth_dread_bed(tmp / "dread.wav", total + 1.0, climax=reveal_start)
+                    synth_dread_bed(tmp / "dread.wav", dark_len,
+                                    climax=(reveal_start - dark_off) if reveal_start else None)
                     peak_at = reveal_start if reveal_start else 0.85 * (total + 1.0)
                     music = None if args.trailer_bed == "dread" else \
-                        pick_music(pkg, args.music, override="trailer", score=score)
+                        ((own if turn_t is None else None)
+                         or pick_music(pkg, args.music, override="trailer", score=score))
                     if music:
                         # The strings LEAD, the dread bed supports underneath
                         # (its own climax still lands - it just doesn't fight
@@ -2871,10 +2933,11 @@ def main():
                         print(f"  music: synthesized dread bed, building to a climax at {peak_at:.1f}s"
                               " (heartbeat pulse, detuned drone, metallic shrieks)")
                 else:
-                    music = pick_music(pkg, args.music,
-                                       override=("ironic" if args.ironic_music
-                                                 else "trailer" if args.trailer else None),
-                                       score=score)
+                    music = ((own if args.trailer and turn_t is None else None)
+                             or pick_music(pkg, args.music,
+                                           override=("ironic" if args.ironic_music
+                                                     else "trailer" if args.trailer else None),
+                                           score=score))
                 if music and not premixed and args.trailer:
                     normalize_score(music, tmp / "music.wav")
                     premixed = True
@@ -2883,6 +2946,28 @@ def main():
                 if music and not premixed:
                     shutil.copy(music, tmp / ("music" + music.suffix))
                     print(f"  music: {music.parent.name}/{music.name}")
+
+                # Assemble the turn: happy song straight until turn_t, a
+                # tape-stop into 0.7 s of dead air (the card + boom own it),
+                # then the dark track already built above enters on delay.
+                if turn_t is not None and (tmp / "music.wav").exists():
+                    happy = own or pick_music(pkg, args.music, override="ironic")
+                    if happy:
+                        normalize_score(happy, tmp / "happy.wav", length=turn_t + 3.0)
+                        ironic_music_treatment(ffmpeg, tmp / "happy.wav",
+                                               tmp / "happy-stop.wav", turn_t, "stop")
+                        run([ffmpeg, "-y", "-i", str(tmp / "happy-stop.wav"),
+                             "-i", str(tmp / "music.wav"), "-filter_complex",
+                             f"[1:a]adelay={int(dark_off * 1000)}:all=1[d];"
+                             "[0:a][d]amix=inputs=2:duration=longest:normalize=0[out]",
+                             "-map", "[out]", "-c:a", "pcm_s16le",
+                             str(tmp / "music-turn.wav")])
+                        (tmp / "music-turn.wav").replace(tmp / "music.wav")
+                        print(f"  turn: happy open ({happy.parent.name}/{happy.name})"
+                              f" tape-stops at {turn_t:.1f}s -> \"{turn_word}\" card"
+                              " + boom, dark score takes over")
+                    else:
+                        turn_t = turn_word = None   # no happy track - no turn
                     if args.ironic_music and reveal_start is not None:
                         ironic_music_treatment(ffmpeg, tmp / ("music" + music.suffix),
                                                tmp / "music-ironic.wav", reveal_start,
@@ -2906,20 +2991,31 @@ def main():
                 if args.trailer and not args.no_sfx:
                     cuts = [s for s, _ in segment_spans(segments, words, total)[1:]
                             if 2.0 < s < total - 0.3
-                            and not (reveal_start and abs(s - reveal_start) < 2.0)]
-                    if cuts:
-                        synth_stingers(tmp / "stingers.wav", cuts, total)
+                            and not (reveal_start and abs(s - reveal_start) < 2.0)
+                            and not (turn_t is not None and abs(s - turn_t) < 0.3)]
+                    if cuts or turn_t is not None:
+                        synth_stingers(tmp / "stingers.wav", cuts, total, big=turn_t)
                         print(f"  sfx: {len(cuts)} cut stingers"
-                              " (low boom on each scene change)")
+                              " (low boom on each scene change)"
+                              + (" + the heavy turn boom" if turn_t is not None else ""))
                 # Trailers mix the score at soundtrack level, not bed level -
                 # loud between lines (which also buries any synthetic edge in
                 # the voices), dipping under speech, growing into the reveal.
+                card = None
+                if turn_t is not None and turn_word:
+                    card_font = (brand_font_path.name if brand_font_path
+                                 else CAPTION_FONT_FILE.name
+                                 if CAPTION_FONT_FILE.exists() else None)
+                    if card_font:
+                        fs = max(58, min(150, int(1500 / max(1, len(turn_word)))))
+                        card = (turn_t, turn_word, card_font, fs)
                 final_render(ffmpeg, base, pkg, total, bool(music) or dread, out_path.resolve(), tmp,
                              clip_audio=mix_gain if base is not None else 0.0,
                              sfx_delay_ms=sfx_delay_ms, duck=duck,
                              music_vol=0.6 if args.trailer else None,
                              swell=((reveal_start or 0.85 * total)
-                                    if args.trailer else None))
+                                    if args.trailer else None),
+                             turn_card=card)
 
                 thumb_made = False
                 if font_ff:

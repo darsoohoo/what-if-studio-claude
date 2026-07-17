@@ -280,10 +280,14 @@ button.next-step { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(139,1
             <option value="dark">🌑 Dark — brooding tension</option>
             <option value="tragedy">💔 Tragedy — emotional strings</option>
             <option value="wonder">✨ Wonder — awe, discovery</option>
+            <optgroup label="🎵 My tracks" id="myTracksGroup">
+              <option value="custom">🎵 My tracks — surprise me</option>
+            </optgroup>
           </select>
           <button type="button" id="scoreAddBtn" title="Add your own tracks to the selected genre (YouTube Audio Library, purchased music, anything you have the rights to). They're saved into pipeline\music\trailer\<genre> and picked like stock tracks — loudness-normalized, so any recording level works. If the license requires attribution you can paste the credit line and every post kit that uses the track will carry it.">⬆ Add tracks</button>
           <input type="file" id="scoreFiles" accept=".mp3,.m4a,.wav,.ogg,.flac" multiple hidden>
         </label>
+        <label class="opt" id="turnWrap" hidden title="The modern trailer arc: a cheerful song (one of 🎵 My tracks if selected, else the ironic shelf) opens the video bright, then around the middle it tape-stops on a heavy boom, a HUGE word card punches on screen in sync, and the dark genre score + dread bed take over through the reveal. The word comes from the package (the writer invents one per story - e.g. IT LEARNED); drafts also open their first beats warm so the turn lands."><input type="checkbox" id="optTurn"> 🎢 Happy open → dark turn</label>
       </div>
       <p class="hint" id="ironicHint" hidden>🎵 + 🌤️ The full contradiction: the song stays sincerely cheerful and generated visuals render in <strong>Wholesome</strong> mood (soft warm light, gentle smiles) while the script goes wrong — until the tape-stop on the reveal. Pick an explicit 🎭 mood above to override the visual look; already-cached visuals keep their old look until you delete the scenario's cache entry.</p>
       <p class="hint" id="trailerHint" hidden>🎬 This checkbox changes the <strong>sound and look</strong>: a <strong>real score</strong> plays under every trailer — pick the genre with 🎼 or leave it on Auto and the writer/story decides — and it <strong>ducks under character lines</strong> so every word stays clear. Horror layers the score with a <strong>synthesized dread bed</strong> (heartbeat pulse, detuned drone, metallic shrieks — the AHS-intro school) building to a climax on the reveal; plus the riser + impact on the reveal, breathing room between dialogue lines, slower narrator delivery, and Trailer-mood visuals. <strong>It does NOT rewrite your script</strong> — first pick <strong>🎞️ Trailer — dialogue only</strong> (modern: no narrator, just character lines trading against the sound design) or <strong>🎙 Trailer — narrated</strong> (the classic VO) in the 🎭 Mood dropdown and hit <strong>📝 Script from prompts</strong>, then render. You can also type <code>[Name] "line"</code> into any spoken line yourself.</p>
@@ -1312,15 +1316,44 @@ function updatePairHints() {
   $id("ironicHint").hidden = !(auto && $id("optIronic").checked);
   $id("trailerHint").hidden = !(auto && $id("optTrailer").checked);
   $id("scoreWrap").hidden = !$id("optTrailer").checked;
+  $id("turnWrap").hidden = !$id("optTrailer").checked;
 }
 $id("scoreSel").addEventListener("change", () => {
   try { localStorage.setItem("wis.score", $id("scoreSel").value); } catch (e) {}
 });
+$id("optTurn").addEventListener("change", () => {
+  try { localStorage.setItem("wis.turn", $id("optTurn").checked ? "1" : ""); } catch (e) {}
+});
+/* 🎵 My tracks: the creator's own songs (music\custom) join the score
+   picker - "custom" = random one, "track:<file>" = that exact song. */
+async function loadMyTracks() {
+  try {
+    const r = await api("/api/music/tracks");
+    const g = $id("myTracksGroup");
+    [...g.querySelectorAll("option")].slice(1).forEach(o => o.remove());
+    for (const t of (r.tracks || [])) {
+      const o = document.createElement("option");
+      o.value = "track:" + t;
+      o.textContent = "🎵 " + t.replace(/\.[^.]+$/, "");
+      g.appendChild(o);
+    }
+    let s = null;
+    try { s = localStorage.getItem("wis.score"); } catch (e) {}
+    if (s && [...$id("scoreSel").options].some(o => o.value === s))
+      $id("scoreSel").value = s;
+  } catch (e) {}
+}
+loadMyTracks();
 /* ⬆ Add your own score tracks: files land in music\trailer\<genre> and the
    picker treats them like stock. Optional credit line -> credits.json. */
+function uploadGenre() {
+  const v = $id("scoreSel").value;
+  if (!v) return null;                               // Auto: nowhere to file it
+  return (v === "custom" || v.startsWith("track:")) ? "custom" : v;
+}
 $id("scoreAddBtn").addEventListener("click", () => {
-  if (!$id("scoreSel").value) {
-    alert("Pick a genre first (not Auto) so the tracks land in the right folder.");
+  if (!uploadGenre()) {
+    alert("Pick a genre (or 🎵 My tracks) first so the files land in the right folder.");
     return;
   }
   $id("scoreFiles").click();
@@ -1329,7 +1362,7 @@ $id("scoreFiles").addEventListener("change", async () => {
   const files = [...$id("scoreFiles").files];
   $id("scoreFiles").value = "";
   if (!files.length) return;
-  const genre = $id("scoreSel").value;
+  const genre = uploadGenre();
   const credit = prompt(
     "Attribution line for these tracks (added to every post kit that uses them).\n"
     + 'Leave empty if the license needs none (e.g. YouTube Audio Library "no attribution required").', "");
@@ -1347,14 +1380,17 @@ $id("scoreFiles").addEventListener("change", async () => {
       if (r && r.ok) ok++; else fail.push(`${f.name} (${(r && r.error) || "upload failed"})`);
     } catch (e) { fail.push(`${f.name} (${e.message})`); }
   }
-  setRenderStatus(`🎼 ${ok} track(s) added to ${genre} — the next ${genre} trailer can pick them`
+  setRenderStatus(`🎼 ${ok} track(s) added to ${genre === "custom" ? "🎵 My tracks" : genre}`
     + (credit.trim() ? ", credit line saved" : "")
     + (fail.length ? `. Failed: ${fail.join(", ")}` : "."), fail.length ? "bad" : "good");
+  if (genre === "custom") loadMyTracks();
 });
 (() => {
-  let s = null;
-  try { s = localStorage.getItem("wis.score"); } catch (e) {}
-  if (s !== null) $id("scoreSel").value = s;
+  let s = null, t = null;
+  try { s = localStorage.getItem("wis.score"); t = localStorage.getItem("wis.turn"); } catch (e) {}
+  if (s !== null && [...$id("scoreSel").options].some(o => o.value === s))
+    $id("scoreSel").value = s;
+  if (t) $id("optTurn").checked = true;
   updatePairHints();
 })();
 /* One musical identity per video: the two treatments exclude each other. */
@@ -1471,7 +1507,12 @@ $id("renderBtn").addEventListener("click", async () => {
     mood: renderMood(),
     ironic_music: $id("optIronic").checked ? "tail" : "",
     trailer: $id("optTrailer").checked,
-    score: $id("optTrailer").checked ? $id("scoreSel").value : "",
+    score: $id("optTrailer").checked && !$id("scoreSel").value.startsWith("track:")
+           && $id("scoreSel").value !== "custom" ? $id("scoreSel").value : "",
+    track: !$id("optTrailer").checked ? ""
+           : $id("scoreSel").value.startsWith("track:") ? $id("scoreSel").value.slice(6)
+           : $id("scoreSel").value === "custom" ? "*" : "",
+    turn: $id("optTrailer").checked && $id("optTurn").checked,
   });
   if (r.error) { setRenderStatus(r.error, "bad"); return; }
   $id("renderBtn").disabled = true;

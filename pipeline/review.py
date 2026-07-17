@@ -504,6 +504,7 @@ def ai_draft(title, category, runtime=60, beats=5, idea=None, mood=None):
     if (mood or "").startswith("trailer"):
         draft["score"] = _pick_score(title, draft.get("premise", ""),
                                      draft.get("tags"))
+        draft["turn_word"] = _pick_turn_word(title, draft.get("premise", ""))
     if draft.get("cast"):
         draft["cast"] = _ensure_cast_kinds(draft["cast"])
     return draft
@@ -680,6 +681,7 @@ def scaffold_batch_package(conf, title, draft, runtime):
         "beats": draft["beats"],
         "cast": draft.get("cast") or [],
         "score": draft.get("score") or "",
+        "turn_word": draft.get("turn_word") or "",
         "outro": conf["outro"],
         "captions": [title, conf["extra_caption"]],
         "thumbnails": [" ".join(title.split()[:4]).upper()],
@@ -1689,7 +1691,11 @@ TRAILER_ONLY_RULE = (
     'It\'s coming from MY garage." '
     "Use 2-3 recurring characters with the SAME names as the cast list, "
     "tell an ACTUAL STORY across the beats - setup, escalation, reveal - "
-    "purely through what the characters say to each other. ")
+    "purely through what the characters say to each other. "
+    "ARC: open HAPPY - the first 3-4 beats are bright, warm, playful (life "
+    "in this world is good, the characters laugh, tease, marvel) - then the "
+    "story TURNS around the middle and dread takes over; from the turn on "
+    "the lines tighten and darken. The contrast IS the trailer. ")
 
 _DLG_MARK_RE = re.compile(r'\[[A-Za-z][A-Za-z0-9 .\'-]{0,24}\]\s*["“]')
 
@@ -1740,6 +1746,26 @@ def _ensure_cast_kinds(cast):
             w = "woman" if c["name"].lower()[-1:] == "a" else "man"
         c["look"] = w + ", " + str(c.get("look", "")).lstrip()
     return cast
+
+
+def _pick_turn_word(title, premise):
+    """The word card that punches on the happy->dark turn boom - 1-3 words,
+    ALL CAPS, specific to the story ('IT LEARNED', 'THEN IT WOKE'). One
+    focused AI pass; a genre-safe fallback. Never raises."""
+    try:
+        raw = _ai_text(
+            "A movie trailer opens happy, then SNAPS dark on a boom with one "
+            "huge word card. Write that card for this story: " + title + ". "
+            + (premise or "")[:300] + " Reply with ONLY the card text - "
+            "1 to 3 words, no quotes, no punctuation except an ellipsis.",
+            max_tokens=12)
+        word = re.sub(r"[^A-Za-z' .]+", " ", raw).strip()
+        word = " ".join(word.split()[:3]).upper()
+        if 2 <= len(word) <= 24:
+            return word
+    except Exception:
+        pass
+    return "SOMETHING'S WRONG"
 
 
 def _pick_score(title, premise, tags=None):
@@ -2204,6 +2230,11 @@ def start_render(queue_file, slot, staging, opts):
         score = str(opts.get("score") or "").strip()
         if score in mv.TRAILER_SCORES:
             cmd += ["--score", score]
+        track = str(opts.get("track") or "").strip()
+        if track == "*" or re.fullmatch(r"[A-Za-z0-9 ._'()-]{1,120}", track):
+            cmd += ["--track", track]
+        if opts.get("turn"):
+            cmd.append("--turn")
     if opts.get("elevenlabs"):
         cmd.append("--elevenlabs")
     if opts.get("charts"):
@@ -2368,6 +2399,15 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == "/api/videos":
             self.send_json(list_videos())
+            return
+        if self.path == "/api/music/tracks":
+            # The creator's own song library (music/custom) for the Produce
+            # page's 🎵 My tracks picker.
+            folder = HERE / "music" / "custom"
+            tracks = (sorted(f.name for f in folder.iterdir()
+                             if f.suffix.lower() in mv.AUDIO_EXTS)
+                      if folder.is_dir() else [])
+            self.send_json({"tracks": tracks})
             return
         if self.path == "/api/produce/queues":
             self.send_json(list_queues())
@@ -2934,11 +2974,13 @@ class Handler(BaseHTTPRequestHandler):
                 # doesn't keeps whatever the package already knew.
                 if script.get("cast"):
                     pkg["cast"] = _ensure_cast_kinds(script["cast"])
-                # Trailer rewrites (re)pick the score genre to fit the story.
+                # Trailer rewrites (re)pick the score genre + turn card.
                 if mood.startswith("trailer"):
                     pkg["score"] = _pick_score(pkg.get("title", ""),
                                                pkg.get("premise", ""),
                                                pkg.get("tags"))
+                    pkg["turn_word"] = _pick_turn_word(pkg.get("title", ""),
+                                                       pkg.get("premise", ""))
                 qpath.write_text(json.dumps(qdata, indent=2), encoding="utf-8")
                 # Same row count: the prompts the script was fitted to survive.
                 # A grown script has NEW scenes - prompts re-derive from the
@@ -3111,7 +3153,7 @@ class Handler(BaseHTTPRequestHandler):
             # dashboard only - the file never leaves this machine.
             try:
                 genre = str(data.get("genre") or "").strip().lower()
-                if genre not in mv.TRAILER_SCORES:
+                if genre not in mv.TRAILER_SCORES and genre != "custom":
                     raise RuntimeError("unknown genre")
                 name = Path(str(data.get("name") or "")).name
                 name = re.sub(r"[^A-Za-z0-9 ._'()-]", "-", name).strip(" .")
@@ -3123,7 +3165,8 @@ class Handler(BaseHTTPRequestHandler):
                     raise RuntimeError("that file looks empty/truncated")
                 if len(raw) > 80_000_000:
                     raise RuntimeError("file too large (80 MB max)")
-                dest = HERE / "music" / "trailer" / genre
+                dest = (HERE / "music" / "custom" if genre == "custom"
+                        else HERE / "music" / "trailer" / genre)
                 dest.mkdir(parents=True, exist_ok=True)
                 (dest / name).write_bytes(raw)
                 credit = re.sub(r"\s+", " ", str(data.get("credit") or "")).strip()[:300]
