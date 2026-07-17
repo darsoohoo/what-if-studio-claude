@@ -2441,6 +2441,10 @@ class Handler(BaseHTTPRequestHandler):
                     "observed_prices": observed_prices(),
                     "title": pkg.get("title"),
                     "category": pkg.get("category", ""),
+                    # What the writer chose for the trailer treatment, shown
+                    # as read-only chips next to the package dropdown.
+                    "score": pkg.get("score") or "",
+                    "turn_word": pkg.get("turn_word") or "",
                     # The category's default AI-image look (dark, archival, ...)
                     # so the style dropdown can pre-pick it per package.
                     "category_style": mv.branding_for(pkg)["style"],

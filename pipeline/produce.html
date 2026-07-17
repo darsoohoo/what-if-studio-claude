@@ -133,6 +133,7 @@ button.next-step { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(139,1
   <section>
     <h2><span class="step">1</span>Pick a package</h2>
     <select id="pkgSelect"><option value="">Loading…</option></select>
+    <p class="hint" id="pkgChips" hidden title="What the writer chose for this package's trailer treatment: the 🎼 score genre and the word card that slams on the 🎢 turn. Rewrite the script (📝 Script from prompts) to re-pick them; the 🎼 dropdown below overrides the genre at render time."></p>
     <p class="hint">These come from your queue exports. Export a queue in the Studio and it appears here.</p>
     <div style="display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap">
       <button type="button" id="morningBtn" data-kind="scary">🌅 Draft 3 fresh scary scenarios</button>
@@ -398,6 +399,14 @@ $id("pkgSelect").addEventListener("change", async (e) => {
   S.script = info.script;
   S.refs = info.refs || [];
   S.openai = !!info.openai;
+  // Read-only chips: what the writer picked for the trailer treatment.
+  const SCORE_CHIP = { action: "⚔️ action", dark: "🌑 dark",
+                       tragedy: "💔 tragedy", wonder: "✨ wonder" };
+  const chips = [];
+  if (SCORE_CHIP[info.score]) chips.push("🎼 " + SCORE_CHIP[info.score] + " score");
+  if (info.turn_word) chips.push("🎢 card: “" + info.turn_word + "”");
+  $id("pkgChips").textContent = chips.join("  ·  ");
+  $id("pkgChips").hidden = !chips.length;
   renderPrompts(info.prompts, false);   // fresh package - nothing carries over
   $id("importStatus").textContent = "";
   $id("importCount").textContent = info.prompts.length;
