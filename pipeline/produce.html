@@ -344,8 +344,51 @@ async function loadQueues() {
     }
   }
 }
+/* Selecting a package pre-fills the 💡 idea box from its title, so a
+   variant (same movie, another language) is two clicks away. Only values
+   the auto-fill itself wrote get overwritten - user typing is never
+   clobbered; changing the kind/language clears a now-stale auto title. */
+const lastAuto = { text: "", title: "", busy: false };
+function autoFillIdea() {
+  const opt = $id("pkgSelect").selectedOptions[0];
+  if (!opt || !opt.value) return;
+  const label = opt.textContent;
+  const cut = label.lastIndexOf(" — ");
+  const title = (cut > 0 ? label.slice(0, cut) : label).trim();
+  if (!title) return;
+  const ideaEl = $id("ideaText"), titleEl = $id("ideaTitle");
+  const canText = !ideaEl.value.trim() || ideaEl.value === lastAuto.text;
+  const canTitle = !titleEl.value.trim() || titleEl.value === lastAuto.title;
+  if (canTitle) { titleEl.value = title; lastAuto.title = title; }
+  const m = title.match(/^If (.+?) Was AI-Generated(?: in AI (\w+))?$/i);
+  if (!m) return;
+  if (canText) { ideaEl.value = m[1]; lastAuto.text = m[1]; }
+  lastAuto.busy = true;
+  try {
+    $id("ideaKind").value = m[2] ? "aibabble" : "aimovie";
+    $id("ideaKind").dispatchEvent(new Event("change"));
+    if (m[2]) {
+      const lang = m[2].toLowerCase();
+      if ([...$id("ideaLang").options].some(o => o.value === lang))
+        $id("ideaLang").value = lang;
+    }
+  } finally { lastAuto.busy = false; }
+}
+for (const id of ["ideaKind", "ideaLang"]) {
+  $id(id).addEventListener("change", () => {
+    // A hand-picked kind/language makes the auto title stale ("...in AI
+    // Vietnamese" while Chinese is selected) - drop it, the writer invents
+    // the right one at draft time.
+    if (!lastAuto.busy && lastAuto.title
+        && $id("ideaTitle").value === lastAuto.title) {
+      $id("ideaTitle").value = "";
+      lastAuto.title = "";
+    }
+  });
+}
 $id("pkgSelect").addEventListener("change", async (e) => {
   if (!e.target.value) { $id("flow").hidden = true; return; }
+  autoFillIdea();
   const [queue, slot] = e.target.value.split("|");
   const info = await api(`/api/produce/info?queue=${encodeURIComponent(queue)}&slot=${slot}`);
   if (info.error) { alert(info.error); return; }
